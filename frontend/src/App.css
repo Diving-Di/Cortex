@@ -1,151 +1,82 @@
-.container {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.mb-20 {
-  margin-bottom: 20px;
-}
-
-.app-container {
-  min-height: 100vh;
-}
-
-.app-header {
-  background-color: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  height: 60px;
-  line-height: 60px;
-  padding: 0;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.header-content {
-  align-items: center;
+.app {
   display: flex;
-  height: 60px;
-  justify-content: space-between;
-  padding: 0 20px;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
 }
 
-.logo {
-  align-items: center;
-  color: #409eff;
-  display: flex;
-  font-size: 20px;
-  font-weight: bold;
-}
-
-.logo-icon {
-  font-size: 24px;
-  margin-right: 5px;
-}
-
-.user-info {
-  align-items: center;
-  display: flex;
-  gap: 15px;
-}
-
-.welcome-text {
-  color: #606266;
-  font-size: 14px;
-}
-
-.auth-container {
-  align-items: center;
-  display: flex;
-  justify-content: center;
-  min-height: 80vh;
-}
-
-.auth-card {
-  max-width: 400px;
-  width: 100%;
-}
-
-.w-100 {
-  width: 100%;
-}
-
-.card-header {
-  font-weight: bold;
-}
-
-.top-row {
-  align-items: stretch;
-  display: flex;
-  gap: 20px;
-}
-
-.upload-col,
-.carousel-col {
-  flex: 1;
-  min-width: 0;
-}
-
-.upload-col .ant-card,
-.carousel-col .ant-card {
+.app-nav {
+  width: 220px;
+  flex: none;
+  background: #1f2433;
+  color: #c9d1e6;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  padding: 20px 12px;
 }
 
-.upload-col .ant-card-body,
-.carousel-col .ant-card-body {
-  flex: 1;
-}
-
-.carousel-topbar {
+.app-logo {
   display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  margin-bottom: 10px;
-}
-
-.carousel-editor {
-  margin-bottom: 12px;
-}
-
-.control-label {
-  color: #606266;
-  font-size: 13px;
-  margin-bottom: 6px;
-}
-
-.control-select {
-  width: 100%;
-}
-
-.search-area {
-  margin-top: 12px;
-  width: 100%;
-}
-
-.search-row {
   align-items: center;
-  display: flex;
   gap: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+  padding: 0 8px 20px;
 }
 
-.search-btn {
-  flex: none;
+.app-logo-icon {
+  font-size: 26px;
+  color: #6b8cff;
 }
 
-@media (max-width: 992px) {
-  .top-row {
-    flex-direction: column;
-  }
+.app-menu {
+  flex: 1;
+  background: transparent;
+  border-inline-end: none;
+}
 
-  .search-row {
-    align-items: stretch;
-    flex-direction: column;
-  }
+.app-menu.ant-menu-dark,
+.app-menu.ant-menu {
+  background: transparent;
+}
 
-  .search-btn {
-    width: 100%;
-  }
+/* Make antd inline menu fit the dark sidebar */
+.app-menu .ant-menu-item {
+  color: #c9d1e6;
+  border-radius: 8px;
+}
+
+.app-menu .ant-menu-item-selected {
+  background: #4b6ef5 !important;
+  color: #fff !important;
+}
+
+.app-nav-footer {
+  border-top: 1px solid #2c3245;
+  padding-top: 16px;
+}
+
+.app-user {
+  padding: 0 8px 8px;
+  font-size: 14px;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-logout {
+  color: #c9d1e6;
+}
+
+.app-logout:hover {
+  color: #fff !important;
+}
+
+.app-content {
+  flex: 1;
+  min-width: 0;
+  padding: 20px;
+  overflow: hidden;
 }

@@ -1,5 +1,5 @@
-import { API_BASE_URL } from './config'
 import { http } from './http'
+import { apiUrls } from './urls'
 
 interface LoginPayload {
   username: string
@@ -8,6 +8,7 @@ interface LoginPayload {
 
 interface LoginResponse {
   token: string
+  username: string
 }
 
 interface RegisterPayload extends LoginPayload {
@@ -15,10 +16,10 @@ interface RegisterPayload extends LoginPayload {
 }
 
 export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
-  const res = await http.post<LoginResponse>(`${API_BASE_URL}/login/`, payload)
+  const res = await http.post<LoginResponse>(apiUrls.auth.login, payload)
   return res.data
 }
 
 export async function registerUser(payload: RegisterPayload): Promise<void> {
-  await http.post(`${API_BASE_URL}/register/`, payload)
+  await http.post(apiUrls.auth.register, payload)
 }

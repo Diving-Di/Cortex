@@ -1,0 +1,10 @@
+{
+  "secret_key": "change-me-in-production",
+  "database_url": "",
+  "ai": {
+    "api_key": "",
+    "base_url": "https://api.deepseek.com/v1",
+    "model": "deepseek-chat",
+    "system_prompt": "你是一个温暖、贴心的 AI 助手，用简洁自然的中文与用户多轮对话。"
+  }
+}

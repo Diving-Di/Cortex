@@ -7,5 +7,5 @@ import './styles.css'
 createRoot(document.getElementById('app') as HTMLElement).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>
+  </React.StrictMode>,
 )
