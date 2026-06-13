@@ -1,0 +1,28 @@
+.upload-container {
+  box-sizing: border-box;
+  padding: 10px;
+  text-align: center;
+  width: 100%;
+}
+
+.tag-area {
+  margin-top: 12px;
+  text-align: left;
+}
+
+.tag-label {
+  color: #606266;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.tag-select {
+  width: 100%;
+}
+
+.actions-area {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-top: 15px;
+}
