@@ -25,7 +25,9 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, stored: str) -> bool:
     try:
         algo, rounds, salt, digest = stored.split("$")
-        computed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), int(rounds)).hex()
+        computed = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), salt.encode(), int(rounds)
+        ).hex()
         return algo == "pbkdf2_sha256" and hmac.compare_digest(computed, digest)
     except (ValueError, TypeError):
         return False
@@ -38,7 +40,13 @@ def hash_token(raw_token: str) -> str:
 def create_token(db: Session, user: User) -> str:
     raw_token = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc)
-    db.add(AuthToken(token_hash=hash_token(raw_token), user_id=user.id, expires_at=now + timedelta(hours=get_settings().token_ttl_hours)))
+    db.add(
+        AuthToken(
+            token_hash=hash_token(raw_token),
+            user_id=user.id,
+            expires_at=now + timedelta(hours=get_settings().token_ttl_hours),
+        )
+    )
     db.flush()
     return raw_token
 
@@ -49,11 +57,24 @@ def get_current_auth_token(
 ) -> AuthToken:
     scheme, _, raw_token = (authorization or "").partition(" ")
     if scheme.lower() not in {"token", "bearer"} or not raw_token.strip():
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication credentials were not provided.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials were not provided.",
+        )
     now = datetime.now(timezone.utc)
-    token = db.query(AuthToken).filter(AuthToken.token_hash == hash_token(raw_token.strip()), AuthToken.revoked_at.is_(None), AuthToken.expires_at > now).first()
+    token = (
+        db.query(AuthToken)
+        .filter(
+            AuthToken.token_hash == hash_token(raw_token.strip()),
+            AuthToken.revoked_at.is_(None),
+            AuthToken.expires_at > now,
+        )
+        .first()
+    )
     if token is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token."
+        )
     token.last_used_at = now
     return token
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- 实现 M2 AI 笔记能力：快速记录整理的预览/确认流程、日周月报告来源计算与引用持久化、带日期解析和租户隔离引用的回忆问答。
+- 新增 `report_sources`、`message_sources` 数据表、RLS 策略及 Alembic `0005_m2_ai_notes` 迁移。
+- 工作台、周期报告和回忆书页面接入 SSE 流式草稿，并确保生成内容由用户确认后才写入。
+
 本文件记录 Diary Listener 项目的重要变更。
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。

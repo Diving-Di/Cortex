@@ -1,55 +1,55 @@
-import type { ChangeEvent } from 'react'
-import { useState } from 'react'
-import type { AxiosError } from 'axios'
-import { Button, Card, Form, Input, Tabs, message } from 'antd'
-import { LockOutlined, MailOutlined, MessageOutlined, UserOutlined } from '@ant-design/icons'
-import { loginUser, registerUser } from '../../api/auth'
-import './Auth.css'
+import type { ChangeEvent } from 'react';
+import { useState } from 'react';
+import type { AxiosError } from 'axios';
+import { Button, Card, Form, Input, Tabs, message } from 'antd';
+import { LockOutlined, MailOutlined, MessageOutlined, UserOutlined } from '@ant-design/icons';
+import { loginUser, registerUser } from '../../api/auth';
+import './Auth.css';
 
 interface AuthProps {
-  onLogin: (token: string, username: string) => void
+  onLogin: (token: string, username: string) => void;
 }
 
 export default function Auth({ onLogin }: AuthProps) {
-  const [view, setView] = useState('login')
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [email, setEmail] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [view, setView] = useState('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
     if (!username || !password) {
-      message.warning('请填写所有字段')
-      return
+      message.warning('请填写所有字段');
+      return;
     }
-    setLoading(true)
+    setLoading(true);
     try {
-      const res = await loginUser({ username, password })
-      onLogin(res.token, res.username)
-      message.success('登录成功')
+      const res = await loginUser({ username, password });
+      onLogin(res.token, res.username);
+      message.success('登录成功');
     } catch (e) {
-      const err = e as AxiosError<{ detail?: string }>
-      message.error(`登录失败：${err.response?.data?.detail || '用户名或密码错误'}`)
+      const err = e as AxiosError<{ detail?: string }>;
+      message.error(`登录失败：${err.response?.data?.detail || '用户名或密码错误'}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   async function handleRegister() {
     if (!username || !password || !email) {
-      message.warning('请填写所有字段')
-      return
+      message.warning('请填写所有字段');
+      return;
     }
-    setLoading(true)
+    setLoading(true);
     try {
-      await registerUser({ username, password, email })
-      message.success('注册成功，请登录')
-      setView('login')
+      await registerUser({ username, password, email });
+      message.success('注册成功，请登录');
+      setView('login');
     } catch (e) {
-      const err = e as AxiosError<{ detail?: string }>
-      message.error(`注册失败：${err.response?.data?.detail || err.message}`)
+      const err = e as AxiosError<{ detail?: string }>;
+      message.error(`注册失败：${err.response?.data?.detail || err.message}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
@@ -132,5 +132,5 @@ export default function Auth({ onLogin }: AuthProps) {
         />
       </Card>
     </div>
-  )
+  );
 }

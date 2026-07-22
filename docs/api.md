@@ -183,3 +183,19 @@ FastAPI 自动文档地址：
 - `GET /api/v1/settings/ai`：仅返回脱敏配置状态。
 - `POST /api/v1/ai/providers`：配置 OpenAI 兼容 Provider 的非敏感元数据。
 - `POST /api/v1/ai/stream`：SSE 流式生成；浏览器断开即取消。
+# M2 AI 笔记接口
+
+所有接口均使用 `Authorization: Token <token>`，业务请求不接受 `tenant_id`。流式生成接口返回 `text/event-stream`，内容事件格式为 `data: {"content":"..."}`，以 `data: [DONE]` 结束。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/v1/ai/organize` | 将快速记录整理为结构化 JSON 草稿，不写入笔记 |
+| POST | `/api/v1/ai/organize/confirm` | 用户编辑并确认后创建笔记或更新指定笔记 |
+| POST | `/api/v1/reports/preview` | 计算日/周/月范围并返回候选来源 |
+| POST | `/api/v1/reports/generate` | 仅依据候选来源流式生成报告草稿 |
+| POST | `/api/v1/reports/confirm` | 确认保存报告、来源及明确的覆盖选择 |
+| GET | `/api/v1/reports/{note_id}/sources` | 查询报告的来源笔记 |
+| POST | `/api/v1/memory/chat` | 检索当前租户笔记并流式回答，同时保存引用 |
+| GET | `/api/v1/memory/messages/{message_id}/sources` | 查询回答的持久化引用 |
+
+报告范围规范化为：日报当天、周报所在周周一、月报所在月一日。无候选来源时返回 `REPORT_NO_SOURCES`，不会调用 AI。回忆检索无证据时返回 `MEMORY_NO_EVIDENCE`。

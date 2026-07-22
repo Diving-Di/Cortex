@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -9,74 +9,74 @@ import {
   Spin,
   Upload,
   message as antdMessage,
-} from 'antd'
-import type { UploadFile } from 'antd'
-import { DeleteOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons'
-import type { DiaryEntry } from '../../types'
-import { createDiaryEntry, deleteDiaryEntry, fetchDiaryEntries } from '../../api/diary'
-import './Diary.css'
+} from 'antd';
+import type { UploadFile } from 'antd';
+import { DeleteOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons';
+import type { DiaryEntry } from '../../types';
+import { createDiaryEntry, deleteDiaryEntry, fetchDiaryEntries } from '../../api/diary';
+import './Diary.css';
 
 interface DiaryProps {
-  token: string
+  token: string;
 }
 
 function formatDate(value: string): string {
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString('zh-CN', { hour12: false })
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString('zh-CN', { hour12: false });
 }
 
 export default function Diary({ token }: DiaryProps) {
-  const [entries, setEntries] = useState<DiaryEntry[]>([])
-  const [loading, setLoading] = useState(false)
-  const [content, setContent] = useState('')
-  const [fileList, setFileList] = useState<UploadFile[]>([])
-  const [submitting, setSubmitting] = useState(false)
-  const fileRef = useRef<File | null>(null)
+  const [entries, setEntries] = useState<DiaryEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [content, setContent] = useState('');
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const fileRef = useRef<File | null>(null);
 
   useEffect(() => {
-    loadEntries()
+    loadEntries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, []);
 
   async function loadEntries() {
-    setLoading(true)
+    setLoading(true);
     try {
-      setEntries(await fetchDiaryEntries(token))
+      setEntries(await fetchDiaryEntries(token));
     } catch (e) {
-      antdMessage.error('加载日记失败')
+      antdMessage.error('加载日记失败');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   async function handleSubmit() {
-    const text = content.trim()
+    const text = content.trim();
     if (!text && !fileRef.current) {
-      antdMessage.warning('请上传图片或写点什么')
-      return
+      antdMessage.warning('请上传图片或写点什么');
+      return;
     }
-    setSubmitting(true)
+    setSubmitting(true);
     try {
-      await createDiaryEntry(token, text, fileRef.current)
-      setContent('')
-      setFileList([])
-      fileRef.current = null
-      await loadEntries()
-      antdMessage.success('已发布')
+      await createDiaryEntry(token, text, fileRef.current);
+      setContent('');
+      setFileList([]);
+      fileRef.current = null;
+      await loadEntries();
+      antdMessage.success('已发布');
     } catch (e) {
-      antdMessage.error('发布失败')
+      antdMessage.error('发布失败');
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }
 
   async function handleDelete(id: number) {
     try {
-      await deleteDiaryEntry(token, id)
-      await loadEntries()
+      await deleteDiaryEntry(token, id);
+      await loadEntries();
     } catch (e) {
-      antdMessage.error('删除失败')
+      antdMessage.error('删除失败');
     }
   }
 
@@ -88,7 +88,7 @@ export default function Diary({ token }: DiaryProps) {
           maxCount={1}
           fileList={fileList}
           beforeUpload={(file) => {
-            fileRef.current = file
+            fileRef.current = file;
             setFileList([
               {
                 uid: '-1',
@@ -96,12 +96,12 @@ export default function Diary({ token }: DiaryProps) {
                 status: 'done',
                 url: URL.createObjectURL(file),
               },
-            ])
-            return false
+            ]);
+            return false;
           }}
           onRemove={() => {
-            fileRef.current = null
-            setFileList([])
+            fileRef.current = null;
+            setFileList([]);
           }}
         >
           {fileList.length === 0 ? (
@@ -137,9 +137,7 @@ export default function Diary({ token }: DiaryProps) {
         ) : (
           entries.map((entry) => (
             <Card key={entry.id} className="diary-card">
-              {entry.image ? (
-                <Image src={entry.image} className="diary-card-image" />
-              ) : null}
+              {entry.image ? <Image src={entry.image} className="diary-card-image" /> : null}
               {entry.content ? <p className="diary-card-content">{entry.content}</p> : null}
               <div className="diary-card-footer">
                 <span className="diary-card-time">{formatDate(entry.created_at)}</span>
@@ -152,5 +150,5 @@ export default function Diary({ token }: DiaryProps) {
         )}
       </div>
     </div>
-  )
+  );
 }

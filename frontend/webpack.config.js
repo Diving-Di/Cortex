@@ -1,9 +1,9 @@
-const path = require('path')
-const HtmlWebpackPlugin = require('html-webpack-plugin')
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 module.exports = (env, argv) => {
-  const isProd = argv.mode === 'production'
-  const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000'
+  const isProd = argv.mode === 'production';
+  const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
 
   return {
     entry: './src/main.tsx',
@@ -64,5 +64,5 @@ module.exports = (env, argv) => {
       maxEntrypointSize: 700000,
       maxAssetSize: 700000,
     },
-  }
-}
+  };
+};

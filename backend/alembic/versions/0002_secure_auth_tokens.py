@@ -3,6 +3,7 @@
 Existing development tokens are invalidated because their raw values cannot be
 safely transformed without retaining a reversible credential.
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -17,7 +18,9 @@ def upgrade() -> None:
     op.drop_column("auth_tokens", "key")
     op.add_column("auth_tokens", sa.Column("id", sa.Integer(), sa.Identity(), nullable=False))
     op.add_column("auth_tokens", sa.Column("token_hash", sa.String(64), nullable=False))
-    op.add_column("auth_tokens", sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False))
+    op.add_column(
+        "auth_tokens", sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False)
+    )
     op.add_column("auth_tokens", sa.Column("revoked_at", sa.DateTime(timezone=True)))
     op.add_column("auth_tokens", sa.Column("last_used_at", sa.DateTime(timezone=True)))
     op.create_primary_key("pk_auth_tokens", "auth_tokens", ["id"])

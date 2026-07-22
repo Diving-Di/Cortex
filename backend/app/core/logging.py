@@ -11,7 +11,10 @@ _SECRET_PATTERNS = (
 def redact(value: str) -> str:
     result = value
     for pattern in _SECRET_PATTERNS:
-        result = pattern.sub(lambda match: f"{match.group(1)}***{match.group(2) if match.lastindex and match.lastindex > 1 else ''}", result)
+        result = pattern.sub(
+            lambda match: f"{match.group(1)}***{match.group(2) if match.lastindex and match.lastindex > 1 else ''}",
+            result,
+        )
     return result
 
 
@@ -19,7 +22,11 @@ class RedactingFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.msg = redact(str(record.msg))
         if record.args:
-            record.args = tuple(redact(str(arg)) for arg in record.args) if isinstance(record.args, tuple) else redact(str(record.args))
+            record.args = (
+                tuple(redact(str(arg)) for arg in record.args)
+                if isinstance(record.args, tuple)
+                else redact(str(record.args))
+            )
         return True
 
 

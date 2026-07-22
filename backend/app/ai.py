@@ -4,6 +4,7 @@ If an api key is configured (via config.json or env), it calls the configured
 chat-completions endpoint. Otherwise it falls back to a simple local echo reply
 so the app stays runnable without any credentials.
 """
+
 from __future__ import annotations
 
 import json

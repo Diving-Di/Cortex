@@ -52,7 +52,11 @@ def get_settings() -> Settings:
     if not database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise RuntimeError("DATABASE_URL must use PostgreSQL (postgresql+psycopg://...)")
     origins_raw = os.getenv("CORS_ORIGINS")
-    origins = tuple(x.strip() for x in origins_raw.split(",") if x.strip()) if origins_raw else tuple(raw.get("cors_origins") or ("http://127.0.0.1:5173", "http://localhost:5173"))
+    origins = (
+        tuple(x.strip() for x in origins_raw.split(",") if x.strip())
+        if origins_raw
+        else tuple(raw.get("cors_origins") or ("http://127.0.0.1:5173", "http://localhost:5173"))
+    )
     if not origins or "*" in origins:
         raise RuntimeError("CORS_ORIGINS must contain explicit trusted origins")
     return Settings(
@@ -65,14 +69,21 @@ def get_settings() -> Settings:
         pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "10")),
         statement_timeout_ms=int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000")),
         media_dir=BASE_DIR / "media",
-        data_dir=Path(os.getenv("DIARY_DATA_DIR") or raw.get("data_dir") or (Path(os.getenv("LOCALAPPDATA", BASE_DIR)) / "DiaryListener")),
+        data_dir=Path(
+            os.getenv("DIARY_DATA_DIR")
+            or raw.get("data_dir")
+            or (Path(os.getenv("LOCALAPPDATA", BASE_DIR)) / "DiaryListener")
+        ),
         max_attachment_bytes=int(os.getenv("MAX_ATTACHMENT_BYTES", str(20 * 1024 * 1024))),
-        secret_key=os.getenv("SECRET_KEY") or str(raw.get("secret_key") or "dev-insecure-change-me"),
+        secret_key=os.getenv("SECRET_KEY")
+        or str(raw.get("secret_key") or "dev-insecure-change-me"),
         ai={
             "api_key": os.getenv("AI_API_KEY") or ai_raw.get("api_key", ""),
-            "base_url": os.getenv("AI_BASE_URL") or ai_raw.get("base_url", "https://api.deepseek.com/v1"),
+            "base_url": os.getenv("AI_BASE_URL")
+            or ai_raw.get("base_url", "https://api.deepseek.com/v1"),
             "model": os.getenv("AI_MODEL") or ai_raw.get("model", "deepseek-chat"),
-            "system_prompt": os.getenv("AI_SYSTEM_PROMPT") or ai_raw.get("system_prompt", "你是一个温暖、贴心的 AI 助手。"),
+            "system_prompt": os.getenv("AI_SYSTEM_PROMPT")
+            or ai_raw.get("system_prompt", "你是一个温暖、贴心的 AI 助手。"),
         },
         token_ttl_hours=int(os.getenv("TOKEN_TTL_HOURS", "720")),
     )

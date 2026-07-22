@@ -5,7 +5,9 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-pytestmark = pytest.mark.skipif(os.getenv("RUN_POSTGRES_TESTS") != "1", reason="requires isolated PostgreSQL test database")
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_TESTS") != "1", reason="requires isolated PostgreSQL test database"
+)
 
 
 def test_token_lifecycle_and_user_resource_isolation() -> None:
@@ -22,20 +24,36 @@ def test_token_lifecycle_and_user_resource_isolation() -> None:
     user_ids: list[int] = []
     try:
         for index, name in enumerate(names):
-            response = client.post("/api/v1/auth/register", json={"username": name, "email": f"{name}@example.invalid", "password": "correct-horse-battery"})
+            response = client.post(
+                "/api/v1/auth/register",
+                json={
+                    "username": name,
+                    "email": f"{name}@example.invalid",
+                    "password": "correct-horse-battery",
+                },
+            )
             assert response.status_code == 201
-            response = client.post("/api/v1/auth/login", json={"username": name, "password": "correct-horse-battery"})
+            response = client.post(
+                "/api/v1/auth/login", json={"username": name, "password": "correct-horse-battery"}
+            )
             assert response.status_code == 200
             tokens.append(response.json()["token"])
 
         with SessionLocal.begin() as db:
             users = db.query(User).filter(User.username.in_(names)).order_by(User.username).all()
             user_ids = [user.id for user in users]
-            tenant_ids = [db.query(Tenant.id).filter(Tenant.user_id == user.id).scalar() for user in users]
+            tenant_ids = [
+                db.query(Tenant.id).filter(Tenant.user_id == user.id).scalar() for user in users
+            ]
             assert db.query(AuthToken).filter(AuthToken.token_hash == tokens[0]).count() == 0
-            assert db.query(AuthToken).filter(AuthToken.token_hash == hash_token(tokens[0])).count() == 1
+            assert (
+                db.query(AuthToken).filter(AuthToken.token_hash == hash_token(tokens[0])).count()
+                == 1
+            )
             apply_tenant_context(db, TenantContext(user_ids[0], tenant_ids[0]))
-            conversation = Conversation(tenant_id=tenant_ids[0], user_id=user_ids[0], title="private")
+            conversation = Conversation(
+                tenant_id=tenant_ids[0], user_id=user_ids[0], title="private"
+            )
             db.add(conversation)
             db.flush()
             conversation_id = conversation.id
@@ -46,7 +64,12 @@ def test_token_lifecycle_and_user_resource_isolation() -> None:
 
         own_headers = {"Authorization": f"Token {tokens[0]}"}
         other_headers = {"Authorization": f"Token {tokens[1]}"}
-        assert client.get(f"/api/chat/conversations/{conversation_id}/", headers=other_headers).status_code == 404
+        assert (
+            client.get(
+                f"/api/chat/conversations/{conversation_id}/", headers=other_headers
+            ).status_code
+            == 404
+        )
         own_diary = client.get("/api/diary/", headers=own_headers).json()
         assert [entry["content"] for entry in own_diary] == ["owner-only"]
 

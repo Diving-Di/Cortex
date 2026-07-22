@@ -1,4 +1,4 @@
-import { API_BASE_URL } from './config'
+import { API_BASE_URL } from './config';
 
 export const apiUrls = {
   auth: {
@@ -15,4 +15,4 @@ export const apiUrls = {
     create: `${API_BASE_URL}/diary/`,
     detail: (id: number) => `${API_BASE_URL}/diary/${id}/`,
   },
-}
+};

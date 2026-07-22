@@ -76,7 +76,9 @@ def create_entry(
     if not text and not stored_name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请上传图片或填写内容")
 
-    entry = DiaryEntry(tenant_id=context.tenant_id, user_id=user.id, image_path=stored_name, content=text)
+    entry = DiaryEntry(
+        tenant_id=context.tenant_id, user_id=user.id, image_path=stored_name, content=text
+    )
     db.add(entry)
     db.flush()
     record_audit(db, context, "diary.create", "diary", entry.id)
@@ -94,7 +96,11 @@ def delete_entry(
 ) -> Response:
     entry = (
         db.query(DiaryEntry)
-        .filter(DiaryEntry.id == entry_id, DiaryEntry.user_id == user.id, DiaryEntry.tenant_id == context.tenant_id)
+        .filter(
+            DiaryEntry.id == entry_id,
+            DiaryEntry.user_id == user.id,
+            DiaryEntry.tenant_id == context.tenant_id,
+        )
         .first()
     )
     if not entry:

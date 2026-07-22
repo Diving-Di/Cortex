@@ -19,15 +19,15 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> dict:
     password = payload.password
 
     if len(username) < 6:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名长度需至少 6 个字符")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="用户名长度需至少 6 个字符"
+        )
     if len(password) < 6:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码长度需至少 6 个字符")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="密码长度需至少 6 个字符"
+        )
 
-    exists = (
-        db.query(User)
-        .filter((User.username == username) | (User.email == email))
-        .first()
-    )
+    exists = db.query(User).filter((User.username == username) | (User.email == email)).first()
     if exists:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名或邮箱已存在")
 
@@ -57,5 +57,6 @@ def login(payload: LoginIn, db: Session = Depends(get_db)) -> LoginOut:
 @router.post("/v1/auth/logout", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def logout(token: AuthToken = Depends(get_current_auth_token)) -> Response:
     from datetime import datetime, timezone
+
     token.revoked_at = datetime.now(timezone.utc)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

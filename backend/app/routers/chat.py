@@ -23,10 +23,16 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 _MAX_HISTORY = 20  # number of recent messages sent to the AI
 
 
-def _get_owned_conversation(db: Session, conversation_id: int, user: User, tenant_id=None) -> Conversation:
+def _get_owned_conversation(
+    db: Session, conversation_id: int, user: User, tenant_id=None
+) -> Conversation:
     conv = (
         db.query(Conversation)
-        .filter(Conversation.id == conversation_id, Conversation.user_id == user.id, Conversation.tenant_id == tenant_id)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user.id,
+            Conversation.tenant_id == tenant_id,
+        )
         .first()
     )
     if not conv:
@@ -91,17 +97,18 @@ def send_message(
         db.add(conv)
         db.flush()
 
-    user_msg = Message(tenant_id=context.tenant_id, conversation_id=conv.id, role="user", content=content)
+    user_msg = Message(
+        tenant_id=context.tenant_id, conversation_id=conv.id, role="user", content=content
+    )
     db.add(user_msg)
     db.flush()
 
-    history = [
-        {"role": m.role, "content": m.content}
-        for m in conv.messages[-_MAX_HISTORY:]
-    ]
+    history = [{"role": m.role, "content": m.content} for m in conv.messages[-_MAX_HISTORY:]]
     reply = generate_reply(history)
 
-    assistant_msg = Message(tenant_id=context.tenant_id, conversation_id=conv.id, role="assistant", content=reply)
+    assistant_msg = Message(
+        tenant_id=context.tenant_id, conversation_id=conv.id, role="assistant", content=reply
+    )
     db.add(assistant_msg)
     record_audit(db, context, "conversation.message", "conversation", conv.id)
     conv.updated_at = func.now()
