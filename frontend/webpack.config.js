@@ -13,6 +13,10 @@ module.exports = (env, argv) => {
       publicPath: '/',
       clean: true,
     },
+    cache: {
+      type: 'filesystem',
+      buildDependencies: { config: [__filename] },
+    },
     resolve: {
       extensions: ['.tsx', '.ts', '.jsx', '.js'],
     },
@@ -39,7 +43,7 @@ module.exports = (env, argv) => {
     ],
     devServer: {
       port: 5173,
-      host: '0.0.0.0',
+      host: process.env.DEV_SERVER_HOST || '127.0.0.1',
       historyApiFallback: true,
       proxy: [
         {
@@ -50,5 +54,15 @@ module.exports = (env, argv) => {
       ],
     },
     devtool: isProd ? false : 'eval-source-map',
+    optimization: {
+      usedExports: true,
+      splitChunks: { chunks: 'all' },
+      runtimeChunk: 'single',
+    },
+    performance: {
+      hints: isProd ? 'error' : false,
+      maxEntrypointSize: 700000,
+      maxAssetSize: 700000,
+    },
   }
 }

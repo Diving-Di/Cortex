@@ -15,16 +15,18 @@ from ..schemas import (
     MessageOut,
 )
 from ..security import get_current_user
+from ..core.tenant import TenantContext, get_tenant_context
+from ..services.audit_service import record_audit
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 _MAX_HISTORY = 20  # number of recent messages sent to the AI
 
 
-def _get_owned_conversation(db: Session, conversation_id: int, user: User) -> Conversation:
+def _get_owned_conversation(db: Session, conversation_id: int, user: User, tenant_id=None) -> Conversation:
     conv = (
         db.query(Conversation)
-        .filter(Conversation.id == conversation_id, Conversation.user_id == user.id)
+        .filter(Conversation.id == conversation_id, Conversation.user_id == user.id, Conversation.tenant_id == tenant_id)
         .first()
     )
     if not conv:
@@ -36,10 +38,11 @@ def _get_owned_conversation(db: Session, conversation_id: int, user: User) -> Co
 def list_conversations(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    context: TenantContext = Depends(get_tenant_context),
 ) -> list[Conversation]:
     return (
         db.query(Conversation)
-        .filter(Conversation.user_id == user.id)
+        .filter(Conversation.user_id == user.id, Conversation.tenant_id == context.tenant_id)
         .order_by(Conversation.updated_at.desc())
         .all()
     )
@@ -50,8 +53,9 @@ def get_conversation(
     conversation_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    context: TenantContext = Depends(get_tenant_context),
 ) -> Conversation:
-    return _get_owned_conversation(db, conversation_id, user)
+    return _get_owned_conversation(db, conversation_id, user, context.tenant_id)
 
 
 @router.delete("/conversations/{conversation_id}/", status_code=status.HTTP_204_NO_CONTENT)
@@ -59,9 +63,11 @@ def delete_conversation(
     conversation_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    context: TenantContext = Depends(get_tenant_context),
 ) -> Response:
-    conv = _get_owned_conversation(db, conversation_id, user)
+    conv = _get_owned_conversation(db, conversation_id, user, context.tenant_id)
     db.delete(conv)
+    record_audit(db, context, "conversation.delete", "conversation", conversation_id)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -71,20 +77,21 @@ def send_message(
     payload: ChatIn,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    context: TenantContext = Depends(get_tenant_context),
 ) -> ChatOut:
     content = payload.content.strip()
     if not content:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="消息不能为空")
 
     if payload.conversation_id:
-        conv = _get_owned_conversation(db, payload.conversation_id, user)
+        conv = _get_owned_conversation(db, payload.conversation_id, user, context.tenant_id)
     else:
         title = content[:20] + ("…" if len(content) > 20 else "")
-        conv = Conversation(user_id=user.id, title=title or "新的对话")
+        conv = Conversation(tenant_id=context.tenant_id, user_id=user.id, title=title or "新的对话")
         db.add(conv)
         db.flush()
 
-    user_msg = Message(conversation_id=conv.id, role="user", content=content)
+    user_msg = Message(tenant_id=context.tenant_id, conversation_id=conv.id, role="user", content=content)
     db.add(user_msg)
     db.flush()
 
@@ -94,8 +101,9 @@ def send_message(
     ]
     reply = generate_reply(history)
 
-    assistant_msg = Message(conversation_id=conv.id, role="assistant", content=reply)
+    assistant_msg = Message(tenant_id=context.tenant_id, conversation_id=conv.id, role="assistant", content=reply)
     db.add(assistant_msg)
+    record_audit(db, context, "conversation.message", "conversation", conv.id)
     conv.updated_at = func.now()
     db.commit()
     db.refresh(user_msg)

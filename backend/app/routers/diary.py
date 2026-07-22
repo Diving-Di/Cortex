@@ -12,6 +12,8 @@ from ..database import get_db
 from ..models import DiaryEntry, User
 from ..schemas import DiaryOut
 from ..security import get_current_user
+from ..core.tenant import TenantContext, get_tenant_context
+from ..services.audit_service import record_audit
 
 router = APIRouter(prefix="/api/diary", tags=["diary"])
 
@@ -38,10 +40,11 @@ def _serialize(entry: DiaryEntry) -> DiaryOut:
 def list_entries(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    context: TenantContext = Depends(get_tenant_context),
 ) -> list[DiaryOut]:
     entries = (
         db.query(DiaryEntry)
-        .filter(DiaryEntry.user_id == user.id)
+        .filter(DiaryEntry.user_id == user.id, DiaryEntry.tenant_id == context.tenant_id)
         .order_by(DiaryEntry.created_at.desc())
         .all()
     )
@@ -54,6 +57,7 @@ def create_entry(
     image: Optional[UploadFile] = File(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    context: TenantContext = Depends(get_tenant_context),
 ) -> DiaryOut:
     text = (content or "").strip()
     stored_name: Optional[str] = None
@@ -72,8 +76,10 @@ def create_entry(
     if not text and not stored_name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请上传图片或填写内容")
 
-    entry = DiaryEntry(user_id=user.id, image_path=stored_name, content=text)
+    entry = DiaryEntry(tenant_id=context.tenant_id, user_id=user.id, image_path=stored_name, content=text)
     db.add(entry)
+    db.flush()
+    record_audit(db, context, "diary.create", "diary", entry.id)
     db.commit()
     db.refresh(entry)
     return _serialize(entry)
@@ -84,10 +90,11 @@ def delete_entry(
     entry_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    context: TenantContext = Depends(get_tenant_context),
 ) -> Response:
     entry = (
         db.query(DiaryEntry)
-        .filter(DiaryEntry.id == entry_id, DiaryEntry.user_id == user.id)
+        .filter(DiaryEntry.id == entry_id, DiaryEntry.user_id == user.id, DiaryEntry.tenant_id == context.tenant_id)
         .first()
     )
     if not entry:
@@ -100,5 +107,6 @@ def delete_entry(
             pass
 
     db.delete(entry)
+    record_audit(db, context, "diary.delete", "diary", entry.id)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

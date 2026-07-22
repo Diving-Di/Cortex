@@ -1,16 +1,15 @@
-"""Authentication helpers: password hashing, token creation and the
-`get_current_user` FastAPI dependency."""
 from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
+from .core.config import get_settings
 from .database import get_db
 from .models import AuthToken, User
 
@@ -26,35 +25,38 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, stored: str) -> bool:
     try:
         algo, rounds, salt, digest = stored.split("$")
-    except ValueError:
+        computed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), int(rounds)).hex()
+        return algo == "pbkdf2_sha256" and hmac.compare_digest(computed, digest)
+    except (ValueError, TypeError):
         return False
-    if algo != "pbkdf2_sha256":
-        return False
-    computed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), int(rounds)).hex()
-    return hmac.compare_digest(computed, digest)
+
+
+def hash_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
 def create_token(db: Session, user: User) -> str:
-    key = secrets.token_hex(20)
-    token = AuthToken(key=key, user_id=user.id)
-    db.add(token)
-    db.commit()
-    return key
+    raw_token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    db.add(AuthToken(token_hash=hash_token(raw_token), user_id=user.id, expires_at=now + timedelta(hours=get_settings().token_ttl_hours)))
+    db.flush()
+    return raw_token
 
 
-def get_current_user(
+def get_current_auth_token(
     authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
-) -> User:
-    scheme, _, token_value = (authorization or "").partition(" ")
-    if scheme.lower() != "token" or not token_value.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication credentials were not provided.",
-        )
+) -> AuthToken:
+    scheme, _, raw_token = (authorization or "").partition(" ")
+    if scheme.lower() not in {"token", "bearer"} or not raw_token.strip():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication credentials were not provided.")
+    now = datetime.now(timezone.utc)
+    token = db.query(AuthToken).filter(AuthToken.token_hash == hash_token(raw_token.strip()), AuthToken.revoked_at.is_(None), AuthToken.expires_at > now).first()
+    if token is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token.")
+    token.last_used_at = now
+    return token
 
-    token = db.query(AuthToken).filter(AuthToken.key == token_value.strip()).first()
-    if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
 
+def get_current_user(token: AuthToken = Depends(get_current_auth_token)) -> User:
     return token.user

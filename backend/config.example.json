@@ -1,6 +1,7 @@
 {
   "secret_key": "change-me-in-production",
-  "database_url": "",
+  "database_url": "postgresql+psycopg://diary_app:change-me@127.0.0.1:5432/diary_listener",
+  "cors_origins": ["http://127.0.0.1:5173", "http://localhost:5173"],
   "ai": {
     "api_key": "",
     "base_url": "https://api.deepseek.com/v1",

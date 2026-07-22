@@ -1,4 +1,4 @@
-# AI 聊天 & 轻日记
+# Diary Listener
 
 一个 AI 聊天 + 轻日记的 Web 应用 demo。左侧功能栏提供「聊天」「日记」两个功能：聊天支持与 AI 多轮对话；日记可以上传一张图片并配上一段文字，作为分享的轻日记，数据存储在数据库中。
 
@@ -27,7 +27,7 @@
 | `messages` | 会话内的每条消息（role = user / assistant） |
 | `diary_entries` | 轻日记（图片 + 文字），归属用户 |
 
-应用启动时会自动建表（`SQLAlchemy Base.metadata.create_all`），无需手动迁移。
+数据库统一使用 PostgreSQL 16，数据库结构仅通过 Alembic 管理；应用启动不会隐式建表。
 
 ## 目录结构
 
@@ -65,6 +65,8 @@ cp config.example.json config.json
 ### 使用 Docker Compose
 
 ```bash
+cp .env.example .env
+# 为两个 PostgreSQL 角色填写不同的高强度密码
 docker-compose up --build
 ```
 
@@ -83,7 +85,10 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+set DATABASE_URL=postgresql+psycopg://diary_app:password@127.0.0.1:5432/diary_listener
+set MIGRATION_DATABASE_URL=postgresql+psycopg://diary_migrator:password@127.0.0.1:5432/diary_listener
+alembic upgrade head
+uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 再启动前端（Webpack DevServer，默认代理 `/api` 与 `/media` 到后端）：

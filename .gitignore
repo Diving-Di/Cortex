@@ -38,6 +38,7 @@ backend/media/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/stats.json
 
 # Testing
 .coverage

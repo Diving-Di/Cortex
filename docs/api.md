@@ -149,3 +149,19 @@ FastAPI 自动文档地址：
 ```
 
 未配置 `api_key` 时，后端会返回本地模拟回复，便于在无凭据时直接体验。
+
+## v1 个人租户与笔记
+
+所有接口从认证 Token 服务端解析唯一的个人租户，不接受 `tenant_id` 参数。
+
+- `GET /api/v1/tenant`：个人空间、笔记配额和 AI Token 用量摘要。
+- `PATCH /api/v1/tenant`：修改个人空间显示名称。
+- `DELETE /api/v1/tenant`：软删除个人空间。
+- `POST /api/v1/tenant/restore`：恢复软删除的个人空间。
+- `GET /api/v1/notes`：分页列表；支持 `page`、`page_size`、`type`、`start_date`、`end_date`。
+- `POST /api/v1/notes`：创建 `normal`、`daily`、`weekly` 或 `monthly` 笔记。
+- `GET/PATCH/DELETE /api/v1/notes/{id}`：读取、更新或软删除笔记。
+- `GET /api/v1/notes/{id}/revisions`：历史正文列表。
+- `POST /api/v1/notes/{id}/revisions/{revision_id}/restore`：恢复历史正文。
+
+周报日期统一归一到周一，月报日期统一归一到每月一日。同一租户同一周期只允许一份未删除的周期笔记。
