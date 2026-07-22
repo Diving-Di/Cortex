@@ -56,7 +56,7 @@ module.exports = (env, argv) => {
     devtool: isProd ? false : 'eval-source-map',
     optimization: {
       usedExports: true,
-      splitChunks: { chunks: 'all' },
+      splitChunks: { chunks: 'all', maxSize: 500000, maxAsyncRequests: 30 },
       runtimeChunk: 'single',
     },
     performance: {

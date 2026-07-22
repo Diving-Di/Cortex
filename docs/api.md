@@ -165,3 +165,21 @@ FastAPI 自动文档地址：
 - `POST /api/v1/notes/{id}/revisions/{revision_id}/restore`：恢复历史正文。
 
 周报日期统一归一到周一，月报日期统一归一到每月一日。同一租户同一周期只允许一份未删除的周期笔记。
+
+## 标签、附件与搜索
+
+- `GET/POST /api/v1/tags`：标签列表与创建。
+- `GET/PUT /api/v1/notes/{id}/tags`：读取或替换笔记标签。
+- `POST /api/v1/attachments?note_id={id}`：上传附件，允许 PNG/JPEG/PDF/UTF-8 TXT/Markdown。
+- `GET /api/v1/attachments/note/{note_id}`：附件列表。
+- `GET/DELETE /api/v1/attachments/{id}`：鉴权下载或删除附件。
+- `GET /api/v1/search`：支持 `q`、`type`、`start_date`、`end_date`、`tag_id`。
+
+## 数据与 AI
+
+- `POST /api/v1/exports/markdown`：下载 Markdown ZIP。
+- `POST /api/v1/backups`：创建带 SHA-256 清单的租户备份。
+- `POST /api/v1/backups/restore`：向空租户受控恢复备份。
+- `GET /api/v1/settings/ai`：仅返回脱敏配置状态。
+- `POST /api/v1/ai/providers`：配置 OpenAI 兼容 Provider 的非敏感元数据。
+- `POST /api/v1/ai/stream`：SSE 流式生成；浏览器断开即取消。

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy import BigInteger, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, String, Table, Text, Column, func, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -123,6 +123,10 @@ class AiUsageRecord(Base):
     request_type: Mapped[str] = mapped_column(String(40), nullable=False)
     input_tokens: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    model: Mapped[Optional[str]] = mapped_column(String(120))
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), server_default="success", nullable=False)
+    error_code: Mapped[Optional[str]] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -135,3 +139,41 @@ class AuditLog(Base):
     resource_type: Mapped[str] = mapped_column(String(40), nullable=False)
     resource_id: Mapped[Optional[str]] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+note_tags = Table("note_tags", Base.metadata,
+    Column("tenant_id", PGUUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True),
+    Column("note_id", Integer, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True))
+
+class Tag(Base):
+    __tablename__ = "tags"
+    __table_args__ = (Index("uq_tags_tenant_name", "tenant_id", "name", unique=True),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    color: Mapped[Optional[str]] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+class Attachment(Base):
+    __tablename__ = "attachments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    note_id: Mapped[int] = mapped_column(ForeignKey("notes.id", ondelete="CASCADE"), nullable=False, index=True)
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
+    mime_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+class AiProvider(Base):
+    __tablename__ = "ai_providers"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    default_model: Mapped[str] = mapped_column(String(120), nullable=False)
+    capabilities: Mapped[str] = mapped_column(String(255), server_default="chat,stream", nullable=False)
+    enabled: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)

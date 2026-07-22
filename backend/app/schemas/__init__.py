@@ -98,3 +98,35 @@ class TenantOut(BaseModel):
 class TenantUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str
+
+class TagCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    color: Optional[str] = None
+class TagOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    color: Optional[str]
+class TagAssignment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tag_ids: list[int]
+class AttachmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    note_id: int
+    original_name: str
+    mime_type: str
+    size: int
+    sha256: str
+    created_at: datetime
+class SearchResult(BaseModel):
+    id: int
+    title: str
+    snippet: str
+    type: NoteType
+    note_date: Optional[date]
+    updated_at: datetime
+class SearchPage(BaseModel):
+    items: list[SearchResult]
+    total: int

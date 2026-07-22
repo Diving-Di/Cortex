@@ -29,6 +29,8 @@ class Settings:
     pool_timeout: int
     statement_timeout_ms: int
     media_dir: Path
+    data_dir: Path
+    max_attachment_bytes: int
     secret_key: str = field(repr=False)
     ai: dict[str, Any] = field(repr=False)
     token_ttl_hours: int = 24 * 30
@@ -63,6 +65,8 @@ def get_settings() -> Settings:
         pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "10")),
         statement_timeout_ms=int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000")),
         media_dir=BASE_DIR / "media",
+        data_dir=Path(os.getenv("DIARY_DATA_DIR") or raw.get("data_dir") or (Path(os.getenv("LOCALAPPDATA", BASE_DIR)) / "DiaryListener")),
+        max_attachment_bytes=int(os.getenv("MAX_ATTACHMENT_BYTES", str(20 * 1024 * 1024))),
         secret_key=os.getenv("SECRET_KEY") or str(raw.get("secret_key") or "dev-insecure-change-me"),
         ai={
             "api_key": os.getenv("AI_API_KEY") or ai_raw.get("api_key", ""),

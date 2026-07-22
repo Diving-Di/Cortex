@@ -6,18 +6,19 @@ from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..core.exceptions import AppError
 from ..core.tenant import TenantContext, get_tenant_context
-from ..models import Note, NoteRevision
+from ..models import Note, NoteRevision, note_tags
 from ..schemas import NoteCreate, NoteOut, NotePage, NoteUpdate, RevisionOut
 from ..services.note_service import create_note, delete_note, get_note, restore_revision, update_note
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
 
 @router.get("", response_model=NotePage)
-def list_notes(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100), note_type: str | None = Query(None, alias="type"), start_date: date | None = None, end_date: date | None = None, db: Session = Depends(get_db), context: TenantContext = Depends(get_tenant_context)) -> NotePage:
+def list_notes(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100), note_type: str | None = Query(None, alias="type"), start_date: date | None = None, end_date: date | None = None, tag_id: int | None = None, db: Session = Depends(get_db), context: TenantContext = Depends(get_tenant_context)) -> NotePage:
     query = db.query(Note).filter(Note.tenant_id == context.tenant_id, Note.deleted_at.is_(None))
     if note_type: query = query.filter(Note.type == note_type)
     if start_date: query = query.filter(Note.note_date >= start_date)
     if end_date: query = query.filter(Note.note_date <= end_date)
+    if tag_id: query = query.join(note_tags, note_tags.c.note_id == Note.id).filter(note_tags.c.tenant_id == context.tenant_id, note_tags.c.tag_id == tag_id)
     total = query.count()
     items = query.order_by(Note.note_date.desc().nullslast(), Note.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return NotePage(items=items, page=page, page_size=page_size, total=total)

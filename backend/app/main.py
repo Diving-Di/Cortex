@@ -6,6 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.system import router as system_router
 from .api.notes import router as notes_router
 from .api.tenant import router as tenant_router
+from .api.tags import router as tags_router
+from .api.attachments import router as attachments_router
+from .api.search import router as search_router
+from .api.data import router as data_router
+from .api.ai import router as ai_router
 from .core.config import get_settings
 from .core.exceptions import install_exception_handlers
 from .core.logging import configure_logging
@@ -34,4 +39,9 @@ app.include_router(diary.router)
 app.include_router(system_router)
 app.include_router(tenant_router)
 app.include_router(notes_router)
+app.include_router(tags_router)
+app.include_router(attachments_router)
+app.include_router(search_router)
+app.include_router(data_router)
+app.include_router(ai_router)
 install_exception_handlers(app)
