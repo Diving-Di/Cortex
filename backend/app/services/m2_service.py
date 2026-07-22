@@ -66,6 +66,8 @@ def parse_memory_query(
         "本周",
         "上周",
         "做了什么",
+        "发生了什么",
+        "什么",
         "有什么",
         "有哪些",
         "记录",
@@ -75,7 +77,13 @@ def parse_memory_query(
     ):
         searchable = searchable.replace(phrase, " ")
     searchable = re.sub(r"[我的了在是有和与吗呢？?，,。]", " ", searchable)
-    words = re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9_]{2,}", searchable)
+    raw_words = re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9_]{2,}", searchable)
+    words: list[str] = []
+    for word in raw_words:
+        words.append(word)
+        if re.fullmatch(r"[\u4e00-\u9fff]{3,}", word):
+            words.extend(word[index : index + 2] for index in range(len(word) - 1))
+    words = list(dict.fromkeys(words))
     return start, end, words[:8]
 
 

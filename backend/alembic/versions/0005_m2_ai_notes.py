@@ -19,6 +19,7 @@ def _rls(table: str) -> None:
 
 
 def upgrade() -> None:
+    op.create_unique_constraint("uq_messages_tenant_id_id", "messages", ["tenant_id", "id"])
     op.create_table(
         "report_sources",
         sa.Column("id", sa.Integer(), sa.Identity(), primary_key=True),
@@ -63,3 +64,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("message_sources")
     op.drop_table("report_sources")
+    op.drop_constraint("uq_messages_tenant_id_id", "messages", type_="unique")

@@ -149,6 +149,7 @@ class Conversation(Base):
 
 class Message(Base):
     __tablename__ = "messages"
+    __table_args__ = (Index("uq_messages_tenant_id_id", "tenant_id", "id", unique=True),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

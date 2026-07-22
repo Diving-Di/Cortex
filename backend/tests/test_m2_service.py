@@ -20,6 +20,7 @@ def test_memory_query_extracts_relative_and_explicit_dates():
     start, end, words = parse_memory_query("2026年7月20日去了杭州西湖", date(2026, 7, 23))
     assert start == end == date(2026, 7, 20)
     assert any("杭州西湖" in word for word in words)
+    assert "杭州" in parse_memory_query("杭州发生了什么", date(2026, 7, 23))[2]
 
 
 def test_snippet_enforces_context_limit():
