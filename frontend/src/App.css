@@ -79,4 +79,9 @@
   min-width: 0;
   padding: 20px;
   overflow: hidden;
+  background: var(--page-background);
+  color: var(--page-text);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }

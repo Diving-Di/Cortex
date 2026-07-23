@@ -1,10 +1,29 @@
+:root {
+  --page-background: #f5f7fa;
+  --page-text: #1f2329;
+}
+
+:root[data-theme='dark'] {
+  --page-background: #151925;
+  --page-text: #eef1f8;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
   font-family:
     'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑',
     Arial, sans-serif;
-  background-color: #f5f7fa;
-  color: #1f2329;
+  background-color: var(--page-background);
+  color: var(--page-text);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }
 
 * {
@@ -20,4 +39,8 @@ body {
 .feature-page pre {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+code {
+  font-family: Consolas, 'SFMono-Regular', monospace;
 }

@@ -1,0 +1,38 @@
+.settings-page {
+  width: min(920px, 100%);
+  margin: 0 auto;
+}
+
+.settings-heading {
+  margin-bottom: 24px;
+}
+
+.settings-heading .ant-typography {
+  margin-top: 0;
+}
+
+.settings-card {
+  margin-bottom: 20px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.settings-row .ant-typography {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .settings-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-row .ant-segmented {
+    width: 100%;
+  }
+}

@@ -8,9 +8,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { authHeaders, http } from '../../api/http';
 import { getNote, listTags, noteTags, saveNote, setNoteTags } from '../../api/notes';
+import { useTheme } from '../../app/theme';
 
 type State = 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict';
 export default function NoteEditor({ token }: { token: string }) {
+  const { resolved } = useTheme();
   const id = Number(useParams().id),
     navigate = useNavigate(),
     qc = useQueryClient();
@@ -191,6 +193,7 @@ export default function NoteEditor({ token }: { token: string }) {
               <CodeMirror
                 value={content}
                 height="60vh"
+                theme={resolved}
                 extensions={[markdown()]}
                 onChange={setContent}
               />

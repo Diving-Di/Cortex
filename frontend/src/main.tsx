@@ -5,15 +5,20 @@ import { BrowserRouter } from 'react-router-dom';
 import 'antd/dist/reset.css';
 import App from './App';
 import { queryClient } from './app/queryClient';
+import { initializeTheme, ThemeProvider } from './app/theme';
 import './styles.css';
+
+initializeTheme();
 
 createRoot(document.getElementById('app') as HTMLElement).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   </React.StrictMode>,
 );
 

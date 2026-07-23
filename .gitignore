@@ -1,6 +1,7 @@
 # Local secrets / runtime config
 backend/config.json
 backend/.env
+/.env
 frontend/.env.local
 
 # OS generated files
