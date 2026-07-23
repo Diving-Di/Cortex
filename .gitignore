@@ -45,3 +45,4 @@ release/
 .coverage
 htmlcov/
 .pytest_cache/
+soak-results/

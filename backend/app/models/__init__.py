@@ -354,3 +354,60 @@ class AiProvider(Base):
         String(255), server_default="chat,stream", nullable=False
     )
     enabled: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
+
+
+class ScheduledReportTask(Base):
+    __tablename__ = "scheduled_report_tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "report_type IN ('daily','weekly','monthly')", name="ck_scheduled_report_type"
+        ),
+        CheckConstraint("status IN ('enabled','disabled')", name="ck_scheduled_report_status"),
+        Index("ix_scheduled_report_due", "status", "next_run_at"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    report_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    hour: Mapped[int] = mapped_column(Integer, nullable=False, server_default="20")
+    minute: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default="Asia/Shanghai"
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="enabled")
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ScheduledReportRun(Base):
+    __tablename__ = "scheduled_report_runs"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("scheduled_report_tasks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)
+    report_note_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("notes.id", ondelete="SET NULL")
+    )
+    error_code: Mapped[Optional[str]] = mapped_column(String(80))
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
