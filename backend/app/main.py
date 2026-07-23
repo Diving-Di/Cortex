@@ -12,6 +12,7 @@ from .api.search import router as search_router
 from .api.data import router as data_router
 from .api.ai import router as ai_router
 from .api.m2 import router as m2_router
+from .api.dashboard import router as dashboard_router
 from .core.config import get_settings
 from .core.exceptions import install_exception_handlers
 from .core.logging import configure_logging
@@ -46,4 +47,5 @@ app.include_router(search_router)
 app.include_router(data_router)
 app.include_router(ai_router)
 app.include_router(m2_router)
+app.include_router(dashboard_router)
 install_exception_handlers(app)

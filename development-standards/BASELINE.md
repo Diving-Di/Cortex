@@ -8,7 +8,7 @@
 - 本地优先；AI 不可用时笔记能力完整可用。
 - AI 整理、周期报告和带来源引用的回忆问答。
 - 每个注册用户只有一个服务端解析的个人租户。
-- PostgreSQL 备份/恢复、Markdown 导出和 Windows 本地发布。
+- PostgreSQL 备份/恢复、Markdown 导出和 Web 应用发布。
 
 桌面悬浮组件、向量数据库、团队协作、计费、自动更新和数据库/文件双向同步不进入 MVP。
 
@@ -27,10 +27,10 @@
 - PostgreSQL 是正文唯一权威来源，Markdown 只用于导入导出。
 - PostgreSQL 16 是开发、测试和生产统一版本；结构只由 Alembic 修改。
 - `DATABASE_URL` 使用低权限 `diary_app`；`MIGRATION_DATABASE_URL` 使用 `diary_migrator`。
-- 本地数据根目录默认为 `%LOCALAPPDATA%/DiaryListener`，包含 `attachments/`、`exports/`、`backups/`、`logs/`。
+- 数据根目录由 `DIARY_DATA_DIR` 配置，包含附件、导出、备份和日志。
 - 附件数据库字段只保存数据根目录内相对路径。
 - 环境变量优先于被 Git 忽略的 `backend/config.json`；密钥不得进入仓库或日志。
-- 本地服务只监听 `127.0.0.1`，前端允许来源默认为 localhost/127.0.0.1:5173。
+- 本地开发服务只监听 `127.0.0.1`，前端允许来源默认为 localhost/127.0.0.1:5173。
 
 ## PostgreSQL 初始化
 

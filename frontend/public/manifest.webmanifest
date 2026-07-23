@@ -1,0 +1,18 @@
+{
+  "name": "Diary Listener",
+  "short_name": "Diary",
+  "description": "本地优先、带 AI 整理能力的个人笔记应用",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#1f2433",
+  "icons": [
+    {
+      "src": "/icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

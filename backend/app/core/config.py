@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -59,6 +60,11 @@ def get_settings() -> Settings:
     )
     if not origins or "*" in origins:
         raise RuntimeError("CORS_ORIGINS must contain explicit trusted origins")
+    data_dir = (
+        Path(os.getenv("DIARY_DATA_DIR") or raw.get("data_dir") or (BASE_DIR / "data"))
+        .expanduser()
+        .resolve()
+    )
     return Settings(
         database_url=database_url,
         migration_database_url=os.getenv("MIGRATION_DATABASE_URL", database_url),
@@ -68,15 +74,11 @@ def get_settings() -> Settings:
         max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
         pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "10")),
         statement_timeout_ms=int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000")),
-        media_dir=BASE_DIR / "media",
-        data_dir=Path(
-            os.getenv("DIARY_DATA_DIR")
-            or raw.get("data_dir")
-            or (Path(os.getenv("LOCALAPPDATA", BASE_DIR)) / "DiaryListener")
-        ),
+        media_dir=data_dir / "media",
+        data_dir=data_dir,
         max_attachment_bytes=int(os.getenv("MAX_ATTACHMENT_BYTES", str(20 * 1024 * 1024))),
         secret_key=os.getenv("SECRET_KEY")
-        or str(raw.get("secret_key") or "dev-insecure-change-me"),
+        or str(raw.get("secret_key") or secrets.token_urlsafe(32)),
         ai={
             "api_key": os.getenv("AI_API_KEY") or ai_raw.get("api_key", ""),
             "base_url": os.getenv("AI_BASE_URL")

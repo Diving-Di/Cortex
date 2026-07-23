@@ -1,109 +1,161 @@
 # Diary Listener
 
-一个 AI 聊天 + 轻日记的 Web 应用 demo。左侧功能栏提供「聊天」「日记」两个功能：聊天支持与 AI 多轮对话；日记可以上传一张图片并配上一段文字，作为分享的轻日记，数据存储在数据库中。
+Diary Listener 是一个本地优先、AI 辅助的个人笔记与回忆工作台。它将随手记录沉淀为可检索的 Markdown 笔记，并基于真实笔记生成日报、周报、月报和带来源引用的回忆回答。
+
+AI 是可选能力：未配置模型或网络不可用时，笔记、标签、附件、搜索、版本历史、导出和备份仍可正常使用。AI 生成的内容必须经过用户预览和确认后才会写入笔记。
+
+## 核心能力
+
+- **快速记录**：在工作台记录文字，直接保存或交给 AI 整理为结构化草稿。
+- **Markdown 笔记**：管理普通笔记、日报、周报和月报，支持编辑预览与历史版本恢复。
+- **内容组织**：使用标签、附件、日期和笔记类型组织内容，并进行中文关键词检索。
+- **周期报告**：从指定周期的笔记生成报告，保存报告与来源笔记之间的关系。
+- **回忆书**：用自然语言询问过往经历，回答仅基于当前用户的笔记并保留引用。
+- **数据自主**：支持 Markdown ZIP 导出、完整备份，以及向空个人空间受控恢复。
+- **个人空间隔离**：每个账号自动拥有唯一的个人空间；后端解析租户，不接受客户端传入 `tenant_id`。
+
+旧版 AI 聊天和图片轻日记接口暂时保留用于兼容，但不再是当前产品的核心入口。
 
 ## 技术栈
 
-- 后端：Python、FastAPI、SQLAlchemy 2.0
-- 数据库：本地默认 SQLite，Docker 环境使用 MySQL 8.0
-- AI：DeepSeek / OpenAI 兼容的 Chat Completions 接口
-- 前端：React、TypeScript、Webpack 5、Ant Design
-- 容器化：Docker、Docker Compose
-
-## 功能
-
-- 用户注册、登录、退出（Token 鉴权）
-- 聊天：多轮对话、历史会话列表、新建/删除会话
-- 日记：上传图片 + 文字，时间线浏览、删除
-- AI 接入 DeepSeek 兼容接口，密钥通过本地 `config.json` 配置且不入库
-
-## 数据库设计
-
-| 表 | 说明 |
+| 层级 | 技术 |
 | --- | --- |
-| `users` | 注册账号（用户名、邮箱、密码哈希） |
-| `auth_tokens` | 登录 Token，与用户一对多 |
-| `conversations` | 聊天会话，归属用户 |
-| `messages` | 会话内的每条消息（role = user / assistant） |
-| `diary_entries` | 轻日记（图片 + 文字），归属用户 |
+| 前端 | React 18、TypeScript、Webpack 5、Ant Design、TanStack Query、CodeMirror |
+| 后端 | Python 3.11、FastAPI、SQLAlchemy 2.0、Pydantic 2 |
+| 数据 | PostgreSQL 16、Alembic；附件存储在受控本地目录 |
+| AI | OpenAI 兼容接口、SSE 流式输出（默认配置示例为 DeepSeek） |
+| 测试与格式 | Pytest、Vitest、Black、Prettier |
+| 部署 | Docker、Docker Compose |
 
-数据库统一使用 PostgreSQL 16，数据库结构仅通过 Alembic 管理；应用启动不会隐式建表。
-
-## 目录结构
+## 项目结构
 
 ```text
 .
-├── backend/             # FastAPI + SQLAlchemy 后端
-│   └── app/
-│       ├── main.py      # FastAPI 入口
-│       ├── config.py    # 运行时配置（含 AI 密钥）
-│       ├── database.py  # SQLAlchemy 引擎/会话
-│       ├── models.py    # 数据库模型
-│       ├── security.py  # 密码哈希 / Token / 鉴权依赖
-│       ├── ai.py        # DeepSeek 兼容 AI 客户端
-│       └── routers/     # auth / chat / diary 路由
-├── frontend/            # React + TypeScript + Webpack 前端
-├── docs/api.md          # 接口明细
+├── backend/
+│   ├── alembic/             # 数据库迁移
+│   ├── app/
+│   │   ├── api/             # v1 笔记、AI、数据与系统接口
+│   │   ├── core/            # 配置、数据库、租户上下文、异常与日志
+│   │   ├── models/          # SQLAlchemy 数据模型
+│   │   ├── schemas/         # API 数据结构
+│   │   ├── services/        # 笔记、附件、备份及 AI 工作流
+│   │   └── routers/         # 认证及旧版兼容接口
+│   ├── tests/
+│   └── MIGRATIONS.md
+├── frontend/
+│   └── src/
+│       ├── api/             # 前端请求封装
+│       ├── features/        # 工作台、笔记、报告、回忆、搜索、设置
+│       └── routes/          # 路由与登录保护
+├── docs/api.md              # API 概览
+├── development-standards/   # 工程基线与设计说明
 ├── docker-compose.yml
 └── README.md
 ```
 
-## 配置 AI 密钥
-
-复制示例配置并填入 DeepSeek 的 API Key（该文件已被 `.gitignore` 忽略，不会提交）：
-
-```bash
-cd backend
-cp config.example.json config.json
-# 编辑 config.json，填入 ai.api_key
-```
-
-未配置密钥时后端会返回本地模拟回复，应用依然可运行。
-
 ## 快速启动
 
-### 使用 Docker Compose
+### Docker Compose（推荐）
 
-```bash
-cp .env.example .env
-# 为两个 PostgreSQL 角色填写不同的高强度密码
-docker-compose up --build
+需要 Docker 与 Docker Compose。首先创建环境文件，并为迁移角色和应用角色设置两个不同的强密码：
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
 ```
 
-启动后访问：
+首次启动会创建 PostgreSQL 角色并自动执行 `alembic upgrade head`。服务地址：
 
-- 前端：http://localhost:5173
-- 后端：http://localhost:8000
-- API 文档：http://localhost:8000/docs
+- Web 应用：<http://127.0.0.1:5173>
+- 后端 API：<http://127.0.0.1:8000>
+- Swagger UI：<http://127.0.0.1:8000/docs>
+- 健康检查：<http://127.0.0.1:8000/healthz>
+
+> 修改 `.env` 中的数据库密码后，如果复用了已有 `db_data` 卷，PostgreSQL 不会自动重建角色密码。请使用与该数据卷初始化时一致的密码，或在确认无需保留数据后重新初始化数据库卷。
 
 ### 本地开发
 
-先启动后端：
+本地开发同样要求 PostgreSQL 16。创建 `diary_listener` 数据库，以及权限分离的 `diary_migrator`、`diary_app` 角色；详细约定见 [backend/MIGRATIONS.md](backend/MIGRATIONS.md)。
 
-```bash
-cd backend
+后端（PowerShell）：
+
+```powershell
+Set-Location backend
 python -m venv .venv
-source .venv/bin/activate
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-set DATABASE_URL=postgresql+psycopg://diary_app:password@127.0.0.1:5432/diary_listener
-set MIGRATION_DATABASE_URL=postgresql+psycopg://diary_migrator:password@127.0.0.1:5432/diary_listener
+
+$env:DATABASE_URL = "postgresql+psycopg://diary_app:<app-password>@127.0.0.1:5432/diary_listener"
+$env:MIGRATION_DATABASE_URL = "postgresql+psycopg://diary_migrator:<migrator-password>@127.0.0.1:5432/diary_listener"
 alembic upgrade head
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-再启动前端（Webpack DevServer，默认代理 `/api` 与 `/media` 到后端）：
+前端（另开一个 PowerShell）：
 
-```bash
-cd frontend
+```powershell
+Set-Location frontend
 npm install
 npm run dev
 ```
 
-前端默认地址：http://localhost:5173
+Webpack DevServer 默认将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`。
 
-## 前端构建
+## 配置
 
-```bash
-cd frontend
-npm run build   # 先 tsc 类型检查，再 webpack 打包到 dist/
+运行配置优先读取环境变量；`backend/config.json` 作为本地配置文件且已被 Git 忽略。可从示例开始：
+
+```powershell
+Copy-Item backend\config.example.json backend\config.json
 ```
+
+常用环境变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `DATABASE_URL` | 应用运行时 PostgreSQL 连接，必须使用低权限角色 |
+| `MIGRATION_DATABASE_URL` | Alembic 迁移连接，使用迁移角色 |
+| `SECRET_KEY` | 应用密钥；非开发环境必须替换 |
+| `CORS_ORIGINS` | 逗号分隔的可信前端来源，不允许 `*` |
+| `DIARY_DATA_DIR` | 附件、导出、备份和日志的数据根目录 |
+| `MAX_ATTACHMENT_BYTES` | 单个附件大小上限，默认 20 MiB |
+| `AI_API_KEY` | OpenAI 兼容服务密钥 |
+| `AI_BASE_URL` | OpenAI 兼容 API 根地址 |
+| `AI_MODEL` | 默认模型名称 |
+
+AI 密钥只保存在服务端。未配置 `AI_API_KEY` 时，AI 接口返回 `AI_NOT_CONFIGURED`，其余本地笔记能力不受影响。
+
+## 数据与安全约定
+
+- PostgreSQL 是笔记正文的唯一权威来源，Markdown 用于交换和导出。
+- 数据库结构仅通过 Alembic 迁移，不在应用启动时隐式建表。
+- 登录 Token 仅以 SHA-256 摘要持久化，并具有有效期和撤销状态。
+- 笔记、消息、附件和 AI 用量均绑定个人空间；数据库使用行级安全策略强化隔离。
+- 附件通过鉴权接口访问，不作为公开静态目录暴露。
+- AI 整理和报告遵循“生成草稿 → 用户确认 → 写入”，回忆回答和报告均保留来源。
+
+## 开发与验证
+
+```powershell
+# 后端格式与测试
+Set-Location backend
+black --check app tests
+pytest
+
+# 前端格式、测试与生产构建
+Set-Location ..\frontend
+npm run format:check
+npm test
+npm run build
+```
+
+部分后端集成测试需要可用的 PostgreSQL 测试环境。生产构建输出到 `frontend/dist/`。
+
+## 文档
+
+- [API 概览](docs/api.md)
+- [数据库迁移](backend/MIGRATIONS.md)
+- [Web 发布验收](docs/web-release-acceptance.md)
+- [工程基线](development-standards/BASELINE.md)
+- [软件设计说明书](development-standards/SDD.md)
+- [更新日志](CHANGELOG.md)

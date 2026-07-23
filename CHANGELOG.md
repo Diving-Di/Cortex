@@ -1,5 +1,32 @@
 # 更新日志
 
+## 2026-07-23：完成 M3 工作台、PWA 与 Web 发布
+
+### 功能新增
+
+* 工作台新增今日摘要、最近笔记、连续记录天数、活跃热力图、笔记与 AI 用量统计，以及待生成报告提示。
+* 新增工作台统计 API，并按用户时区计算本地日期边界和连续记录天数。
+* 新增 PWA manifest、应用图标、Service Worker、离线页和离线状态提示。
+* 前端容器改用多阶段生产构建，由 Nginx 提供 SPA 静态资源并反向代理 API。
+
+### 架构调整
+
+* 项目发布范围调整为纯 Web/PWA，移除 Windows 启动器、Inno Setup 安装包、内置 Python/PostgreSQL 运行时和相关验收配置。
+* Docker Compose 增加前后端健康依赖和独立应用数据卷，FastAPI 启动前统一执行 Alembic 迁移。
+* 通用数据目录不再依赖 Windows `%LOCALAPPDATA%`，默认使用后端数据目录并支持 `DIARY_DATA_DIR` 覆盖。
+
+### 修复
+
+* 修复 AI 流式响应进入生成器后事务级 RLS 租户上下文失效，导致用量记录或回忆来源无法写入的问题。
+
+### 测试与文档
+
+* 工作台统计通过 PostgreSQL 集成测试；时区边界和连续天数具有自动化测试。
+* PostgreSQL 16 空库迁移后端 17 项测试全部通过；前端 Prettier、Vitest、TypeScript 和 Webpack production build 通过。
+* 通过生产 Nginx 入口验证四类笔记、默认个人租户、工作台、备份、PWA 深层路由、跨租户拒绝和 `tenant_id` 注入拒绝。
+* 完成服务重启持久性、备份恢复、RLS、安全扫描和日志验收；100 次工作台请求 p95 为 36.46 ms。
+* 更新 README、API 文档、工程基线和 SDD，将 M3 与全部 MVP 完成条件标记为已验收，并新增 Web 发布验收记录。
+
 ## 220b429 (2026-07-23)：完成 M2 AI 工作流集成验收
 
 ### 修复

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#1f2433" />
+    <title>Diary Listener · 离线</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, 'Microsoft YaHei', sans-serif;
+        background: #f5f7fa;
+        color: #1f2433;
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+      }
+      .card {
+        max-width: 440px;
+        margin: 24px;
+        padding: 36px;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 12px 35px #25305018;
+      }
+      h1 {
+        margin-top: 0;
+      }
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 16px;
+        background: #4b6ef5;
+        color: white;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>当前处于离线状态</h1>
+      <p>应用外壳仍可打开，但笔记数据需要本地服务。请确认 Diary Listener 已启动，然后重试连接。</p>
+      <button onclick="location.reload()">重新连接</button>
+    </main>
+  </body>
+</html>

@@ -18,8 +18,7 @@ services:
     build: ./backend
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     volumes:
-      - ./backend:/app
-      - ./backend/media:/app/media
+      - app_data:/app/data
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -27,21 +26,30 @@ services:
       - DATABASE_URL=postgresql+psycopg://diary_app:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}@db:5432/diary_listener
       - MIGRATION_DATABASE_URL=postgresql+psycopg://diary_migrator:${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}@db:5432/diary_listener
       - CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+      - DIARY_DATA_DIR=/app/data
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz')",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
   frontend:
     build: ./frontend
-    command: sh -c "npm install && npm run dev"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     ports:
-      - "127.0.0.1:5173:5173"
-    environment:
-      - BACKEND_URL=http://backend:8000
-      - DEV_SERVER_HOST=0.0.0.0
+      - "127.0.0.1:5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   db_data:
+  app_data:

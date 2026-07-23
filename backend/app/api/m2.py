@@ -10,7 +10,7 @@ from ..ai.client import OpenAICompatibleClient
 from ..core.config import get_settings
 from ..core.database import get_db
 from ..core.exceptions import AppError
-from ..core.tenant import TenantContext, get_tenant_context
+from ..core.tenant import TenantContext, apply_tenant_context, get_tenant_context
 from ..models import (
     AiUsageRecord,
     Conversation,
@@ -79,6 +79,9 @@ def _sse(
     started = time.perf_counter()
 
     async def events():
+        # Streaming starts after the request handler returns, so establish the
+        # transaction-local RLS context again inside the generator transaction.
+        apply_tenant_context(db, context)
         chunks: list[str] = []
         status = "success"
         error = None
