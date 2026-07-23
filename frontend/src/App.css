@@ -78,7 +78,8 @@
   flex: 1;
   min-width: 0;
   padding: 20px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--page-background);
   color: var(--page-text);
   transition:

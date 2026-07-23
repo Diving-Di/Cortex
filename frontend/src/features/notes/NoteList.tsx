@@ -32,6 +32,7 @@ export default function NoteList({ token }: { token: string }) {
         <Select
           allowClear
           placeholder="类型"
+          style={{ width: 140 }}
           value={type}
           onChange={setType}
           options={['normal', 'daily', 'weekly', 'monthly'].map((v) => ({
@@ -42,6 +43,7 @@ export default function NoteList({ token }: { token: string }) {
         <Select
           allowClear
           placeholder="标签"
+          style={{ width: 200 }}
           value={tagId}
           onChange={setTagId}
           options={tags.data?.map((t) => ({ value: t.id, label: t.name }))}
