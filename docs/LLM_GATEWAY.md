@@ -2,7 +2,7 @@
 
 > 文档状态：阶段一已实施并验收
 > 适用范围：Diary Listener 后端的通用 AI 生成、M2 AI 工作流和定时报告
-> 关联文档：`SDD.md`、`SETTINGS.md`
+> 关联文档：`SDD.md`
 > 参考资料：[有没有用过大模型的网关框架？网关层解决了什么问题？](https://xiaolinnote.com/ai/tools/16_llm_gateway.html)
 
 ## 1. 背景与目标
@@ -81,7 +81,7 @@ Diary Listener 后端
 - [x] 多架构 OCI digest 锁定为 `sha256:cc6255644a32511355bc53c5d4d0ca7b3c5df45ad881225ff57e8a88e083c563`。
 - [x] linux/amd64 manifest digest 已验证为 `sha256:2db5f02380bd676e8d9338d2294e9ebaddfe8a6d73468f074d04b51c97b276bc`。
 - [x] 配置文件固定为仓库根目录 `litellm-config.yaml`。
-- [x] 首期缓存关闭，并关闭 LiteLLM spend/error 请求明细日志。
+- [x] 缓存关闭；错误正文日志关闭，spend 记录写入独立管理数据库。
 
 选择 LiteLLM Proxy 的原因是当前 Go 客户端使用 OpenAI 兼容 Chat Completions/SSE，接入不需要修改业务协议；同时 LiteLLM 原生支持 Kimi/OpenAI 兼容上游、逻辑模型、fallback、重试和后续预算治理。当前不同时引入 New API、One API 或 Bifrost，避免维护两套网关语义和验收矩阵。
 
@@ -254,20 +254,22 @@ normalized_request_hash
 | 缓存 | 关闭 |
 | 网关公开端口 | 无，仅 Compose 内部网络 |
 
-当前透明代理阶段使用 `LITELLM_MASTER_KEY` 作为本地应用访问网关的密钥。生产部署前仍应为 LiteLLM 配置独立管理数据库并签发受预算、模型和环境约束的虚拟密钥，业务后端不得长期使用管理级 master key。
+LiteLLM 已使用独立管理数据库。业务后端通过 `LITELLM_VIRTUAL_KEY` 访问网关；
+`LITELLM_MASTER_KEY` 仅用于管理。`backend/scripts/provision-litellm-key.ps1`
+负责签发只允许 `diary-default` 且具有预算周期的虚拟密钥。
 
 ### 阶段二：可靠性与治理
 
-- [ ] 配置主备路由、超时、有限重试和熔断。
-- [ ] 按环境设置速率限制和预算。
-- [ ] 接入 token、成本、延迟和错误指标。
-- [ ] 统一应用与网关的请求追踪 ID。
-- [ ] 明确并实现 Prompt/响应日志脱敏策略。
+- [x] 配置主备路由、超时、有限重试和熔断。
+- [x] 按应用虚拟密钥设置模型范围、预算和预算周期。
+- [x] 接入 LiteLLM spend 数据库和 Prometheus 指标。
+- [x] 统一应用与网关的 `X-Request-ID`。
+- [x] 关闭错误正文日志，不把 Prompt/响应放入指标标签。
 - [ ] 处理现有数据库 Provider 配置与网关配置的职责冲突。
 
 ### 阶段三：租户统计与可选缓存
 
-- [ ] 传递不可伪造的租户与请求类型元数据。
+- [x] 传递由后端生成的租户、请求类型、环境和请求 ID 元数据。
 - [ ] 验证租户统计和访问权限。
 - [ ] 评估准确 usage 回填应用记录。
 - [ ] 仅在满足本规范的情况下试验租户隔离的精确缓存。

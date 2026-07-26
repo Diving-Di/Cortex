@@ -42,8 +42,7 @@ AI 是可选能力：未配置模型或网络不可用时，笔记、标签、�
 │       ├── api/             # 前端请求封装
 │       ├── features/        # 工作台、笔记、报告、回忆、搜索、设置
 │       └── routes/          # 路由与登录保护
-├── docs/api.md              # API 概览
-├── development-standards/   # 工程基线与设计说明
+├── docs/                    # API、工程基线与设计说明
 ├── docker-compose.yml
 └── README.md
 ```
@@ -103,11 +102,15 @@ Webpack DevServer 默认将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000
 | `CORS_ORIGINS` | 逗号分隔的可信前端来源，不允许 `*` |
 | `DIARY_DATA_DIR` | 附件、导出、备份和日志的数据根目录 |
 | `MAX_ATTACHMENT_BYTES` | 单个附件大小上限，默认 20 MiB |
-| `LITELLM_MASTER_KEY` | 本地应用访问 LiteLLM 的网关密钥 |
+| `LITELLM_MASTER_KEY` | LiteLLM 管理密钥，仅供网关管理操作 |
+| `LITELLM_VIRTUAL_KEY` | LiteLLM 签发给业务后端的限模型、限预算虚拟密钥 |
+| `LITELLM_DB_PASSWORD` | LiteLLM 独立管理数据库角色密码 |
 | `OPENAI_API_KEY` | LiteLLM 使用的 OpenAI 上游密钥 |
 | `KIMI_API_KEY` | LiteLLM 使用的 Kimi 上游密钥 |
 
-AI 密钥只保存在服务端。未配置 `AI_API_KEY` 时，AI 接口返回 `AI_NOT_CONFIGURED`，其余本地笔记能力不受影响。
+AI 密钥只保存在服务端。Compose 将 `LITELLM_VIRTUAL_KEY` 作为后端的
+`AI_API_KEY`，master key 仅由网关持有。未配置时 AI 接口返回
+`AI_NOT_CONFIGURED`，其余本地笔记能力不受影响。
 
 ## 数据与安全约定
 
@@ -138,6 +141,13 @@ npm run build
 ## 文档
 
 - [API 概览](docs/api.md)
-- [Web 发布验收](docs/web-release-acceptance.md)
-- [工程基线](development-standards/BASELINE.md)
-- [软件设计说明书](development-standards/SDD.md)
+- [工程基线](docs/BASELINE.md)
+- [软件设计说明书](docs/SDD.md)
+- [大模型网关规范](docs/LLM_GATEWAY.md)
+
+## 数据库升级与 Kubernetes
+
+已部署数据库通过 `backend/cmd/migrate` 显式升级，迁移持有 PostgreSQL
+advisory lock，并支持事务化 `up/down/status`。可选 Helm Chart 位于
+`packaging/helm/diary-listener`，升级前会以 Hook Job 运行迁移；PostgreSQL
+与 LiteLLM 作为生产托管依赖由部署环境提供。

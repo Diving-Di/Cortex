@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ include "diary-listener.name" . }}-migrate-{{ .Release.Revision }}"
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          command: ["/app/migrate", "-steps=0", "up"]
+          env:
+            - name: MIGRATION_DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ .Values.backend.secretName }}, key: migration-database-url}}

@@ -23,8 +23,10 @@ litellm_settings:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  disable_spend_logs: true
+  database_url: os.environ/DATABASE_URL
+  disable_spend_logs: false
   disable_error_logs: true
+  enable_prometheus_metrics: true
 
 router_settings:
   allowed_fails: 2

@@ -1,0 +1,30 @@
+replicaCount: 2
+
+backend:
+  image:
+    repository: ghcr.io/example/diary-listener-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 8000
+  dataSize: 10Gi
+  env:
+    appEnv: production
+    corsOrigins: https://diary.example.com
+    aiBaseUrl: http://litellm:4000/v1
+    aiModel: diary-default
+  secretName: diary-listener-secrets
+
+frontend:
+  image:
+    repository: ghcr.io/example/diary-listener-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  host: diary.example.com
+  tlsSecretName: diary-listener-tls
+
+resources: {}

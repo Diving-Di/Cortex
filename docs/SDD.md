@@ -49,7 +49,8 @@ Go HTTP Server (Gin)
 - Gin 是唯一 Web 框架。
 - `/api/v1` 承载当前产品接口。
 - 旧认证、聊天和轻日记路径保持兼容。
-- 中间件负责 CORS、panic recovery、Token 认证和 Principal 注入。
+- 中间件负责 CORS、panic recovery、请求追踪、Token 认证和 Principal 注入。
+- 合法的客户端 `X-Request-ID` 可继续使用，否则服务端生成 UUID；响应始终回传该标识。
 - handler 只处理 HTTP 契约，SQL 位于 `internal/store`。
 
 ### 3.2 错误
@@ -140,6 +141,11 @@ Go HTTP Server (Gin)
 
 LiteLLM 提供 `diary-default` 逻辑模型。Kimi `kimi-k2.5` 是主路由，OpenAI `gpt-5.6` 是备用。业务后端不持有供应商 Key。
 
+- LiteLLM 使用独立的 `diary_litellm` 管理数据库记录准确 token、成本和路由指标。
+- 业务后端只使用限制模型和预算的虚拟密钥，master key 仅用于网关管理。
+- 应用向网关传递请求 ID、请求类型、环境和内部租户标识，不传递邮箱、姓名或其他直接身份信息。
+- 缓存默认关闭，不允许跨租户共享 Prompt 或响应缓存。
+
 ## 6. Scheduler
 
 - 支持 daily、weekly、monthly。
@@ -160,13 +166,15 @@ LiteLLM 提供 `diary-default` 逻辑模型。Kimi `kimi-k2.5` 是主路由，Op
 
 ## 8. 配置
 
-必需：
+Compose 部署必需：
 
 - `DATABASE_URL`
 - `MIGRATION_DATABASE_URL`
 - `POSTGRES_APP_PASSWORD`
 - `POSTGRES_MIGRATOR_PASSWORD`
+- `LITELLM_DB_PASSWORD`
 - `LITELLM_MASTER_KEY`
+- `LITELLM_VIRTUAL_KEY`
 - `KIMI_API_KEY`
 - `OPENAI_API_KEY`
 
@@ -181,30 +189,52 @@ LiteLLM 提供 `diary-default` 逻辑模型。Kimi `kimi-k2.5` 是主路由，Op
 - `DB_STATEMENT_TIMEOUT_MS`
 - `SCHEDULED_REPORTS_ENABLED`
 - `SCHEDULED_REPORT_POLL_SECONDS`
+- `APP_ENV`
 
 ## 9. 部署与健康
 
 - Compose 编排 PostgreSQL、LiteLLM、Go 后端和前端。
+- PostgreSQL 初始化 `diary_migrator`、`diary_app` 和独立的 `diary_litellm` 角色/数据库。
 - 后端镜像使用 Go builder 和 Alpine runtime。
 - runtime 安装 CA 与时区数据。
 - 数据目录初始化后降权为 `diary` 用户。
 - `/healthz` 不依赖外部 AI。
 - `/readyz` 验证数据库。
 - LiteLLM 只在 Compose 网络暴露 4000。
+- 可选 Helm Chart 位于 `packaging/helm/diary-listener`，要求外部 PostgreSQL、LiteLLM、Secret 和支持 `ReadWriteMany` 的附件存储。
 
-## 10. 测试策略
+### 9.1 数据库升级
+
+- `backend/db/schema.sql` 仅用于新数据库初始化。
+- 已部署数据库使用 `backend/cmd/migrate` 执行 `up`、`down` 和 `status`。
+- 每个版本必须同时提供 `.up.sql` 与 `.down.sql`，并记录 SHA-256。
+- 迁移进程在单一数据库会话持有 PostgreSQL advisory lock，每个版本在独立事务内执行。
+- 服务进程不得在启动时执行临时 DDL；Helm 在安装和升级前通过 Hook Job 运行迁移。
+
+## 10. 前端设置
+
+- `/settings` 只管理当前浏览器的主题，不展示 AI 地址、模型、Key 或连接测试。
+- 主题值为 `system`、`light` 或 `dark`，保存于 `localStorage` 的 `diary-listener.theme`。
+- 默认跟随 `prefers-color-scheme` 并监听系统变化；非法值回退到 `system`。
+- 主题覆盖页面、Ant Design、Markdown 编辑器、弹窗及浏览器 `theme-color`，切换不刷新页面。
+- 主题偏好不上传服务端、不进入备份，退出登录后继续保留。
+- 控件须支持键盘、可见焦点和屏幕阅读器标签，正文颜色至少满足 WCAG AA。
+
+## 11. 测试与发布策略
 
 - 单元测试：密码、SSE、日期、关键词、路径和归档校验。
 - 数据库冒烟：双租户隔离、附件、导出、备份恢复。
 - AI 验收：通用 SSE、整理确认、报告引用、回忆引用。
 - scheduler：无来源失败、成功生成和双 worker claim。
 - 空库：18 张表、15 条 RLS Policy、ready、注册和登录。
-- 每次发布运行 `go vet`、`go test`、Go build、Compose config 和源码 Tab 检查。
+- 每次发布运行 `gofmt` 检查、`go vet`、`go test`、Go build 和 Compose config。
+- Helm 变更运行 `helm lint` 和 `helm template`。
+- 生产发布前执行数据库备份、迁移演练、镜像安全扫描和至少 24 小时稳定性观察。
 
-## 11. 未完成工程项
+## 12. 待决事项
 
-- [ ] 版本化增量数据库迁移命令。
-- [ ] PostgreSQL advisory lock 和迁移回滚演练。
-- [ ] LiteLLM 正式虚拟密钥、预算、准确 token/成本指标。
-- [ ] 请求追踪 ID 从应用贯穿网关。
-- [ ] 可选 Helm 和生产发布自动化。
+- OpenAI 备用路由需在账户额度恢复后重新验证。
+- 应用内 `ai_usage_records` 仍使用字符估算 token，准确计费数据以 LiteLLM 为准。
+- 数据库中的租户 AI Provider 元数据当前不控制实际路由；后续应决定删除该配置面或明确其产品用途。
+- 语义检索仅在真实回忆问答 Top-8 召回率低于 85%、且同义表达是主要失败原因时重新评估，优先考虑 PostgreSQL `pgvector`。
+- 自动生产发布待托管平台、Secret 管理和回滚策略确定后实施。

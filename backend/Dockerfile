@@ -14,6 +14,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o /out/server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath \
+    -ldflags="-s -w" \
+    -o /out/migrate ./cmd/migrate
 
 FROM alpine:3.23
 
@@ -23,6 +27,7 @@ RUN apk add --no-cache ca-certificates tzdata su-exec \
 
 WORKDIR /app
 COPY --from=builder /out/server /app/server
+COPY --from=builder /out/migrate /app/migrate
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
 

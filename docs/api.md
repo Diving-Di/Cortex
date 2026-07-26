@@ -12,6 +12,10 @@ Authorization: Token <token>
 
 每个账号自动关联唯一个人空间。租户由服务端根据 Token 解析，业务接口不接受 `tenant_id`。错误响应使用稳定错误码；跨租户资源不会被返回。
 
+客户端可以发送由字母、数字及 `._:-` 组成且不超过 128 字符的
+`X-Request-ID`。非法或缺失时服务端生成 UUID，所有响应都通过
+`X-Request-ID` 返回最终追踪标识。
+
 AI 流式接口返回 `text/event-stream`：
 
 ```text
@@ -95,7 +99,22 @@ data: [DONE]
 | `POST` | `/api/v1/ai/providers` | 保存当前空间的 Provider 非敏感元数据 |
 | `POST` | `/api/v1/ai/stream` | OpenAI 兼容通用 SSE 生成 |
 
-服务端通过 `AI_API_KEY`、`AI_BASE_URL` 和 `AI_MODEL`（或被忽略的 `backend/config.json`）读取实际调用凭据。API Key 不会返回前端；未配置时返回 `AI_NOT_CONFIGURED`。
+服务端只通过 `AI_API_KEY`、`AI_BASE_URL` 和 `AI_MODEL` 环境变量读取实际调用配置。
+Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 master key
+不会进入业务后端或前端。未配置虚拟密钥时返回 `AI_NOT_CONFIGURED`。
+
+## 定时报告
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/scheduled-reports` | 查询定时报告任务 |
+| `POST` | `/api/v1/scheduled-reports` | 创建 daily、weekly 或 monthly 任务 |
+| `PATCH` | `/api/v1/scheduled-reports/{task_id}?enabled={bool}` | 启用或停用任务 |
+| `POST` | `/api/v1/scheduled-reports/{task_id}/retry` | 异步立即重试，返回 `queued` |
+| `GET` | `/api/v1/scheduled-reports/{task_id}/runs` | 查询最近运行记录 |
+
+任务使用 IANA 时区，调度时间在数据库中保存为 UTC。多个 worker 通过数据库
+claim 保证同一到期任务只生成一条运行记录。
 
 ## 导出、备份与恢复
 

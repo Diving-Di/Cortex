@@ -21,6 +21,7 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 *.so
+backend/*.exe
 build/
 dist/
 *.egg-info/
