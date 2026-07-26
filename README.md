@@ -21,10 +21,10 @@ AI 是可选能力：未配置模型或网络不可用时，笔记、标签、�
 | 层级 | 技术 |
 | --- | --- |
 | 前端 | React 18、TypeScript、Webpack 5、Ant Design、TanStack Query、CodeMirror |
-| 后端 | Python 3.11、FastAPI、SQLAlchemy 2.0、Pydantic 2 |
-| 数据 | PostgreSQL 16、Alembic；附件存储在受控本地目录 |
-| AI | OpenAI 兼容接口、SSE 流式输出（默认配置示例为 DeepSeek） |
-| 测试与格式 | Pytest、Vitest、Black、Prettier |
+| 后端 | Go、Gin、pgx/v5 |
+| 数据 | PostgreSQL 16、RLS；附件存储在受控本地目录 |
+| AI | LiteLLM Proxy、OpenAI 兼容接口、SSE 流式输出 |
+| 测试与格式 | Go test、Vitest、Prettier |
 | 部署 | Docker、Docker Compose |
 
 ## 项目结构
@@ -32,16 +32,11 @@ AI 是可选能力：未配置模型或网络不可用时，笔记、标签、�
 ```text
 .
 ├── backend/
-│   ├── alembic/             # 数据库迁移
-│   ├── app/
-│   │   ├── api/             # v1 笔记、AI、数据与系统接口
-│   │   ├── core/            # 配置、数据库、租户上下文、异常与日志
-│   │   ├── models/          # SQLAlchemy 数据模型
-│   │   ├── schemas/         # API 数据结构
-│   │   ├── services/        # 笔记、附件、备份及 AI 工作流
-│   │   └── routers/         # 认证及旧版兼容接口
-│   ├── tests/
-│   └── MIGRATIONS.md
+│   ├── cmd/server/          # 服务入口
+│   ├── internal/            # Gin API、业务、AI、配置和 pgx 数据层
+│   ├── db/                  # Schema 快照与 sqlc 查询
+│   ├── scripts/             # 冒烟与真实 AI 验收脚本
+│   └── Dockerfile
 ├── frontend/
 │   └── src/
 │       ├── api/             # 前端请求封装
@@ -64,31 +59,25 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-首次启动会创建 PostgreSQL 角色并自动执行 `alembic upgrade head`。服务地址：
+首次创建 `db_data` 卷时会依次创建低权限应用角色并应用 `backend/db/schema.sql` 基线。服务地址：
 
 - Web 应用：<http://127.0.0.1:5173>
 - 后端 API：<http://127.0.0.1:8000>
-- Swagger UI：<http://127.0.0.1:8000/docs>
 - 健康检查：<http://127.0.0.1:8000/healthz>
 
 > 修改 `.env` 中的数据库密码后，如果复用了已有 `db_data` 卷，PostgreSQL 不会自动重建角色密码。请使用与该数据卷初始化时一致的密码，或在确认无需保留数据后重新初始化数据库卷。
 
 ### 本地开发
 
-本地开发同样要求 PostgreSQL 16。创建 `diary_listener` 数据库，以及权限分离的 `diary_migrator`、`diary_app` 角色；详细约定见 [backend/MIGRATIONS.md](backend/MIGRATIONS.md)。
+本地开发同样要求 PostgreSQL 16，以及权限分离的 `diary_migrator`、`diary_app` 角色。
 
 后端（PowerShell）：
 
 ```powershell
 Set-Location backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-$env:DATABASE_URL = "postgresql+psycopg://diary_app:<app-password>@127.0.0.1:5432/diary_listener"
-$env:MIGRATION_DATABASE_URL = "postgresql+psycopg://diary_migrator:<migrator-password>@127.0.0.1:5432/diary_listener"
-alembic upgrade head
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+$env:DATABASE_URL = "postgresql://diary_app:<app-password>@127.0.0.1:5432/diary_listener"
+$env:MIGRATION_DATABASE_URL = "postgresql://diary_migrator:<migrator-password>@127.0.0.1:5432/diary_listener"
+go run ./cmd/server
 ```
 
 前端（另开一个 PowerShell）：
@@ -103,32 +92,27 @@ Webpack DevServer 默认将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000
 
 ## 配置
 
-运行配置优先读取环境变量；`backend/config.json` 作为本地配置文件且已被 Git 忽略。可从示例开始：
-
-```powershell
-Copy-Item backend\config.example.json backend\config.json
-```
+运行配置只读取服务端环境变量。
 
 常用环境变量：
 
 | 变量 | 说明 |
 | --- | --- |
 | `DATABASE_URL` | 应用运行时 PostgreSQL 连接，必须使用低权限角色 |
-| `MIGRATION_DATABASE_URL` | Alembic 迁移连接，使用迁移角色 |
-| `SECRET_KEY` | 应用密钥；非开发环境必须替换 |
+| `MIGRATION_DATABASE_URL` | 管理与调度连接，使用迁移角色 |
 | `CORS_ORIGINS` | 逗号分隔的可信前端来源，不允许 `*` |
 | `DIARY_DATA_DIR` | 附件、导出、备份和日志的数据根目录 |
 | `MAX_ATTACHMENT_BYTES` | 单个附件大小上限，默认 20 MiB |
-| `AI_API_KEY` | OpenAI 兼容服务密钥 |
-| `AI_BASE_URL` | OpenAI 兼容 API 根地址 |
-| `AI_MODEL` | 默认模型名称 |
+| `LITELLM_MASTER_KEY` | 本地应用访问 LiteLLM 的网关密钥 |
+| `OPENAI_API_KEY` | LiteLLM 使用的 OpenAI 上游密钥 |
+| `KIMI_API_KEY` | LiteLLM 使用的 Kimi 上游密钥 |
 
 AI 密钥只保存在服务端。未配置 `AI_API_KEY` 时，AI 接口返回 `AI_NOT_CONFIGURED`，其余本地笔记能力不受影响。
 
 ## 数据与安全约定
 
 - PostgreSQL 是笔记正文的唯一权威来源，Markdown 用于交换和导出。
-- 数据库结构仅通过 Alembic 迁移，不在应用启动时隐式建表。
+- 全新数据库由 `backend/db/schema.sql` 初始化；后续结构升级必须增加版本化 Go/SQL 迁移。
 - 登录 Token 仅以 SHA-256 摘要持久化，并具有有效期和撤销状态。
 - 笔记、消息、附件和 AI 用量均绑定个人空间；数据库使用行级安全策略强化隔离。
 - 附件通过鉴权接口访问，不作为公开静态目录暴露。
@@ -139,8 +123,8 @@ AI 密钥只保存在服务端。未配置 `AI_API_KEY` 时，AI 接口返回 `A
 ```powershell
 # 后端格式与测试
 Set-Location backend
-black --check app tests
-pytest
+go vet ./...
+go test ./...
 
 # 前端格式、测试与生产构建
 Set-Location ..\frontend
@@ -149,13 +133,11 @@ npm test
 npm run build
 ```
 
-部分后端集成测试需要可用的 PostgreSQL 测试环境。生产构建输出到 `frontend/dist/`。
+真实数据库冒烟可执行 `backend/scripts/non_ai_smoke.ps1` 和 `backend/scripts/ai_acceptance.ps1`。生产前端构建输出到 `frontend/dist/`。
 
 ## 文档
 
 - [API 概览](docs/api.md)
-- [数据库迁移](backend/MIGRATIONS.md)
 - [Web 发布验收](docs/web-release-acceptance.md)
 - [工程基线](development-standards/BASELINE.md)
 - [软件设计说明书](development-standards/SDD.md)
-- [更新日志](CHANGELOG.md)

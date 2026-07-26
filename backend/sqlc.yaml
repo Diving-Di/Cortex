@@ -1,0 +1,15 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "db/queries"
+    schema: "db/schema.sql"
+    gen:
+      go:
+        package: "db"
+        out: "internal/db"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_empty_slices: true
+
+# db/schema.sql 仅为 sqlc 的当前 Schema 快照，不是迁移入口。PoC 阶段
+# Alembic 仍是唯一 Schema owner；每次 Alembic 变更都必须同步刷新该快照。

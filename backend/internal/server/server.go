@@ -1,0 +1,208 @@
+package server
+
+import (
+    "context"
+    "errors"
+    "log/slog"
+    "net/http"
+    "strings"
+    "time"
+
+    "diary-listener/backend/internal/apierror"
+    "diary-listener/backend/internal/config"
+    "diary-listener/backend/internal/domain"
+    "diary-listener/backend/internal/httpx"
+    "diary-listener/backend/internal/store"
+    "github.com/gin-gonic/gin"
+)
+
+type Server struct {
+    cfg     config.Config
+    store   *store.Store
+    logger  *slog.Logger
+    version string
+}
+
+type contextKey int
+
+const principalKey contextKey = 1
+
+func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string) http.Handler {
+    gin.SetMode(gin.ReleaseMode)
+    s := &Server{cfg: cfg, store: db, logger: logger, version: version}
+    router := gin.New()
+    router.Use(gin.Recovery())
+    router.Use(s.cors())
+    router.Use(copyGinParamsToRequest())
+
+    router.GET("/healthz", gin.WrapF(s.health))
+    router.GET("/readyz", gin.WrapF(s.ready))
+    router.POST("/api/v1/auth/register", gin.WrapF(s.register))
+    router.POST("/api/register/", gin.WrapF(s.register))
+    router.POST("/api/v1/auth/login", gin.WrapF(s.login))
+    router.POST("/api/login/", gin.WrapF(s.login))
+
+    authenticated := router.Group("/")
+    authenticated.Use(s.authenticate())
+    {
+        authenticated.POST("/api/v1/auth/logout", gin.WrapF(s.logout))
+        authenticated.POST("/api/logout/", gin.WrapF(s.logout))
+        authenticated.POST("/api/v1/tenant/restore", gin.WrapF(s.restoreTenant))
+
+        active := authenticated.Group("/")
+        active.Use(s.requireActiveTenant())
+        {
+            active.GET("/api/v1/tenant", gin.WrapF(s.getTenant))
+            active.PATCH("/api/v1/tenant", gin.WrapF(s.updateTenant))
+            active.DELETE("/api/v1/tenant", gin.WrapF(s.deleteTenant))
+            active.GET("/api/v1/tags", gin.WrapF(s.listTags))
+            active.POST("/api/v1/tags", gin.WrapF(s.createTag))
+            active.GET("/api/v1/search", gin.WrapF(s.searchNotes))
+            active.GET("/api/dashboard", gin.WrapF(s.dashboard))
+            active.GET("/api/v1/settings/ai", gin.WrapF(s.aiSettings))
+            active.POST("/api/v1/ai/providers", gin.WrapF(s.configureAIProvider))
+            active.POST("/api/v1/ai/stream", gin.WrapF(s.streamAI))
+            active.POST("/api/v1/ai/organize", gin.WrapF(s.organizeAI))
+            active.POST("/api/v1/ai/organize/confirm", gin.WrapF(s.confirmOrganize))
+            active.POST("/api/v1/reports/preview", gin.WrapF(s.previewReport))
+            active.POST("/api/v1/reports/generate", gin.WrapF(s.generateReport))
+            active.POST("/api/v1/reports/confirm", gin.WrapF(s.confirmReport))
+            active.GET("/api/v1/reports/:noteID/sources", gin.WrapF(s.reportSourceList))
+            active.POST("/api/v1/memory/chat", gin.WrapF(s.memoryChat))
+            active.GET("/api/v1/memory/messages/:messageID/sources", gin.WrapF(s.memorySourceList))
+            active.GET("/api/chat/conversations/", gin.WrapF(s.listConversations))
+            active.GET("/api/chat/conversations/:conversationID/", gin.WrapF(s.getConversation))
+            active.DELETE("/api/chat/conversations/:conversationID/", gin.WrapF(s.deleteConversation))
+            active.POST("/api/chat/", gin.WrapF(s.sendLegacyChat))
+            active.GET("/api/diary/", gin.WrapF(s.listDiary))
+            active.POST("/api/diary/", gin.WrapF(s.createDiary))
+            active.DELETE("/api/diary/:entryID/", gin.WrapF(s.deleteDiary))
+            active.GET("/api/v1/scheduled-reports", gin.WrapF(s.listScheduledReports))
+            active.POST("/api/v1/scheduled-reports", gin.WrapF(s.createScheduledReport))
+            active.PATCH("/api/v1/scheduled-reports/:taskID", gin.WrapF(s.setScheduledReportStatus))
+            active.POST("/api/v1/scheduled-reports/:taskID/retry", gin.WrapF(s.retryScheduledReport))
+            active.GET("/api/v1/scheduled-reports/:taskID/runs", gin.WrapF(s.listScheduledReportRuns))
+            active.POST("/api/v1/attachments", gin.WrapF(s.uploadAttachment))
+            active.GET("/api/v1/attachments/note/:noteID", gin.WrapF(s.listAttachments))
+            active.GET("/api/v1/attachments/:attachmentID", gin.WrapF(s.downloadAttachment))
+            active.DELETE("/api/v1/attachments/:attachmentID", gin.WrapF(s.deleteAttachment))
+            active.POST("/api/v1/exports/markdown", gin.WrapF(s.exportMarkdown))
+            active.POST("/api/v1/backups", gin.WrapF(s.createBackup))
+            active.POST("/api/v1/backups/restore", gin.WrapF(s.restoreBackup))
+
+            notes := active.Group("/api/v1/notes")
+            notes.GET("", gin.WrapF(s.listNotes))
+            notes.GET("/", gin.WrapF(s.listNotes))
+            notes.POST("", gin.WrapF(s.createNote))
+            notes.POST("/", gin.WrapF(s.createNote))
+            notes.GET("/:noteID", gin.WrapF(s.getNote))
+            notes.PATCH("/:noteID", gin.WrapF(s.updateNote))
+            notes.DELETE("/:noteID", gin.WrapF(s.deleteNote))
+            notes.GET("/:noteID/revisions", gin.WrapF(s.listRevisions))
+            notes.POST("/:noteID/revisions/:revisionID/restore", gin.WrapF(s.restoreRevision))
+            notes.GET("/:noteID/tags", gin.WrapF(s.listNoteTags))
+            notes.PUT("/:noteID/tags", gin.WrapF(s.assignNoteTags))
+        }
+    }
+    return router
+}
+
+func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
+    httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
+    ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+    defer cancel()
+    if err := s.store.Ping(ctx); err != nil {
+        httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+        return
+    }
+    httpx.JSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+
+func (s *Server) authenticate() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        scheme, token, ok := strings.Cut(
+            strings.TrimSpace(c.Request.Header.Get("Authorization")), " ",
+        )
+        if !ok ||
+            (strings.ToLower(scheme) != "token" && strings.ToLower(scheme) != "bearer") ||
+            strings.TrimSpace(token) == "" {
+            c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+                "detail": "Authentication credentials were not provided.",
+            })
+            return
+        }
+        principal, err := s.store.ResolvePrincipal(c.Request.Context(), strings.TrimSpace(token))
+        if err != nil {
+            var appErr *apierror.Error
+            if errors.As(err, &appErr) && appErr.StatusCode == http.StatusUnauthorized {
+                c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+                    "detail": "Invalid or expired token.",
+                })
+                return
+            }
+            httpx.WriteError(c.Writer, s.logger, err)
+            c.Abort()
+            return
+        }
+        requestContext := context.WithValue(c.Request.Context(), principalKey, principal)
+        c.Request = c.Request.WithContext(requestContext)
+        c.Next()
+    }
+}
+
+func (s *Server) requireActiveTenant() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        if !principalFrom(c.Request.Context()).TenantActive {
+            c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+                "detail": "Personal tenant is unavailable.",
+            })
+            return
+        }
+        c.Next()
+    }
+}
+
+func (s *Server) cors() gin.HandlerFunc {
+    allowed := make(map[string]struct{}, len(s.cfg.CORSOrigins))
+    for _, origin := range s.cfg.CORSOrigins {
+        allowed[origin] = struct{}{}
+    }
+    return func(c *gin.Context) {
+        origin := c.Request.Header.Get("Origin")
+        if _, ok := allowed[origin]; ok {
+            c.Header("Access-Control-Allow-Origin", origin)
+            c.Header("Vary", "Origin")
+            c.Header("Access-Control-Allow-Credentials", "true")
+            c.Header("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Request-ID")
+            c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+        }
+        if c.Request.Method == http.MethodOptions {
+            if origin != "" {
+                if _, ok := allowed[origin]; !ok {
+                    c.AbortWithStatus(http.StatusForbidden)
+                    return
+                }
+            }
+            c.AbortWithStatus(http.StatusNoContent)
+            return
+        }
+        c.Next()
+    }
+}
+
+func copyGinParamsToRequest() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        for _, param := range c.Params {
+            c.Request.SetPathValue(param.Key, param.Value)
+        }
+        c.Next()
+    }
+}
+
+func principalFrom(ctx context.Context) domain.Principal {
+    principal, _ := ctx.Value(principalKey).(domain.Principal)
+    return principal
+}

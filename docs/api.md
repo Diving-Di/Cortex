@@ -1,6 +1,6 @@
 # Diary Listener API 概览
 
-后端基于 FastAPI，当前产品接口以 `/api/v1` 为主；认证接口同时提供无版本前缀的兼容路径。完整且可执行的请求/响应 Schema 请以运行时 Swagger UI（`/docs`）或 OpenAPI JSON（`/openapi.json`）为准。
+后端基于 Go/Gin，当前产品接口以 `/api/v1` 为主；认证和旧聊天/轻日记接口同时提供无版本前缀的兼容路径。
 
 ## 通用约定
 

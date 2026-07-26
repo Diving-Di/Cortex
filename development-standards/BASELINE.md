@@ -1,41 +1,64 @@
-# Diary Listener MVP 工程基线
+# Diary Listener 工程基线
 
-本文冻结 SDD 第 0～3 次迭代的工程决策；功能范围与非目标以 `SDD.md` 第 2 节为准。
+> 状态：当前有效
+> 更新日期：2026-07-26
 
-## MVP 范围
+## 产品范围
 
-- 四类 Markdown 笔记、标签、附件、历史版本与搜索。
-- 本地优先；AI 不可用时笔记能力完整可用。
-- AI 整理、周期报告和带来源引用的回忆问答。
-- 每个注册用户只有一个服务端解析的个人租户。
-- PostgreSQL 备份/恢复、Markdown 导出和 Web 应用发布。
+- 普通笔记、日报、周报和月报。
+- 标签、附件、历史版本、中文搜索和 dashboard。
+- AI 整理、报告、来源引用和回忆问答。
+- 每个账号对应一个服务端解析的个人租户。
+- Markdown ZIP 导出、完整备份和空租户恢复。
+- 旧聊天和图片轻日记兼容接口。
 
-桌面悬浮组件、向量数据库、团队协作、计费、自动更新和数据库/文件双向同步不进入 MVP。
+桌面组件、团队协作、计费和数据库/Markdown 双向同步不属于当前范围。
 
-## 重构前基线
+## 技术基线
 
-- 后端入口：`backend/app/main.py`，FastAPI + SQLAlchemy 2；旧接口以 `/api` 为前缀。
-- 旧业务接口：注册、登录、聊天会话、同步 AI 回复、图片轻日记。
-- 旧数据库：本地 SQLite、Docker MySQL，应用启动调用 `create_all()`。
-- 前端入口：`frontend/src/main.tsx`，React 18 + TypeScript + Webpack 5 + Ant Design。
-- 运行方式：后端 8000、前端 5173，Webpack 代理 `/api`。
+| 层级 | 当前实践 |
+| --- | --- |
+| 前端 | React 18、TypeScript、Webpack 5、Ant Design |
+| 后端 | Go 1.26、Gin、标准 `net/http`、4 空格缩进 |
+| 数据访问 | pgx/v5、显式 SQL、显式事务 |
+| 数据库 | PostgreSQL 16、RLS |
+| AI | LiteLLM Proxy、OpenAI 兼容 Chat Completions、SSE |
+| 部署 | Docker Compose、多阶段静态 Go 镜像 |
 
-重构采用兼容入口渐进替换旧模块；新接口统一使用 `/api/v1`。
+后端唯一入口为 `backend/cmd/server/main.go`。仓库不保留 Python 后端或 Alembic。
 
-## 数据与配置规则
+## 数据规则
 
-- PostgreSQL 是正文唯一权威来源，Markdown 只用于导入导出。
-- PostgreSQL 16 是开发、测试和生产统一版本；结构只由 Alembic 修改。
-- `DATABASE_URL` 使用低权限 `diary_app`；`MIGRATION_DATABASE_URL` 使用 `diary_migrator`。
-- 数据根目录由 `DIARY_DATA_DIR` 配置，包含附件、导出、备份和日志。
-- 附件数据库字段只保存数据根目录内相对路径。
-- 环境变量优先于被 Git 忽略的 `backend/config.json`；密钥不得进入仓库或日志。
-- 本地开发服务只监听 `127.0.0.1`，前端允许来源默认为 localhost/127.0.0.1:5173。
+- PostgreSQL 是笔记正文的唯一权威来源。
+- `DATABASE_URL` 使用低权限 `diary_app`。
+- `MIGRATION_DATABASE_URL` 使用 `diary_migrator`，仅供管理和调度 claim。
+- 每次租户业务查询必须在同一个 `pgx.Tx` 内设置 transaction-local RLS 上下文。
+- 客户端不得提交或选择可信 `tenant_id`。
+- `backend/db/schema.sql` 是经过空库验收的初始化基线。
+- 后续 Schema 变化必须新增版本化迁移，不得直接修改已部署数据库。
 
-## PostgreSQL 初始化
+## 配置与密钥
 
-- 版本：PostgreSQL 16。
-- 数据库：`diary_listener`。
-- Owner/迁移角色：`diary_migrator`；应用角色：`diary_app`。
-- Docker 首次启动通过 `backend/scripts/init-db-roles.sh` 创建角色；本机环境按 `backend/MIGRATIONS.md` 配置。
-- 空库初始化：`alembic upgrade head`；回退验证：`alembic downgrade base`。
+- 服务只读取环境变量。
+- `.env` 只用于本地运行并必须被 Git 忽略。
+- 供应商 Key 仅注入 LiteLLM；业务后端只持有网关密钥。
+- Key 不得进入前端、URL、日志、审计记录、备份或文档。
+
+## 必须通过的验证
+
+```powershell
+Set-Location backend
+go vet ./...
+go test ./...
+go build ./cmd/server
+
+Set-Location ..
+docker compose config --quiet
+docker compose up -d --build
+.\backend\scripts\non_ai_smoke.ps1
+.\backend\scripts\ai_acceptance.ps1
+```
+
+- 所有 Go 源码行首不得包含 Tab。
+- `db`、`llm-gateway` 和 `backend` 必须为 healthy。
+- 新 PostgreSQL 空库必须完成 18 张表、RLS、注册和登录验收。

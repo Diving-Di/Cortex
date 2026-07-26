@@ -35,19 +35,19 @@ AI 供应商、API 地址、模型、API Key 状态和连接测试均不在设�
 
 ## 3. AI 配置边界
 
-使用云端 AI 时，API Key 必须发送给 AI 供应商用于鉴权，因此无法做到“密钥完全不离开本机”。Diary Listener 采用后端环境配置：
+使用云端 AI 时，供应商 Key 必须由 LiteLLM 发送给供应商鉴权。普通用户不接触供应商 Key：
 
 ```dotenv
-AI_API_KEY=<供应商 API Key>
-AI_BASE_URL=https://api.example.com/v1
-AI_MODEL=<模型名称>
+LITELLM_MASTER_KEY=<本地网关访问密钥>
+KIMI_API_KEY=<Kimi 供应商密钥>
+OPENAI_API_KEY=<OpenAI 供应商密钥>
 ```
 
 - 设置页不提供 AI 配置、状态展示、连接测试或 API Key 输入框。
 - API Key 不进入前端状态、浏览器存储、URL、Cookie、HTML、Source Map 或前端构建产物。
-- 后端仅从运行环境或本机、且被 Git 忽略的安全配置读取 Key。
+- Go 后端只读取 LiteLLM 网关密钥；供应商 Key 只注入网关容器。
 - API Key 不得出现在 API 响应、异常堆栈、普通日志、审计详情或备份包中。
-- `.env`、`backend/config.json` 和其他本地秘密文件必须被 Git 忽略。
+- `.env` 和其他本地秘密文件必须被 Git 忽略。
 - 未配置 AI 或 AI 服务不可用时，普通笔记、搜索、导出和备份功能仍须正常工作。
 
 ## 4. 交互与无障碍
