@@ -16,7 +16,8 @@ Authorization: Token <token>
 `X-Request-ID`。非法或缺失时服务端生成 UUID，所有响应都通过
 `X-Request-ID` 返回最终追踪标识。
 
-AI 流式接口返回 `text/event-stream`：
+通用 AI 流式接口返回 `text/event-stream`。知识 Chat 使用具名的
+`retrieval`、`delta`、`sources`、`error` 和 `done` 事件：
 
 ```text
 data: {"content":"文本片段"}
@@ -110,14 +111,20 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` / `POST` | `/api/v1/knowledge/collections` | 查询或创建知识集合 |
+| `DELETE` | `/api/v1/knowledge/collections/{collection_id}` | 删除空集合；非空返回 `COLLECTION_NOT_EMPTY` |
 | `GET` / `POST` | `/api/v1/knowledge/documents` | 分页查询或上传知识文件 |
 | `GET` | `/api/v1/knowledge/documents/{document_id}` | 获取文件与索引状态 |
 | `GET` | `/api/v1/knowledge/documents/{document_id}/download` | 鉴权下载原文件 |
+| `GET` | `/api/v1/knowledge/documents/{document_id}/preview` | 获取受限的提取预览 |
+| `POST` | `/api/v1/knowledge/documents/{document_id}/reindex` | 重新加入索引队列 |
 | `DELETE` | `/api/v1/knowledge/documents/{document_id}` | 删除原文件并立即使索引失效 |
 | `POST` | `/api/v1/knowledge/chat` | 在指定集合/文件范围内检索并以 SSE 回答 |
 | `GET` | `/api/v1/knowledge/messages/{message_id}/sources` | 查询回答引用的知识来源 |
 
-Chat 请求包含 `question`，可选 `conversation_id`、`collection_ids` 和 `document_ids`。
+会话使用 `/api/v1/conversations` 的列表、新建、读取和删除接口。Chat 请求包含
+`question`、幂等键 `request_id`、`source_scope`（`knowledge`、`growth` 或 `all`），
+可选 `conversation_id`、`collection_ids` 和 `document_ids`。省略 `request_id` 时沿用
+服务端生成的请求追踪 ID。重试相同键会重放已保存回答，不会产生重复消息。
 检索采用经 LiteLLM 调用本地 `qwen3-embedding:0.6b` 得到的向量召回与 PostgreSQL
 全文召回进行混合排序，再使用可选的 `Qwen/Qwen3-Reranker-0.6B` 重排；回答只能依据返回的
 父块上下文。无证据时返回 `KNOWLEDGE_NO_EVIDENCE`，不会调用生成模型。Embedding

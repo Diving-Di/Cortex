@@ -68,6 +68,17 @@ func parentGroups(blocks []Block, options ChunkOptions) [][]Block {
 			flush()
 		}
 		if tokens > options.ParentMaxTokens {
+			if block.Kind == BlockTable {
+				for _, part := range splitMarkdownTable(block.Text, options.ParentMaxTokens) {
+					cloned := block
+					cloned.Text = part
+					if len(current) > 0 {
+						flush()
+					}
+					result = append(result, []Block{cloned})
+				}
+				continue
+			}
 			for _, part := range splitText(block.Text, options.ParentMaxTokens, 0) {
 				cloned := block
 				cloned.Text = part
@@ -88,6 +99,32 @@ func parentGroups(blocks []Block, options ChunkOptions) [][]Block {
 		}
 	}
 	flush()
+	return result
+}
+
+func splitMarkdownTable(value string, maxTokens int) []string {
+	lines := strings.Split(strings.TrimSpace(value), "\n")
+	if len(lines) < 3 || maxTokens <= 0 {
+		return []string{value}
+	}
+	header := lines[:2]
+	var result []string
+	current := append([]string(nil), header...)
+	for _, row := range lines[2:] {
+		candidate := strings.Join(append(current, row), "\n")
+		if len(current) > 2 && estimateTokens(candidate) > maxTokens {
+			result = append(result, strings.Join(current, "\n"))
+			current = append(append([]string(nil), header...), row)
+		} else {
+			current = append(current, row)
+		}
+	}
+	if len(current) > 2 {
+		result = append(result, strings.Join(current, "\n"))
+	}
+	if len(result) == 0 {
+		return []string{value}
+	}
 	return result
 }
 

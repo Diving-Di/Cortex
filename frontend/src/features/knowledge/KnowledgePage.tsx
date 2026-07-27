@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import {
   Button,
   Card,
+  Descriptions,
+  Drawer,
   Empty,
   Form,
   Input,
@@ -11,18 +13,30 @@ import {
   Space,
   Table,
   Tag,
+  TreeSelect,
   Typography,
   Upload,
   message,
 } from 'antd';
-import { DeleteOutlined, FolderAddOutlined, InboxOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  EyeOutlined,
+  FolderAddOutlined,
+  InboxOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UploadProps } from 'antd';
 import {
   createKnowledgeCollection,
+  deleteKnowledgeCollection,
   deleteKnowledgeDocument,
+  downloadKnowledgeDocument,
+  getKnowledgePreview,
   listKnowledgeCollections,
   listKnowledgeDocuments,
+  reindexKnowledgeDocument,
   uploadKnowledgeDocument,
 } from '../../api/knowledge';
 import type { KnowledgeDocument } from '../../api/knowledge';
@@ -45,20 +59,30 @@ export default function KnowledgePage({ token }: Props) {
   const queryClient = useQueryClient();
   const [collectionId, setCollectionId] = useState<number>();
   const [collectionOpen, setCollectionOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<KnowledgeDocument['status']>();
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<KnowledgeDocument>();
   const [form] = Form.useForm();
   const collections = useQuery({
     queryKey: ['knowledge-collections'],
     queryFn: () => listKnowledgeCollections(token),
   });
   const documents = useQuery({
-    queryKey: ['knowledge-documents', collectionId],
-    queryFn: () => listKnowledgeDocuments(token, collectionId),
+    queryKey: ['knowledge-documents', collectionId, search, status, page],
+    queryFn: () => listKnowledgeDocuments(token, { collectionId, search, status, page }),
     refetchInterval: (query) =>
       query.state.data?.items.some((item) =>
         ['uploaded', 'extracting', 'indexing'].includes(item.status),
       )
         ? 3000
         : false,
+  });
+  const preview = useQuery({
+    queryKey: ['knowledge-preview', selected?.id],
+    queryFn: () => getKnowledgePreview(token, selected!.id),
+    enabled: Boolean(selected && selected.status === 'ready'),
+    retry: false,
   });
   const createCollection = useMutation({
     mutationFn: (value: { name: string; description?: string }) =>
@@ -72,6 +96,21 @@ export default function KnowledgePage({ token }: Props) {
   const removeDocument = useMutation({
     mutationFn: (id: number) => deleteKnowledgeDocument(token, id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['knowledge-documents'] }),
+  });
+  const reindexDocument = useMutation({
+    mutationFn: (id: number) => reindexKnowledgeDocument(token, id),
+    onSuccess: async () => {
+      message.success('已加入重新索引队列');
+      await queryClient.invalidateQueries({ queryKey: ['knowledge-documents'] });
+    },
+  });
+  const removeCollection = useMutation({
+    mutationFn: (id: number) => deleteKnowledgeCollection(token, id),
+    onSuccess: async () => {
+      setCollectionId(undefined);
+      await queryClient.invalidateQueries({ queryKey: ['knowledge-collections'] });
+    },
+    onError: () => message.warning('集合中仍有文件，请先删除文件后再删除集合'),
   });
   const uploadProps: UploadProps = {
     accept: '.txt,.pdf,.docx',
@@ -90,7 +129,7 @@ export default function KnowledgePage({ token }: Props) {
     },
   };
   const collectionOptions = useMemo(
-    () => (collections.data || []).map((item) => ({ label: item.name, value: item.id })),
+    () => (collections.data || []).map((item) => ({ title: item.name, value: item.id })),
     [collections.data],
   );
 
@@ -110,15 +149,54 @@ export default function KnowledgePage({ token }: Props) {
 
       <Card>
         <Space className="knowledge-toolbar" wrap>
-          <Select
+          <TreeSelect
             allowClear
             placeholder="全部知识集合"
-            options={collectionOptions}
+            treeData={collectionOptions}
             value={collectionId}
-            onChange={setCollectionId}
+            onChange={(value) => {
+              setCollectionId(value);
+              setPage(1);
+            }}
             style={{ minWidth: 220 }}
           />
+          <Input.Search
+            allowClear
+            aria-label="搜索文件名"
+            placeholder="搜索文件名"
+            onSearch={(value) => {
+              setSearch(value.trim());
+              setPage(1);
+            }}
+            style={{ width: 220 }}
+          />
+          <Select
+            allowClear
+            aria-label="筛选处理状态"
+            placeholder="全部状态"
+            value={status}
+            onChange={(value) => {
+              setStatus(value);
+              setPage(1);
+            }}
+            options={Object.entries(statusLabels).map(([value, item]) => ({
+              value,
+              label: item.label,
+            }))}
+            style={{ width: 160 }}
+          />
           <Typography.Text type="secondary">{documents.data?.total || 0} 个文件</Typography.Text>
+          {collectionId ? (
+            <Popconfirm
+              title="删除当前集合？"
+              description="只有空集合可以删除。"
+              onConfirm={() => removeCollection.mutate(collectionId)}
+            >
+              <Button danger type="text">
+                删除集合
+              </Button>
+            </Popconfirm>
+          ) : null}
         </Space>
         <Upload.Dragger {...uploadProps} className="knowledge-uploader">
           <p className="ant-upload-drag-icon">
@@ -134,6 +212,14 @@ export default function KnowledgePage({ token }: Props) {
           rowKey="id"
           loading={documents.isLoading}
           dataSource={documents.data?.items || []}
+          onRow={(record) => ({ onClick: () => setSelected(record) })}
+          pagination={{
+            current: page,
+            pageSize: 20,
+            total: documents.data?.total || 0,
+            showSizeChanger: false,
+            onChange: setPage,
+          }}
           locale={{ emptyText: <Empty description="尚未上传知识文件" /> }}
           columns={[
             { title: '文件名', dataIndex: 'original_name', ellipsis: true },
@@ -162,13 +248,44 @@ export default function KnowledgePage({ token }: Props) {
             {
               title: '操作',
               render: (_, record: KnowledgeDocument) => (
-                <Popconfirm
-                  title="删除该知识文件？"
-                  description="删除后将立即停止参与检索。"
-                  onConfirm={() => removeDocument.mutate(record.id)}
-                >
-                  <Button danger type="text" icon={<DeleteOutlined />} aria-label="删除知识文件" />
-                </Popconfirm>
+                <Space onClick={(event) => event.stopPropagation()}>
+                  <Button
+                    type="text"
+                    icon={<EyeOutlined />}
+                    aria-label="查看文件详情"
+                    onClick={() => setSelected(record)}
+                  />
+                  <Button
+                    type="text"
+                    icon={<DownloadOutlined />}
+                    aria-label="下载知识文件"
+                    onClick={() =>
+                      void downloadKnowledgeDocument(token, record).catch(() =>
+                        message.error('下载失败，请稍后重试'),
+                      )
+                    }
+                  />
+                  {record.status === 'failed' ? (
+                    <Button
+                      type="text"
+                      icon={<ReloadOutlined />}
+                      aria-label="重新索引"
+                      onClick={() => reindexDocument.mutate(record.id)}
+                    />
+                  ) : null}
+                  <Popconfirm
+                    title="删除该知识文件？"
+                    description="删除后将立即停止参与检索。"
+                    onConfirm={() => removeDocument.mutate(record.id)}
+                  >
+                    <Button
+                      danger
+                      type="text"
+                      icon={<DeleteOutlined />}
+                      aria-label="删除知识文件"
+                    />
+                  </Popconfirm>
+                </Space>
               ),
             },
           ]}
@@ -191,6 +308,36 @@ export default function KnowledgePage({ token }: Props) {
           </Form.Item>
         </Form>
       </Modal>
+      <Drawer
+        title={selected?.original_name || '文件详情'}
+        width={520}
+        open={Boolean(selected)}
+        onClose={() => setSelected(undefined)}
+      >
+        {selected ? (
+          <>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="状态">
+                {statusLabels[selected.status].label}
+              </Descriptions.Item>
+              <Descriptions.Item label="类型">{selected.extension.toUpperCase()}</Descriptions.Item>
+              <Descriptions.Item label="字符数">{selected.character_count}</Descriptions.Item>
+              <Descriptions.Item label="页数">{selected.page_count ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="失败原因">
+                {selected.error_message || '—'}
+              </Descriptions.Item>
+            </Descriptions>
+            <Typography.Title level={5}>提取预览</Typography.Title>
+            {preview.isLoading ? (
+              <Typography.Text>正在加载…</Typography.Text>
+            ) : (
+              <Typography.Paragraph className="knowledge-preview">
+                {preview.data || '文件尚未完成索引，暂无预览。'}
+              </Typography.Paragraph>
+            )}
+          </>
+        ) : null}
+      </Drawer>
     </div>
   );
 }

@@ -269,11 +269,22 @@ func extractPDF(ctx context.Context, path, title string, limits ExtractLimits) (
 	if len(rawPages) > limits.MaxPages {
 		return Document{}, ErrParseLimit
 	}
+	rawPages = removeRepeatedPDFMargins(rawPages)
 	var blocks []Block
 	order := 0
 	characters := 0
 	for index, rawPage := range rawPages {
-		for _, block := range textBlocks(removeRepeatedWhitespace(rawPage), index+1) {
+		pageBlocks := textBlocks(removeRepeatedWhitespace(rawPage), index+1)
+		if len(blocks) > 0 && len(pageBlocks) > 0 &&
+			blocks[len(blocks)-1].Kind == BlockParagraph &&
+			pageBlocks[0].Kind == BlockParagraph &&
+			continuesAcrossPage(blocks[len(blocks)-1].Text, pageBlocks[0].Text) {
+			blocks[len(blocks)-1].Text = normalizeSpace(blocks[len(blocks)-1].Text + " " + pageBlocks[0].Text)
+			blocks[len(blocks)-1].PageTo = index + 1
+			characters += len([]rune(pageBlocks[0].Text))
+			pageBlocks = pageBlocks[1:]
+		}
+		for _, block := range pageBlocks {
 			block.Order = order
 			order++
 			characters += len([]rune(block.Text))
@@ -287,6 +298,53 @@ func extractPDF(ctx context.Context, path, title string, limits ExtractLimits) (
 		Title: title, PageCount: len(rawPages), Language: detectBlockLanguage(blocks),
 		Blocks: blocks, Characters: characters,
 	}, nil
+}
+
+func removeRepeatedPDFMargins(pages []string) []string {
+	if len(pages) < 3 {
+		return pages
+	}
+	counts := map[string]int{}
+	pageLines := make([][]string, len(pages))
+	for index, page := range pages {
+		lines := strings.Split(page, "\n")
+		pageLines[index] = lines
+		seen := map[string]bool{}
+		for _, position := range []int{0, 1, len(lines) - 2, len(lines) - 1} {
+			if position < 0 || position >= len(lines) {
+				continue
+			}
+			value := normalizeSpace(lines[position])
+			if len([]rune(value)) < 3 || len([]rune(value)) > 160 || seen[value] {
+				continue
+			}
+			seen[value] = true
+			counts[value]++
+		}
+	}
+	threshold := (len(pages) + 1) / 2
+	result := make([]string, len(pages))
+	for index, lines := range pageLines {
+		for position, line := range lines {
+			value := normalizeSpace(line)
+			if counts[value] >= threshold &&
+				(position <= 1 || position >= len(lines)-2) {
+				lines[position] = ""
+			}
+		}
+		result[index] = strings.Join(lines, "\n")
+	}
+	return result
+}
+
+func continuesAcrossPage(previous, next string) bool {
+	previous = strings.TrimSpace(previous)
+	next = strings.TrimSpace(next)
+	if previous == "" || next == "" || strings.ContainsRune("。！？.!?:：；;", []rune(previous)[len([]rune(previous))-1]) {
+		return false
+	}
+	first := []rune(next)[0]
+	return unicode.IsLower(first) || unicode.In(first, unicode.Han)
 }
 
 func textBlocks(text string, page int) []Block {

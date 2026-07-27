@@ -45,15 +45,104 @@ export async function createKnowledgeCollection(
   return response.data;
 }
 
-export async function listKnowledgeDocuments(token: string, collectionId?: number) {
+export interface KnowledgeDocumentQuery {
+  collectionId?: number;
+  search?: string;
+  status?: KnowledgeDocument['status'];
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listKnowledgeDocuments(token: string, query: KnowledgeDocumentQuery = {}) {
+  const { collectionId, search, status, page = 1, pageSize = 20 } = query;
   const response = await http.get<{ items: KnowledgeDocument[]; total: number }>(
     '/api/v1/knowledge/documents',
     {
       headers: authHeaders(token),
-      params: { limit: 100, ...(collectionId ? { collection_id: collectionId } : {}) },
+      params: {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        ...(collectionId ? { collection_id: collectionId } : {}),
+        ...(search ? { search } : {}),
+        ...(status ? { status } : {}),
+      },
     },
   );
   return response.data;
+}
+
+export async function getKnowledgeDocument(token: string, id: number) {
+  const response = await http.get<KnowledgeDocument>(`/api/v1/knowledge/documents/${id}`, {
+    headers: authHeaders(token),
+  });
+  return response.data;
+}
+
+export async function getKnowledgePreview(token: string, id: number) {
+  const response = await http.get<{ preview: string }>(
+    `/api/v1/knowledge/documents/${id}/preview`,
+    { headers: authHeaders(token) },
+  );
+  return response.data.preview;
+}
+
+export async function reindexKnowledgeDocument(token: string, id: number) {
+  await http.post(`/api/v1/knowledge/documents/${id}/reindex`, undefined, {
+    headers: authHeaders(token),
+  });
+}
+
+export async function downloadKnowledgeDocument(token: string, document: KnowledgeDocument) {
+  const response = await http.get<Blob>(`/api/v1/knowledge/documents/${document.id}/download`, {
+    headers: authHeaders(token),
+    responseType: 'blob',
+  });
+  const url = URL.createObjectURL(response.data);
+  const anchor = window.document.createElement('a');
+  anchor.href = url;
+  anchor.download = document.original_name;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function deleteKnowledgeCollection(token: string, id: number) {
+  await http.delete(`/api/v1/knowledge/collections/${id}`, { headers: authHeaders(token) });
+}
+
+export interface Conversation {
+  id: number;
+  title: string;
+  source_scope: 'knowledge' | 'growth' | 'all';
+  created_at: string;
+  updated_at: string;
+  messages?: Array<{ id: number; role: 'user' | 'assistant'; content: string; created_at: string }>;
+}
+
+export async function listConversations(token: string) {
+  const response = await http.get<Conversation[]>('/api/v1/conversations', {
+    headers: authHeaders(token),
+  });
+  return response.data || [];
+}
+
+export async function createConversation(token: string, sourceScope: Conversation['source_scope']) {
+  const response = await http.post<Conversation>(
+    '/api/v1/conversations',
+    { title: '新对话', source_scope: sourceScope },
+    { headers: authHeaders(token) },
+  );
+  return response.data;
+}
+
+export async function getConversation(token: string, id: number) {
+  const response = await http.get<Conversation>(`/api/v1/conversations/${id}`, {
+    headers: authHeaders(token),
+  });
+  return response.data;
+}
+
+export async function deleteConversation(token: string, id: number) {
+  await http.delete(`/api/v1/conversations/${id}`, { headers: authHeaders(token) });
 }
 
 export async function uploadKnowledgeDocument(token: string, file: File, collectionId?: number) {

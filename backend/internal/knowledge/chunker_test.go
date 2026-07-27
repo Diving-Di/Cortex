@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -35,6 +36,22 @@ func TestBuildParentChildChunksPreservesStructure(t *testing.T) {
 			if child.Content == "" || !strings.Contains(child.EmbeddingText, document.Title) {
 				t.Fatalf("invalid child: %#v", child)
 			}
+		}
+	}
+}
+
+func TestSplitMarkdownTableRepeatsHeader(t *testing.T) {
+	table := "| 名称 | 数值 |\n| --- | --- |\n"
+	for index := 0; index < 30; index++ {
+		table += fmt.Sprintf("| 项目 %d | 一段用于触发切分的较长内容 %d |\n", index, index)
+	}
+	parts := splitMarkdownTable(table, 35)
+	if len(parts) < 2 {
+		t.Fatalf("expected table split, got %d part", len(parts))
+	}
+	for _, part := range parts {
+		if !strings.HasPrefix(part, "| 名称 | 数值 |\n| --- | --- |") {
+			t.Fatalf("header was not repeated: %q", part)
 		}
 	}
 }

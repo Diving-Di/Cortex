@@ -1,7 +1,25 @@
 .growth-assistant {
   display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: 16px;
   height: calc(100vh - 64px);
+}
+
+.growth-sidebar {
+  background: var(--surface-elevated, #fff);
+  border-radius: 8px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.growth-sidebar .active {
+  background: rgba(22, 119, 255, 0.08);
+}
+
+.growth-main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 
 .growth-assistant h2 {
@@ -50,6 +68,19 @@
   white-space: pre-wrap;
 }
 
+.growth-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.source-card {
+  margin-top: 8px;
+}
+
+.source-card .ant-card-body {
+  display: grid;
+  gap: 4px;
+}
+
 .growth-message.user .growth-bubble {
   background: #1677ff;
   color: #fff;
@@ -58,4 +89,23 @@
 .growth-input {
   padding-top: 12px;
   width: 100%;
+}
+
+@media (max-width: 768px) {
+  .growth-assistant {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .growth-sidebar {
+    max-height: 220px;
+  }
+
+  .growth-chat-card .ant-card-body {
+    height: 65vh;
+  }
+
+  .growth-message {
+    max-width: 100%;
+  }
 }

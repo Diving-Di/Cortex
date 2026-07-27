@@ -199,7 +199,7 @@ func (s *Store) AddKnowledgeDocument(
 }
 
 func (s *Store) ListKnowledgeDocuments(
-	ctx context.Context, principal domain.Principal, collectionID *int64, limit, offset int,
+	ctx context.Context, principal domain.Principal, collectionID *int64, search, status string, limit, offset int,
 ) ([]KnowledgeDocument, int64, error) {
 	var result []KnowledgeDocument
 	var total int64
@@ -212,6 +212,14 @@ func (s *Store) ListKnowledgeDocuments(
 		if collectionID != nil {
 			args = append(args, *collectionID)
 			where += fmt.Sprintf(" AND collection_id=$%d", len(args))
+		}
+		if search != "" {
+			args = append(args, "%"+search+"%")
+			where += fmt.Sprintf(" AND original_name ILIKE $%d", len(args))
+		}
+		if status != "" {
+			args = append(args, status)
+			where += fmt.Sprintf(" AND status=$%d", len(args))
 		}
 		if err := tx.QueryRow(ctx, "SELECT count(*) FROM knowledge_documents WHERE "+where, args...).Scan(&total); err != nil {
 			return err
@@ -236,6 +244,77 @@ func (s *Store) ListKnowledgeDocuments(
 		return rows.Err()
 	})
 	return result, total, err
+}
+
+func (s *Store) DeleteKnowledgeCollection(ctx context.Context, principal domain.Principal, collectionID int64) error {
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		var count int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM knowledge_documents
+			WHERE tenant_id=$1 AND collection_id=$2 AND deleted_at IS NULL`,
+			principal.TenantID, collectionID).Scan(&count); err != nil {
+			return err
+		}
+		if count > 0 {
+			return apierror.New("COLLECTION_NOT_EMPTY", "集合中仍有文件，请先移动或删除文件", 409)
+		}
+		command, err := tx.Exec(ctx, `UPDATE knowledge_collections SET deleted_at=now(),updated_at=now()
+			WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`, principal.TenantID, collectionID)
+		if err != nil {
+			return err
+		}
+		if command.RowsAffected() == 0 {
+			return apierror.New("COLLECTION_NOT_FOUND", "知识集合不存在", 404)
+		}
+		return nil
+	})
+}
+
+func (s *Store) ReindexKnowledgeDocument(ctx context.Context, principal domain.Principal, documentID int64) error {
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		var version int
+		err := tx.QueryRow(ctx, `UPDATE knowledge_documents SET status='uploaded',
+			error_code=NULL,error_message=NULL,index_version=index_version+1,updated_at=now()
+			WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL
+			RETURNING index_version`, principal.TenantID, documentID).Scan(&version)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apierror.New("DOCUMENT_NOT_FOUND", "知识文件不存在", 404)
+		}
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO knowledge_index_jobs
+			(tenant_id,document_id,target_index_version) VALUES ($1,$2,$3)`,
+			principal.TenantID, documentID, version)
+		return err
+	})
+}
+
+func (s *Store) KnowledgeDocumentPreview(
+	ctx context.Context, principal domain.Principal, documentID int64,
+) (string, error) {
+	var preview string
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		err := tx.QueryRow(ctx, `SELECT left(p.content,4000)
+			FROM knowledge_documents d
+			JOIN knowledge_parent_chunks p ON p.tenant_id=d.tenant_id AND p.document_id=d.id
+				AND p.index_version=d.index_version
+			WHERE d.tenant_id=$1 AND d.id=$2 AND d.status='ready' AND d.deleted_at IS NULL
+			ORDER BY p.chunk_index LIMIT 1`, principal.TenantID, documentID).Scan(&preview)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apierror.New("DOCUMENT_PREVIEW_UNAVAILABLE", "文件尚未完成提取或来源已失效", 409)
+		}
+		return err
+	})
+	return preview, err
 }
 
 func (s *Store) GetKnowledgeDocument(

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -33,6 +34,23 @@ func TestExtractDOCXPreservesHeadingListAndTable(t *testing.T) {
 	if len(document.Blocks[1].HeadingPath) != 1 ||
 		document.Blocks[1].HeadingPath[0] != "成长目标" {
 		t.Fatalf("heading path lost: %#v", document.Blocks[1].HeadingPath)
+	}
+}
+
+func TestRemoveRepeatedPDFMarginsAndJoinCrossPage(t *testing.T) {
+	pages := []string{
+		"Cortex 报告\n第一段没有结束\n第 1 页",
+		"Cortex 报告\n继续上一页的中文内容。\n第 2 页",
+		"Cortex 报告\n最后一段。\n第 3 页",
+	}
+	cleaned := removeRepeatedPDFMargins(pages)
+	for _, page := range cleaned {
+		if strings.Contains(page, "Cortex 报告") {
+			t.Fatalf("repeated header remained: %q", page)
+		}
+	}
+	if !continuesAcrossPage("第一段没有结束", "继续上一页的中文内容。") {
+		t.Fatal("expected Chinese cross-page continuation")
 	}
 }
 

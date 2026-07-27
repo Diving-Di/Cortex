@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -25,6 +26,83 @@ type KnowledgeCandidate struct {
 	PageTo       *int
 	IndexVersion int
 	Score        float64
+}
+
+type KnowledgeReplay struct {
+	RequestID      string
+	ConversationID int32
+	MessageID      int32
+	Answer         string
+	Sources        []domain.Source
+}
+
+func (s *Store) FindKnowledgeRequest(
+	ctx context.Context, principal domain.Principal, requestID string,
+) (KnowledgeReplay, bool, error) {
+	var result KnowledgeReplay
+	found := false
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		var userMessageID int32
+		err := tx.QueryRow(ctx, `SELECT id,conversation_id FROM messages
+			WHERE tenant_id=$1 AND request_id=$2 AND role='user'`,
+			principal.TenantID, requestID).Scan(&userMessageID, &result.ConversationID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		err = tx.QueryRow(ctx, `SELECT id,content FROM messages
+			WHERE tenant_id=$1 AND conversation_id=$2 AND role='assistant' AND id>$3
+			ORDER BY id LIMIT 1`, principal.TenantID, result.ConversationID, userMessageID,
+		).Scan(&result.MessageID, &result.Answer)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apierror.New("REQUEST_IN_PROGRESS", "相同请求仍在处理中", 409)
+		}
+		if err != nil {
+			return err
+		}
+		result.RequestID = requestID
+		found = true
+		return nil
+	})
+	if err != nil || !found {
+		return result, found, err
+	}
+	knowledgeSources, err := s.GetKnowledgeSources(ctx, principal, result.MessageID)
+	if err != nil {
+		return result, false, err
+	}
+	memorySources, err := s.GetMemorySources(ctx, principal, result.MessageID)
+	if err != nil {
+		return result, false, err
+	}
+	for _, value := range knowledgeSources {
+		item := domain.Source{Type: "knowledge_document"}
+		item.ID, _ = value["document_id"].(int64)
+		if title, ok := value["original_name"].(*string); ok && title != nil {
+			item.Title = *title
+		}
+		item.Snippet, _ = value["snippet"].(*string)
+		item.PageFrom, _ = value["page_from"].(*int)
+		item.PageTo, _ = value["page_to"].(*int)
+		item.Rank, _ = value["rank"].(int)
+		item.SourceDeleted, _ = value["source_deleted"].(bool)
+		result.Sources = append(result.Sources, item)
+	}
+	for _, value := range memorySources {
+		id, _ := value["id"].(int32)
+		title, _ := value["title"].(string)
+		text, _ := value["snippet"].(string)
+		rank, _ := value["rank"].(int32)
+		result.Sources = append(result.Sources, domain.Source{
+			Type: "growth_note", ID: int64(id), Title: title, Snippet: &text, Rank: int(rank),
+		})
+	}
+	return result, true, nil
 }
 
 func (s *Store) SearchKnowledge(
@@ -92,7 +170,73 @@ func (s *Store) SearchKnowledge(
 	if err != nil {
 		return nil, err
 	}
-	return fuseKnowledgeCandidates(lexical, semantic, limit), nil
+	result := fuseKnowledgeCandidates(lexical, semantic, limit)
+	err = s.expandAdjacentKnowledgeParents(ctx, principal, result, 1200)
+	return result, err
+}
+
+func (s *Store) expandAdjacentKnowledgeParents(
+	ctx context.Context, principal domain.Principal, candidates []KnowledgeCandidate, tokenBudget int,
+) error {
+	if len(candidates) == 0 || tokenBudget <= 0 {
+		return nil
+	}
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		remaining := tokenBudget
+		for index := range candidates {
+			rows, err := tx.Query(ctx, `SELECT neighbor.content,neighbor.chunk_index-current.chunk_index direction
+				FROM knowledge_parent_chunks current
+				JOIN knowledge_parent_chunks neighbor ON neighbor.tenant_id=current.tenant_id
+					AND neighbor.document_id=current.document_id
+					AND neighbor.index_version=current.index_version
+					AND neighbor.chunk_index IN (current.chunk_index-1,current.chunk_index+1)
+				JOIN knowledge_documents d ON d.tenant_id=current.tenant_id AND d.id=current.document_id
+				WHERE current.tenant_id=$1 AND current.id=$2 AND d.status='ready'
+					AND d.deleted_at IS NULL AND current.index_version=d.index_version
+				ORDER BY abs(neighbor.chunk_index-current.chunk_index),neighbor.chunk_index`,
+				principal.TenantID, candidates[index].ParentID)
+			if err != nil {
+				return err
+			}
+			var before, after string
+			for rows.Next() {
+				var content string
+				var direction int
+				if err := rows.Scan(&content, &direction); err != nil {
+					rows.Close()
+					return err
+				}
+				cost := knowledge.EstimateTokens(content)
+				if cost > remaining {
+					continue
+				}
+				remaining -= cost
+				if direction < 0 {
+					before = content
+				} else {
+					after = content
+				}
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return err
+			}
+			rows.Close()
+			if before != "" {
+				candidates[index].Parent = before + "\n\n" + candidates[index].Parent
+			}
+			if after != "" {
+				candidates[index].Parent += "\n\n" + after
+			}
+			if remaining <= 0 {
+				break
+			}
+		}
+		return nil
+	})
 }
 
 func knowledgeLexicalQuery(query string) string {
@@ -229,10 +373,14 @@ func (s *Store) SaveKnowledgeAnswer(
 	ctx context.Context,
 	principal domain.Principal,
 	conversationID *int32,
+	requestID string,
+	sourceScope string,
 	question, answer string,
 	sources []KnowledgeCandidate,
-) (int32, error) {
+	growthSources []SourceNote,
+) (int32, int32, error) {
 	var messageID int32
+	var savedConversationID int32
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -240,21 +388,22 @@ func (s *Store) SaveKnowledgeAnswer(
 		var id int32
 		if conversationID != nil {
 			if err := tx.QueryRow(ctx, `SELECT id FROM conversations
-				WHERE tenant_id=$1 AND user_id=$2 AND id=$3`,
-				principal.TenantID, principal.UserID, *conversationID).Scan(&id); err != nil {
+				WHERE tenant_id=$1 AND user_id=$2 AND id=$3 AND source_scope=$4`,
+				principal.TenantID, principal.UserID, *conversationID, sourceScope).Scan(&id); err != nil {
 				return apierror.New("CONVERSATION_NOT_FOUND", "对话不存在", 404)
 			}
 		} else {
 			title := truncateText(question, 80)
 			if err := tx.QueryRow(ctx, `INSERT INTO conversations
-				(tenant_id,user_id,title,source_scope) VALUES ($1,$2,$3,'knowledge')
-				RETURNING id`, principal.TenantID, principal.UserID, title).Scan(&id); err != nil {
+				(tenant_id,user_id,title,source_scope) VALUES ($1,$2,$3,$4)
+				RETURNING id`, principal.TenantID, principal.UserID, title, sourceScope).Scan(&id); err != nil {
 				return err
 			}
 		}
+		savedConversationID = id
 		if _, err := tx.Exec(ctx, `INSERT INTO messages
-			(tenant_id,conversation_id,role,content,status)
-			VALUES ($1,$2,'user',$3,'complete')`, principal.TenantID, id, question); err != nil {
+			(tenant_id,conversation_id,role,content,status,request_id)
+			VALUES ($1,$2,'user',$3,'complete',$4)`, principal.TenantID, id, question, requestID); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO messages
@@ -289,11 +438,21 @@ func (s *Store) SaveKnowledgeAnswer(
 				return err
 			}
 		}
+		for index, source := range growthSources {
+			if _, err := tx.Exec(ctx, `INSERT INTO message_sources
+				(tenant_id,message_id,note_id,snippet,relevance,rank)
+				SELECT $1,$2,id,$4,$5,$6 FROM notes
+				WHERE tenant_id=$1 AND id=$3 AND deleted_at IS NULL`,
+				principal.TenantID, messageID, source.ID, truncateText(source.Snippet, 500),
+				len(growthSources)-index, index+1); err != nil {
+				return err
+			}
+		}
 		_, err := tx.Exec(ctx, `UPDATE conversations SET updated_at=now()
 			WHERE tenant_id=$1 AND id=$2`, principal.TenantID, id)
 		return err
 	})
-	return messageID, err
+	return messageID, savedConversationID, err
 }
 
 func (s *Store) GetKnowledgeSources(

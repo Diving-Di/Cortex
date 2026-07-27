@@ -197,7 +197,9 @@ func (s *Server) listKnowledgeDocuments(w http.ResponseWriter, r *http.Request) 
 		collectionID = &value
 	}
 	items, total, err := s.store.ListKnowledgeDocuments(
-		r.Context(), principalFrom(r.Context()), collectionID, limit, offset,
+		r.Context(), principalFrom(r.Context()), collectionID,
+		strings.TrimSpace(r.URL.Query().Get("search")),
+		strings.TrimSpace(r.URL.Query().Get("status")), limit, offset,
 	)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -208,6 +210,44 @@ func (s *Server) listKnowledgeDocuments(w http.ResponseWriter, r *http.Request) 
 		result = append(result, item.Response())
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": result, "total": total})
+}
+
+func (s *Server) deleteKnowledgeCollection(w http.ResponseWriter, r *http.Request) {
+	id, err := knowledgePathID(r, "collectionID")
+	if err == nil {
+		err = s.store.DeleteKnowledgeCollection(r.Context(), principalFrom(r.Context()), id)
+	}
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) reindexKnowledgeDocument(w http.ResponseWriter, r *http.Request) {
+	id, err := knowledgePathID(r, "documentID")
+	if err == nil {
+		err = s.store.ReindexKnowledgeDocument(r.Context(), principalFrom(r.Context()), id)
+	}
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	httpx.JSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+}
+
+func (s *Server) previewKnowledgeDocument(w http.ResponseWriter, r *http.Request) {
+	id, err := knowledgePathID(r, "documentID")
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	preview, err := s.store.KnowledgeDocumentPreview(r.Context(), principalFrom(r.Context()), id)
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"preview": preview})
 }
 
 func (s *Server) getKnowledgeDocument(w http.ResponseWriter, r *http.Request) {

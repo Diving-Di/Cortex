@@ -20,3 +20,24 @@
 .knowledge-uploader {
   margin-top: 8px;
 }
+
+.knowledge-preview {
+  background: var(--surface-elevated, #f5f5f5);
+  border-radius: 6px;
+  margin-top: 8px;
+  max-height: 45vh;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 768px) {
+  .knowledge-header {
+    gap: 12px;
+  }
+
+  .knowledge-toolbar,
+  .knowledge-toolbar > * {
+    width: 100% !important;
+  }
+}

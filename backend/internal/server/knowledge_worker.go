@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 func RunKnowledgeIndexer(
 	ctx context.Context, cfg config.Config, database *store.Store, logger *slog.Logger,
 ) {
+	go runKnowledgeTombstoneCleaner(ctx, cfg.DataDir, logger)
 	owner := "knowledge-" + uuid.NewString()
 	embeddingClient := ai.LocalEmbeddingClient{
 		BaseURL:        cfg.EmbeddingBaseURL,
@@ -33,6 +35,36 @@ func RunKnowledgeIndexer(
 	workers := max(1, cfg.KnowledgeIndexWorkers)
 	for index := 0; index < workers; index++ {
 		go runKnowledgeIndexWorker(ctx, cfg, database, logger, embeddingClient, owner)
+	}
+}
+
+// runKnowledgeTombstoneCleaner treats the controlled .deleting filename as a
+// durable cleanup task. A process or filesystem failure leaves the tombstone
+// in place and the next scan retries it without making the document searchable.
+func runKnowledgeTombstoneCleaner(ctx context.Context, dataDir string, logger *slog.Logger) {
+	root := filepath.Join(dataDir, "knowledge")
+	clean := func() {
+		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil || entry == nil || entry.IsDir() ||
+				!strings.HasSuffix(entry.Name(), ".deleting") {
+				return nil
+			}
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				logger.Warn("retry knowledge tombstone cleanup", "error_code", "DOCUMENT_CLEANUP_PENDING")
+			}
+			return nil
+		})
+	}
+	clean()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			clean()
+		}
 	}
 }
 
@@ -51,8 +83,11 @@ func runKnowledgeIndexWorker(
 		if err != nil && ctx.Err() == nil {
 			logger.Error("claim knowledge index job", "error", err)
 		}
+		knowledgeIndexQueue.Store(int64(len(jobs)))
 		for _, job := range jobs {
+			started := time.Now()
 			processKnowledgeIndexJobSafely(ctx, cfg, database, logger, embeddingClient, job)
+			knowledgeIndexProcessingMilliseconds.Add(uint64(time.Since(started).Milliseconds()))
 		}
 		select {
 		case <-ctx.Done():
@@ -176,6 +211,7 @@ func failKnowledgeJob(
 	code string,
 	retry bool,
 ) {
+	knowledgeIndexFailures.Add(1)
 	if err := database.FailKnowledgeIndex(ctx, principal, job, code, retry); err != nil && ctx.Err() == nil {
 		logger.Error("fail knowledge index job", "job_id", job.ID, "error", err)
 	}
