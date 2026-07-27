@@ -63,7 +63,7 @@ PostgreSQL 16 + pgvector      LiteLLM
                                qwen3-embedding:0.6b
 
 Optional internal service
-  `-- BAAI/bge-reranker-v2-m3
+  `-- Qwen/Qwen3-Reranker-0.6B
 
 DIARY_DATA_DIR
   |-- attachments/<tenant>/...
@@ -260,7 +260,7 @@ active index version` 的内容。
   -> pgvector 精确向量 Top-30
   -> Reciprocal Rank Fusion
   -> collection/document/status/active-version 过滤
-  -> 可选 BGE reranker 对 Top-20 重排
+  -> 可选 Qwen3 reranker 对 Top-20 重排
   -> child 去重与 parent 聚合
   -> 统一 token 预算
   -> child 引用 + parent 生成上下文
@@ -347,7 +347,8 @@ Compose 必需的敏感配置：
 - `db` 和 `llm-gateway` 不暴露宿主机端口。
 - 后端降权运行并挂载持久化 `app_data`。
 - 宿主机 Ollama 提供 `qwen3-embedding:0.6b`；后端不得绕过 LiteLLM 直连。
-- 可选 `local-ai` Profile 启动 BGE reranker，并配置 CPU、内存和进程限制。
+- 可选 `local-ai` Profile 启动 Qwen3 reranker；模型从官方源的固定 revision
+  构建到本地 CPU 镜像，运行时离线加载，并配置 CPU、内存和进程限制。
 - `/healthz` 只反映进程存活且不依赖 AI。
 - `/readyz` 验证数据库，不因 embedding 或 reranker 故障使整个服务不可用。
 

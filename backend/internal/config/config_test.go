@@ -42,4 +42,7 @@ func TestLoadKnowledgeChunkDefaults(t *testing.T) {
 		cfg.KnowledgeChildOverlap != 50 {
 		t.Fatalf("unexpected chunk defaults: %#v", cfg)
 	}
+	if cfg.RerankModel != "Qwen/Qwen3-Reranker-0.6B" {
+		t.Fatalf("RerankModel = %q", cfg.RerankModel)
+	}
 }

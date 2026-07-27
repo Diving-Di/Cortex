@@ -119,7 +119,7 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 
 Chat 请求包含 `question`，可选 `conversation_id`、`collection_ids` 和 `document_ids`。
 检索采用经 LiteLLM 调用本地 `qwen3-embedding:0.6b` 得到的向量召回与 PostgreSQL
-全文召回进行混合排序，再使用可选的 BGE Reranker v2 M3 重排；回答只能依据返回的
+全文召回进行混合排序，再使用可选的 `Qwen/Qwen3-Reranker-0.6B` 重排；回答只能依据返回的
 父块上下文。无证据时返回 `KNOWLEDGE_NO_EVIDENCE`，不会调用生成模型。Embedding
 不可用时降级为 FTS，不绕过 LiteLLM 切换调用路径。
 

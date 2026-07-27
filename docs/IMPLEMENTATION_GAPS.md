@@ -118,7 +118,7 @@
 - 确认返回数量、顺序和 1024 维，覆盖超时、不可达、维度异常和部分批次失败。
 - 实现同租户 `content_hash + embedding_model` 的安全复用，或明确不缓存。
 - 证明不存在跨租户 embedding 内容缓存。
-- 用固定评测集确认可选 BGE reranker 对 nDCG/MRR 的实际收益。
+- 用固定评测集确认可选 Qwen3 reranker 对 nDCG/MRR 的实际收益。
 
 ### 3.4 索引 worker
 
@@ -145,7 +145,7 @@
 
 - 固定 PostgreSQL pgvector 镜像 digest。
 - 固定 Ollama 模型 digest。
-- reranker 生产启动时不得从公网动态下载模型，改用只读持久化模型卷。
+- 验证 reranker 生产镜像包含官方固定 revision，运行时保持离线且模型目录只读。
 - 增加 warm-up、队列长度、失败数、处理时长和检索延迟指标，不记录正文。
 - 验证容器重建后数据库、附件和知识文件仍存在。
 - 验证 `db`、`llm-gateway` 和 `backend` healthy。

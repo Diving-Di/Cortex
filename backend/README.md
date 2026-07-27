@@ -71,12 +71,13 @@ RAG_EMBEDDING_BASE_URL=http://llm-gateway:4000/v1
 RAG_EMBEDDING_MODEL=cortex-embedding
 RAG_EMBEDDING_DIMENSIONS=1024
 RAG_RERANK_BASE_URL=http://reranker-service:8080
-RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
+RAG_RERANK_MODEL=Qwen/Qwen3-Reranker-0.6B
 ```
 
 `cortex-embedding` 默认由 LiteLLM 转发到宿主机 Ollama 的
 `qwen3-embedding:0.6b`。模型输出固定为 1024 维，本地接口不需要付费
-供应商 API Key。
+供应商 API Key。Reranker 使用同一 Qwen3 家族的
+`Qwen/Qwen3-Reranker-0.6B`，由本地服务从官方模型源构建并离线运行。
 
 知识文件上传、下载和删除不依赖生成模型。索引 worker 对 embedding 请求按 16 条分批，
 对 429/502/503/504 和网络瞬时错误最多重试 2 次；embedding 不可用时文档保持失败状态并可

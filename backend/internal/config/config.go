@@ -166,7 +166,7 @@ func Load() (Config, error) {
 		EmbeddingDimensions:     embeddingDimensions,
 		EmbeddingSendDimensions: parseBool(valueOrDefault("RAG_EMBEDDING_SEND_DIMENSIONS", "false")),
 		RerankBaseURL:           valueOrDefault("RAG_RERANK_BASE_URL", "http://reranker-service:8080"),
-		RerankModel:             valueOrDefault("RAG_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
+		RerankModel:             valueOrDefault("RAG_RERANK_MODEL", "Qwen/Qwen3-Reranker-0.6B"),
 		AIAPIKey:                strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIBaseURL:               valueOrDefault("AI_BASE_URL", "https://api.openai.com/v1"),
 		AIModel:                 valueOrDefault("AI_MODEL", "gpt-5.6"),

@@ -48,7 +48,7 @@ Markdown ZIP 不是完整备份。Cortex 当前不提供应用级完整备份/�
 | 后端 | Go、Gin、pgx/v5 |
 | 数据 | PostgreSQL 16、pgvector、RLS |
 | AI 网关 | LiteLLM、OpenAI 兼容 Chat Completions / Embeddings、SSE |
-| RAG | 父子切块、PostgreSQL FTS、向量召回、BGE Reranker |
+| RAG | 父子切块、PostgreSQL FTS、向量召回、Qwen3 Reranker |
 | 部署 | Docker Compose |
 
 ```text
@@ -96,7 +96,7 @@ Browser
 - Docker Engine 和 Docker Compose
 - 可用的上游生成模型配置
 - 宿主机安装并启动 Ollama；知识向量统一使用本地 `qwen3-embedding:0.6b`
-- 如启用可选的本地 BGE Reranker v2 M3，首次启动需要访问模型仓库并预留足够内存
+- 如启用可选的本地 Qwen3 Reranker，首次构建需要访问官方模型仓库并预留足够内存和磁盘
 
 ### 使用 Docker Compose
 
@@ -137,7 +137,7 @@ docker compose ps
 
 `db` 和 `llm-gateway` 不暴露宿主机端口。后端只监听本机映射的 `8000`，前端监听 `5173`。
 
-可选的本地 BGE Reranker 服务位于 `local-ai` Profile：
+可选的本地 `Qwen/Qwen3-Reranker-0.6B` 服务位于 `local-ai` Profile：
 
 ```powershell
 docker compose --profile local-ai up -d --build
@@ -146,7 +146,8 @@ docker compose --profile local-ai up -d --build
 Backend 始终通过 LiteLLM 的 `cortex-embedding` 逻辑模型调用宿主机 Ollama
 中的 `qwen3-embedding:0.6b`，不直接访问 Ollama。该模型固定返回 1024
 维向量，与当前 pgvector Schema 一致。`local-ai` Profile 只启动可选
-Reranker；Embedding 模型不运行在 Docker 中。
+Reranker；模型在镜像构建时从 Qwen 官方 Hugging Face 仓库的固定 revision
+下载，运行时离线加载，不使用 TEI；Embedding 模型不运行在 Docker 中。
 
 > `.env` 只用于本地部署且已被 Git 忽略。修改数据库密码不会更新已有 `db_data` 卷中的角色密码；复用旧卷时应继续使用初始化该卷时的密码，或在确认数据已备份且不再需要后重新初始化。
 
@@ -253,8 +254,6 @@ docker compose config --quiet
 .\backend\scripts\ai_acceptance.ps1
 ```
 
-生产发布前还必须完成知识库文档列出的双租户隔离、上传—索引—检索—删除、引用准确性、无证据拒答和模型故障降级验收。
-
 ## 文档
 
 - [API 概览](docs/api.md)：认证、笔记、AI、知识库、调度和导出接口
@@ -262,7 +261,3 @@ docker compose config --quiet
 - [软件设计说明书](docs/SDD.md)：当前已实现的系统架构、数据、知识库、RAG、AI 工作流和部署设计
 - [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)：未实现、部分实现、待验证事项和发布阻断
 - [大模型网关规范](docs/LLM_GATEWAY.md)：LiteLLM 路由、密钥、隐私和用量治理
-
-## 当前非目标
-
-桌面组件、团队协作、计费、数据库与 Markdown 双向同步，以及应用级完整备份包不在当前产品范围内。
