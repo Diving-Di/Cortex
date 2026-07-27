@@ -76,9 +76,9 @@ data: [DONE]
 
 附件允许 PNG、JPEG、PDF、UTF-8 TXT 和 Markdown，默认单文件上限为 20 MiB。文件不通过公开静态路径访问。
 
-## AI 整理、报告与回忆
+## AI 整理与报告
 
-所有生成内容先作为草稿返回，只有确认接口会修改笔记。报告和回忆回答均持久化来源关系。
+所有生成内容先作为草稿返回，只有确认接口会修改笔记。报告会持久化来源关系。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -88,10 +88,9 @@ data: [DONE]
 | `POST` | `/api/v1/reports/generate` | 仅基于候选来源流式生成报告草稿 |
 | `POST` | `/api/v1/reports/confirm` | 保存报告、来源及明确的覆盖选择 |
 | `GET` | `/api/v1/reports/{note_id}/sources` | 查询报告来源 |
-| `POST` | `/api/v1/memory/chat` | 检索当前空间笔记并流式回答 |
-| `GET` | `/api/v1/memory/messages/{message_id}/sources` | 查询回答引用 |
 
-无报告来源时返回 `REPORT_NO_SOURCES`，无回忆证据时返回 `MEMORY_NO_EVIDENCE`，两种情况都不会无依据调用 AI。
+无报告来源时返回 `REPORT_NO_SOURCES`，不会无依据调用 AI。笔记问答统一使用成长助手的
+`/api/v1/knowledge/chat`，并传入 `source_scope: "growth"`。
 
 ## AI 配置与通用流式生成
 

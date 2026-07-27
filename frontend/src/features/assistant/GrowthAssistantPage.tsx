@@ -256,17 +256,19 @@ export default function GrowthAssistantPage({ token }: Props) {
         <Card>
           <Space wrap>
             <Select
+              className="growth-source-select"
               aria-label="来源范围"
               value={scope}
               onChange={(value) => {
                 setScope(value);
+                setCollectionIds([]);
+                setDocumentIds([]);
                 setConversationId(undefined);
                 setItems([]);
               }}
               options={[
                 { value: 'knowledge', label: '知识库' },
-                { value: 'growth', label: '成长记录' },
-                { value: 'all', label: '全部来源' },
+                { value: 'growth', label: '笔记本' },
               ]}
             />
             {scope !== 'growth' ? (

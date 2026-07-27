@@ -33,11 +33,6 @@ type reportRequest struct {
 	Overwrite  bool    `json:"overwrite,omitempty"`
 }
 
-type memoryRequest struct {
-	Question       string `json:"question"`
-	ConversationID *int32 `json:"conversation_id"`
-}
-
 func (s *Server) aiWorkflow() ai.Workflow {
 	return ai.Workflow{
 		Client: &ai.OpenAICompatibleClient{BaseURL: s.cfg.AIBaseURL, APIKey: s.cfg.AIAPIKey},
@@ -186,66 +181,6 @@ func (s *Server) reportSourceList(w http.ResponseWriter, r *http.Request) {
 	}
 	if result == nil {
 		result = []store.SourceNote{}
-	}
-	httpx.JSON(w, http.StatusOK, result)
-}
-
-func (s *Server) memoryChat(w http.ResponseWriter, r *http.Request) {
-	var request memoryRequest
-	if err := httpx.DecodeJSON(r, &request); err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if len([]rune(request.Question)) < 1 || len([]rune(request.Question)) > 5000 {
-		httpx.WriteError(w, s.logger, apierror.Validation(nil))
-		return
-	}
-	principal := principalFrom(r.Context())
-	sources, err := s.store.MemoryCandidates(r.Context(), principal, request.Question, 8)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if len(sources) == 0 {
-		httpx.WriteError(w, s.logger, apierror.New("MEMORY_NO_EVIDENCE", "没有找到足够的笔记记录", 404))
-		return
-	}
-	var material strings.Builder
-	for _, source := range sources {
-		fmt.Fprintf(&material, "[#%d %s %s] %s\n\n", source.ID, optionalText(source.NoteDate), source.Title, source.Snippet)
-	}
-	prompt := "仅依据给定笔记回答问题，引用格式为 [#笔记ID]；证据不足就明确说没有找到记录。\n问题：" +
-		request.Question + "\n笔记：\n" + material.String()
-	events, err := s.aiWorkflow().AnswerMemory(s.aiContext(r.Context(), "memory", principal), prompt)
-	if err != nil {
-		if err.Error() == "AI_NOT_CONFIGURED" {
-			httpx.WriteError(w, s.logger, apierror.New("AI_NOT_CONFIGURED", "AI 未配置，笔记功能仍可正常使用", 503))
-		} else {
-			httpx.WriteError(w, s.logger, err)
-		}
-		return
-	}
-	after := func(answer string) error {
-		return s.store.SaveMemoryAnswer(
-			r.Context(), principal, request.ConversationID, request.Question, answer, sources,
-		)
-	}
-	s.writeSSE(w, r, "memory", s.cfg.AIModel, prompt, events, after)
-}
-
-func (s *Server) memorySourceList(w http.ResponseWriter, r *http.Request) {
-	messageID, err := pathID(r, "messageID")
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	result, err := s.store.GetMemorySources(r.Context(), principalFrom(r.Context()), messageID)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if result == nil {
-		result = []map[string]any{}
 	}
 	httpx.JSON(w, http.StatusOK, result)
 }

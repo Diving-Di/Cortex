@@ -5,7 +5,6 @@ import {
   BookOutlined,
   BulbOutlined,
   EditOutlined,
-  FileTextOutlined,
   LogoutOutlined,
   MessageOutlined,
   SettingOutlined,
@@ -18,7 +17,6 @@ const LoginPage = lazy(() => import('./features/auth/LoginPage'));
 const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'));
 const NotesPage = lazy(() => import('./features/notes/NotesPage'));
 const ReportsPage = lazy(() => import('./features/reports/ReportsPage'));
-const MemoryPage = lazy(() => import('./features/memory/MemoryPage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const KnowledgePage = lazy(() => import('./features/knowledge/KnowledgePage'));
 const GrowthAssistantPage = lazy(() => import('./features/assistant/GrowthAssistantPage'));
@@ -54,7 +52,6 @@ function AppLayout() {
             { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
             { key: '/assistant', icon: <BulbOutlined />, label: '成长助手' },
             { key: '/reports', icon: <BarChartOutlined />, label: '周期报告' },
-            { key: '/memory', icon: <FileTextOutlined />, label: '回忆书' },
             { key: '/settings', icon: <SettingOutlined />, label: '设置' },
           ]}
         />
@@ -73,8 +70,8 @@ function AppLayout() {
             <Route path="knowledge" element={<KnowledgePage token={token} />} />
             <Route path="assistant" element={<GrowthAssistantPage token={token} />} />
             <Route path="reports" element={<ReportsPage token={token} />} />
-            <Route path="memory" element={<MemoryPage token={token} />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </main>

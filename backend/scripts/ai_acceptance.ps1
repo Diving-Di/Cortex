@@ -123,15 +123,15 @@ $report = Invoke-RestMethod "$BaseURL/api/v1/reports/confirm" `
 $reportSources = Invoke-RestMethod "$BaseURL/api/v1/reports/$($report.id)/sources" `
     -Headers $headers
 
-$memoryText = Invoke-AIStream "/api/v1/memory/chat" `
-    @{ question = "Go 后端验收完成了什么？" } $login.token
+$notebookText = Invoke-AIStream "/api/v1/knowledge/chat" `
+    @{ question = "Go 后端验收完成了什么？"; source_scope = "growth" } $login.token
 $conversations = Invoke-RestMethod "$BaseURL/api/chat/conversations/" -Headers $headers
-$memoryConversation = @($conversations | Sort-Object id -Descending)[0]
+$notebookConversation = @($conversations | Sort-Object id -Descending)[0]
 $conversation = Invoke-RestMethod `
-    "$BaseURL/api/chat/conversations/$($memoryConversation.id)/" -Headers $headers
+    "$BaseURL/api/chat/conversations/$($notebookConversation.id)/" -Headers $headers
 $assistantMessage = @($conversation.messages | Where-Object { $_.role -eq "assistant" })[-1]
-$memorySources = Invoke-RestMethod `
-    "$BaseURL/api/v1/memory/messages/$($assistantMessage.id)/sources" -Headers $headers
+$notebookSources = Invoke-RestMethod `
+    "$BaseURL/api/v1/knowledge/messages/$($assistantMessage.id)/sources" -Headers $headers
 
 [pscustomobject]@{
     Configured = $settings.configured
@@ -142,6 +142,6 @@ $memorySources = Invoke-RestMethod `
     ReportCharacters = $reportText.Length
     ReportNoteID = $report.id
     ReportSourceCount = @($reportSources).Count
-    MemoryCharacters = $memoryText.Length
-    MemorySourceCount = @($memorySources).Count
+    NotebookCharacters = $notebookText.Length
+    NotebookSourceCount = @($notebookSources).Count
 } | ConvertTo-Json -Compress

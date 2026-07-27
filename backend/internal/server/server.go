@@ -76,8 +76,6 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.POST("/api/v1/reports/generate", gin.WrapF(s.generateReport))
 			active.POST("/api/v1/reports/confirm", gin.WrapF(s.confirmReport))
 			active.GET("/api/v1/reports/:noteID/sources", gin.WrapF(s.reportSourceList))
-			active.POST("/api/v1/memory/chat", gin.WrapF(s.memoryChat))
-			active.GET("/api/v1/memory/messages/:messageID/sources", gin.WrapF(s.memorySourceList))
 			active.GET("/api/chat/conversations/", gin.WrapF(s.listConversations))
 			active.GET("/api/chat/conversations/:conversationID/", gin.WrapF(s.getConversation))
 			active.DELETE("/api/chat/conversations/:conversationID/", gin.WrapF(s.deleteConversation))
