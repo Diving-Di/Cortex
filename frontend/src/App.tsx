@@ -8,7 +8,6 @@ import {
   FileTextOutlined,
   LogoutOutlined,
   MessageOutlined,
-  SearchOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
@@ -20,7 +19,6 @@ const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'));
 const NotesPage = lazy(() => import('./features/notes/NotesPage'));
 const ReportsPage = lazy(() => import('./features/reports/ReportsPage'));
 const MemoryPage = lazy(() => import('./features/memory/MemoryPage'));
-const SearchPage = lazy(() => import('./features/search/SearchPage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const KnowledgePage = lazy(() => import('./features/knowledge/KnowledgePage'));
 const GrowthAssistantPage = lazy(() => import('./features/assistant/GrowthAssistantPage'));
@@ -42,7 +40,7 @@ function AppLayout() {
     <div className="app">
       <nav className="app-nav">
         <div className="app-logo">
-          <span className="app-logo-mark">D</span>
+          <img className="app-logo-mark" src="/icons/app-icon.svg" alt="" />
           <span>Cortex</span>
         </div>
         <Menu
@@ -57,7 +55,6 @@ function AppLayout() {
             { key: '/assistant', icon: <BulbOutlined />, label: '成长助手' },
             { key: '/reports', icon: <BarChartOutlined />, label: '周期报告' },
             { key: '/memory', icon: <FileTextOutlined />, label: '回忆书' },
-            { key: '/search', icon: <SearchOutlined />, label: '搜索' },
             { key: '/settings', icon: <SettingOutlined />, label: '设置' },
           ]}
         />
@@ -77,7 +74,6 @@ function AppLayout() {
             <Route path="assistant" element={<GrowthAssistantPage token={token} />} />
             <Route path="reports" element={<ReportsPage token={token} />} />
             <Route path="memory" element={<MemoryPage token={token} />} />
-            <Route path="search" element={<SearchPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Routes>
         </Suspense>

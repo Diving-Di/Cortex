@@ -28,15 +28,10 @@
 }
 
 .app-logo-mark {
-  display: grid;
-  place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
-  background: var(--page-text);
-  color: var(--page-background);
-  font-family: Georgia, serif;
-  font-size: 15px;
+  flex: none;
+  border-radius: 8px;
 }
 
 .app-menu {

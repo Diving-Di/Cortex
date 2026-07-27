@@ -46,7 +46,11 @@ export default function MemoryPage({ token }: { token: string }) {
       ) : (
         <Alert
           style={{ marginTop: 16 }}
-          message="回答只使用当前个人空间中的笔记；没有证据时会明确提示。"
+          message={
+            <span style={{ color: '#fff' }}>
+              回答只使用当前个人空间中的笔记；没有证据时会明确提示。
+            </span>
+          }
         />
       )}
     </div>

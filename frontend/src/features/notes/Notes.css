@@ -1,0 +1,38 @@
+.notes-page {
+  display: flex;
+  min-height: calc(100vh - 70px);
+  flex-direction: column;
+}
+
+.notes-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.notes-toolbar h1 {
+  margin: 0;
+}
+
+.notes-toolbar .ant-btn {
+  margin-left: auto;
+}
+
+.notes-list {
+  flex: 1;
+}
+
+.notes-pagination {
+  margin-top: 4px;
+}
+
+@media (max-width: 640px) {
+  .notes-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .notes-toolbar .ant-btn {
+    margin-left: 0;
+  }
+}

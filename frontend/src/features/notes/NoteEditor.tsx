@@ -3,11 +3,12 @@ import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Alert, Button, Input, Select, Space, Spin, Tabs, Upload, message } from 'antd';
+import { Alert, Button, DatePicker, Input, Space, Spin, Tabs, Upload, message } from 'antd';
+import dayjs from 'dayjs';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { authHeaders, http } from '../../api/http';
-import { getNote, listTags, noteTags, saveNote, setNoteTags } from '../../api/notes';
+import { getNote, saveNote } from '../../api/notes';
 import { useTheme } from '../../app/theme';
 
 type State = 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict';
@@ -20,11 +21,6 @@ export default function NoteEditor({ token }: { token: string }) {
     queryKey: ['note', id],
     queryFn: () => getNote(token, id),
   });
-  const tags = useQuery({ queryKey: ['tags'], queryFn: () => listTags(token) });
-  const assigned = useQuery({
-    queryKey: ['note-tags', id],
-    queryFn: () => noteTags(token, id),
-  });
   const attachments = useQuery({
     queryKey: ['attachments', id],
     queryFn: async () =>
@@ -36,6 +32,7 @@ export default function NoteEditor({ token }: { token: string }) {
   });
   const [title, setTitle] = useState(''),
     [content, setContent] = useState(''),
+    [noteDate, setNoteDate] = useState(''),
     [updatedAt, setUpdatedAt] = useState(''),
     [state, setState] = useState<State>('saved');
   const initialized = useRef(false);
@@ -44,6 +41,7 @@ export default function NoteEditor({ token }: { token: string }) {
     if (query.data && !initialized.current) {
       setTitle(query.data.title);
       setContent(query.data.content);
+      setNoteDate(query.data.note_date || '');
       setUpdatedAt(query.data.updated_at);
       initialized.current = true;
     }
@@ -55,6 +53,7 @@ export default function NoteEditor({ token }: { token: string }) {
       const n = await saveNote(token, id, {
         title,
         content,
+        note_date: noteDate || null,
         expected_updated_at: updatedAt,
       });
       setUpdatedAt(n.updated_at);
@@ -70,7 +69,7 @@ export default function NoteEditor({ token }: { token: string }) {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(persist, 800);
     return () => window.clearTimeout(timer.current);
-  }, [title, content]);
+  }, [title, content, noteDate]);
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (state === 'unsaved' || state === 'saving' || state === 'error') {
@@ -116,13 +115,11 @@ export default function NoteEditor({ token }: { token: string }) {
         size="large"
         style={{ margin: '12px 0' }}
       />
-      <Select
-        mode="multiple"
-        style={{ width: '100%', marginBottom: 12 }}
-        placeholder="标签"
-        value={assigned.data?.map((t) => t.id)}
-        options={tags.data?.map((t) => ({ value: t.id, label: t.name }))}
-        onChange={(ids) => setNoteTags(token, id, ids).then(() => assigned.refetch())}
+      <DatePicker
+        allowClear={false}
+        value={noteDate ? dayjs(noteDate) : null}
+        onChange={(value) => value && setNoteDate(value.format('YYYY-MM-DD'))}
+        style={{ marginBottom: 12 }}
       />
       <Upload
         multiple

@@ -121,7 +121,9 @@ export default function ReportsPage({ token }: { token: string }) {
       {!sources.length && (
         <Alert
           style={{ marginTop: 16 }}
-          message="请先选择周期并加载来源；无来源时系统不会调用 AI。"
+          message={
+            <span style={{ color: '#fff' }}>请先选择周期并加载来源；无来源时系统不会调用 AI。</span>
+          }
         />
       )}
       <List
