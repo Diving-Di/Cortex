@@ -18,7 +18,7 @@ Cortex 是一个记录、连接和回顾个人成长的 AI 知识工作台。系
 - AI 整理草稿、周期报告、回忆问答、来源引用和报告调度。
 - UTF-8 TXT、文本型 PDF、标准 DOCX 知识文件管理。
 - 异步提取、父子切块、PostgreSQL FTS、pgvector 向量召回和可选 reranker。
-- 基础知识库页面、成长助手页面和 SSE 知识问答。
+- 带筛选、预览和重建索引的知识库页面，以及支持会话、统一来源引用和具名 SSE 的成长助手。
 - Markdown ZIP 内容导出。
 
 当前不提供扫描 PDF OCR、XLSX/PPTX/音视频解析、团队共享知识库、云盘同步、用户画像、
@@ -221,6 +221,8 @@ Poppler（GPL-2.0-or-later）。当前不引入 Apache Tika。
 
 - 父块优先保持 Heading 小节、段落组、列表、表格或代码等完整结构。
 - 超长结构递归拆分，父块保存页码、标题路径、顺序、token 数、邻接关系和内容摘要。
+- PDF 提取会去除跨页重复的页眉页脚，并合并能够确定为连续语义的跨页段落。
+- 超长 Markdown 表格按行组切割，每组重复原始表头，避免孤立数据行。
 - 子块只在父块内部切割，采用约 200～500 token 和 10%～15% overlap。
 - 子块可使用受控标题增强文本生成 embedding，同时单独保存原始引用文本。
 - 父子块共享同一 `index_version`，数据库约束禁止孤儿 child。
@@ -244,9 +246,10 @@ worker panic 不影响 HTTP 进程，持久化错误不包含正文。
 ### 6.5 删除
 
 删除事务锁定文档，设置 `deleting` 和 `deleted_at`，取消索引任务，并通过状态与版本检查
-立即阻止后续检索。实现会尝试将原文件改名为受控 tombstone 后删除，并清理父块、子块、
-FTS、embedding 和引用 snippet。所有检索只读取 `ready + deleted_at IS NULL +
-active index version` 的内容。
+立即阻止后续检索。实现会尝试将原文件改名为受控 `.deleting` tombstone 后删除，并清理
+父块、子块、FTS、embedding 和引用 snippet。删除步骤幂等；磁盘清理失败时 tombstone
+保留为持久重试标记，后台清理器启动时及之后每分钟重试。所有检索只读取
+`ready + deleted_at IS NULL + active index version` 的内容。
 
 ## 7. 混合检索与知识问答
 
@@ -262,6 +265,7 @@ active index version` 的内容。
   -> collection/document/status/active-version 过滤
   -> 可选 Qwen3 reranker 对 Top-20 重排
   -> child 去重与 parent 聚合
+  -> 在统一预算内选择相邻 parent
   -> 统一 token 预算
   -> child 引用 + parent 生成上下文
 ```
@@ -273,17 +277,25 @@ active index version` 的内容。
 - reranker 不可用时使用 RRF；embedding 不可用时退化为 FTS。
 - 无可用证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
 
-### 7.2 基础知识 Chat
+### 7.2 统一来源知识 Chat
 
 当前接口：
 
 | 方法 | 路径 | 当前用途 |
 | --- | --- | --- |
+| `GET` / `POST` | `/api/v1/conversations` | 查询或创建知识/成长助手会话 |
+| `GET` / `DELETE` | `/api/v1/conversations/{id}` | 读取含消息的会话或删除会话 |
 | `POST` | `/api/v1/knowledge/chat` | 在选择的集合/文件范围内执行 SSE 问答 |
 | `GET` | `/api/v1/knowledge/messages/{id}/sources` | 读取知识引用 |
 
-服务端 system 规则将知识材料视为不可信数据，要求回答只能依据召回证据，材料不足必须拒答。
-回答保存知识引用，流已经输出内容后不从头重试。AI 未配置或不可用时，知识文件管理仍可使用。
+Chat 的 `source_scope` 支持 `knowledge`、`growth` 和 `all`。知识文件与成长记录转换为统一
+来源 DTO，仍分别在可信业务层验证租户归属并持久化引用。`request_id` 在租户内唯一；
+已完成请求的重试重放已保存回答，进行中的同键请求返回 `REQUEST_IN_PROGRESS`。
+
+SSE 使用 `retrieval`、`delta`、`sources`、`error` 和 `done` 具名事件。`done` 返回
+`conversation_id` 与 `message_id`。服务端规则将知识材料视为不可信数据，要求回答只能
+依据召回证据，材料不足必须拒答。流已经输出内容后不从头重试，客户端断线取消上游请求。
+AI 未配置或不可用时，知识文件管理仍可使用。
 
 ## 8. Scheduler
 
@@ -305,12 +317,19 @@ active index version` 的内容。
 
 ### 9.2 知识库与成长助手
 
-- `/knowledge` 提供集合创建、文件列表、TXT/PDF/DOCX 拖拽或选择上传、上传进度、
-  解析/索引状态轮询和删除。
+- `/knowledge` 提供集合树选择、文件名搜索、状态筛选、服务端分页、TXT/PDF/DOCX
+  拖拽上传、状态轮询、详情抽屉、提取预览、鉴权下载、重新索引和删除。
 - 知识 API 类型与请求封装位于 `frontend/src/api/knowledge.ts`。
-- 成长助手页面提供基础知识问答、SSE 增量渲染、停止生成、失败重试、重复提交保护和
-  `KNOWLEDGE_NO_EVIDENCE` 空证据状态。
+- 成长助手页面提供会话列表及 CRUD、三种来源范围、集合/ready 文件多选、安全 Markdown、
+  SSE 增量渲染、停止生成、重复提交保护、引用卡片和已删除来源降级。
 - 界面复用现有主题系统和路由保护。
+
+## 9.3 可观测性
+
+- `/metrics` 使用 Prometheus 文本格式输出知识索引队列、失败计数、累计处理耗时、
+  检索请求计数和累计检索延迟。
+- 指标只记录数量和时间，不记录问题、回答、正文、文件名、邮箱或租户标识。
+- `/healthz` 仅表示进程存活；`/readyz` 独立验证数据库可用性。
 
 ## 10. 配置
 

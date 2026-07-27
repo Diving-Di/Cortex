@@ -1,13 +1,16 @@
-# Diary Listener Go Backend
+# Cortex Go Backend
 
-Diary Listener 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。
+Cortex 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。Go module、环境变量、
+数据库角色与数据目录继续保留旧技术标识，兼容策略见
+[`docs/COMPATIBILITY.md`](../docs/COMPATIBILITY.md)。
 
 主要能力：
 
 - 认证、个人租户与 PostgreSQL RLS；
 - 笔记、版本、标签、搜索和 dashboard；
 - 附件、知识原文件和 Markdown 导出；
-- LiteLLM Proxy 上的 SSE、AI 整理、报告与回忆问答；
+- LiteLLM Proxy 上的 SSE、AI 整理、报告、回忆与统一来源知识问答；
+- `/api/v1` 会话、知识文件预览/下载/重新索引和 Prometheus 文本指标；
 - 旧聊天和轻日记兼容接口；
 - 并发安全的定时报表 scheduler。
 
@@ -86,4 +89,9 @@ RAG_RERANK_MODEL=Qwen/Qwen3-Reranker-0.6B
 
 父子块配置在启动时做强校验：target 不得大于 max，child max 必须小于 parent max，
 overlap 必须小于 child target。PDF 提取受 45 秒 worker 超时、页数和字符数限制，
-DOCX 还受 ZIP 条目、解压规模和压缩比限制。
+并处理重复页眉页脚与可判定的跨页续接；DOCX 还受 ZIP 条目、解压规模和压缩比限制。
+表格过长时按行组切分并重复表头，检索命中父块边界时在统一预算内加入相邻 parent。
+
+`GET /metrics` 输出知识索引队列、失败数、累计处理时间以及检索请求数和累计延迟。
+指标不包含问题、正文、文件名或租户身份。知识文件删除失败留下的受控
+`.deleting` tombstone 会由后台清理器持续重试。

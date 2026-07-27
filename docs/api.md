@@ -31,6 +31,7 @@ data: [DONE]
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | 否 | 进程存活检查 |
 | `GET` | `/readyz` | 否 | 数据库就绪检查 |
+| `GET` | `/metrics` | 否 | Prometheus 文本指标，不包含正文或身份信息 |
 | `POST` | `/api/v1/auth/register` | 否 | 注册账号并创建个人空间 |
 | `POST` | `/api/v1/auth/login` | 否 | 登录并返回 Token |
 | `POST` | `/api/v1/auth/logout` | 是 | 撤销当前 Token |
@@ -121,6 +122,17 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 | `POST` | `/api/v1/knowledge/chat` | 在指定集合/文件范围内检索并以 SSE 回答 |
 | `GET` | `/api/v1/knowledge/messages/{message_id}/sources` | 查询回答引用的知识来源 |
 
+文件列表支持 `collection_id`、`search`、`status`、`limit` 和 `offset` 查询参数。
+`status` 可为 `uploaded`、`extracting`、`indexing`、`ready` 或 `failed`；进入删除流程的
+文件立即从普通列表消失。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/conversations` | 查询知识、成长与全部来源会话 |
+| `POST` | `/api/v1/conversations` | 使用 `title` 和 `source_scope` 新建会话 |
+| `GET` | `/api/v1/conversations/{conversation_id}` | 读取会话及消息 |
+| `DELETE` | `/api/v1/conversations/{conversation_id}` | 删除会话及其消息和引用 |
+
 会话使用 `/api/v1/conversations` 的列表、新建、读取和删除接口。Chat 请求包含
 `question`、幂等键 `request_id`、`source_scope`（`knowledge`、`growth` 或 `all`），
 可选 `conversation_id`、`collection_ids` 和 `document_ids`。省略 `request_id` 时沿用
@@ -129,6 +141,26 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 全文召回进行混合排序，再使用可选的 `Qwen/Qwen3-Reranker-0.6B` 重排；回答只能依据返回的
 父块上下文。无证据时返回 `KNOWLEDGE_NO_EVIDENCE`，不会调用生成模型。Embedding
 不可用时降级为 FTS，不绕过 LiteLLM 切换调用路径。
+
+知识 Chat 的 SSE 事件顺序如下：
+
+```text
+event: retrieval
+data: {"count":2,"items":[...]}
+
+event: delta
+data: {"content":"增量文本"}
+
+event: sources
+data: {"items":[...]}
+
+event: done
+data: {"conversation_id":12,"message_id":34}
+```
+
+失败使用 `event: error`，`data` 只包含稳定 `code` 和脱敏 `message`。来源统一包含
+`source_type`、`source_id`、`title`、`rank` 和 `source_deleted`，知识文件还可包含
+`heading`、`page_from`、`page_to` 与最小 `snippet`。
 
 ## 定时报告
 
