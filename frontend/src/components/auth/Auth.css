@@ -5,18 +5,18 @@
   align-items: center;
   justify-content: center;
   gap: 28px;
-  background: linear-gradient(135deg, #e9f0ff 0%, #f5f7fa 60%);
+  background: var(--page-background);
   padding: 24px;
 }
 
 .auth-brand {
   text-align: center;
-  color: #1f2329;
+  color: var(--page-text);
 }
 
 .auth-brand-icon {
-  font-size: 48px;
-  color: #4b6ef5;
+  font-size: 40px;
+  color: var(--page-text);
 }
 
 .auth-brand h1 {
@@ -26,12 +26,12 @@
 
 .auth-brand p {
   margin: 0;
-  color: #7a8290;
+  color: var(--text-subtle);
 }
 
 .auth-card {
   width: 100%;
   max-width: 400px;
-  box-shadow: 0 12px 40px rgba(31, 35, 41, 0.1);
-  border-radius: 14px;
+  box-shadow: var(--soft-shadow);
+  border-radius: 20px;
 }

@@ -6,28 +6,37 @@
 }
 
 .app-nav {
-  width: 220px;
+  width: 208px;
   flex: none;
-  background: #1f2433;
-  color: #c9d1e6;
+  background: var(--sidebar-background);
+  color: var(--text-muted);
   display: flex;
   flex-direction: column;
-  padding: 20px 12px;
+  padding: 24px 12px 16px;
+  border-right: 1px solid var(--border-color);
 }
 
 .app-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 20px;
+  gap: 11px;
+  font-size: 15px;
   font-weight: 600;
-  color: #fff;
-  padding: 0 8px 20px;
+  color: var(--page-text);
+  padding: 0 10px 24px;
+  letter-spacing: -0.01em;
 }
 
-.app-logo-icon {
-  font-size: 26px;
-  color: #6b8cff;
+.app-logo-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--page-text);
+  color: var(--page-background);
+  font-family: Georgia, serif;
+  font-size: 15px;
 }
 
 .app-menu {
@@ -43,41 +52,52 @@
 
 /* Make antd inline menu fit the dark sidebar */
 .app-menu .ant-menu-item {
-  color: #c9d1e6;
-  border-radius: 8px;
+  height: 40px;
+  line-height: 40px;
+  margin-block: 2px;
+  color: var(--text-muted);
+  border-radius: 10px;
+  font-size: 13px;
 }
 
 .app-menu .ant-menu-item-selected {
-  background: #4b6ef5 !important;
-  color: #fff !important;
+  background: var(--surface-pressed) !important;
+  color: var(--page-text) !important;
+  font-weight: 600;
+}
+
+.app-menu .ant-menu-item:hover {
+  background: var(--surface-hover) !important;
+  color: var(--page-text) !important;
 }
 
 .app-nav-footer {
-  border-top: 1px solid #2c3245;
+  border-top: 1px solid var(--border-color);
   padding-top: 16px;
 }
 
 .app-user {
   padding: 0 8px 8px;
   font-size: 14px;
-  color: #fff;
+  color: var(--page-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .app-logout {
-  color: #c9d1e6;
+  color: var(--text-muted);
 }
 
 .app-logout:hover {
-  color: #fff !important;
+  color: var(--page-text) !important;
+  background: var(--surface-hover) !important;
 }
 
 .app-content {
   flex: 1;
   min-width: 0;
-  padding: 20px;
+  padding: 30px 48px 40px;
   overflow-x: hidden;
   overflow-y: auto;
   background: var(--page-background);
@@ -85,4 +105,31 @@
   transition:
     background-color 160ms ease,
     color 160ms ease;
+}
+
+@media (max-width: 800px) {
+  .app-nav {
+    width: 72px;
+    padding-inline: 10px;
+  }
+
+  .app-logo {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .app-logo > span:last-child,
+  .app-menu .ant-menu-title-content,
+  .app-user,
+  .app-logout > span:last-child {
+    display: none;
+  }
+
+  .app-menu .ant-menu-item {
+    padding-inline: 16px !important;
+  }
+
+  .app-content {
+    padding: 24px;
+  }
 }

@@ -1,16 +1,17 @@
 .chat {
   display: flex;
   height: 100%;
-  background: #fff;
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(31, 35, 41, 0.06);
+  box-shadow: var(--soft-shadow);
 }
 
 .chat-sidebar {
   width: 260px;
   flex: none;
-  border-right: 1px solid #eef0f3;
+  border-right: 1px solid var(--border-color);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -32,17 +33,17 @@
   padding: 10px 12px;
   border-radius: 8px;
   cursor: pointer;
-  color: #4e5969;
+  color: var(--text-muted);
   transition: background 0.15s;
 }
 
 .chat-conv-item:hover {
-  background: #f3f5f9;
+  background: var(--surface-hover);
 }
 
 .chat-conv-item.active {
-  background: #e8efff;
-  color: #2f54eb;
+  background: var(--surface-pressed);
+  color: var(--page-text);
 }
 
 .chat-conv-title {
@@ -54,7 +55,7 @@
 
 .chat-conv-delete {
   opacity: 0;
-  color: #97a0af;
+  color: var(--text-subtle);
   transition: opacity 0.15s;
 }
 
@@ -67,7 +68,7 @@
 }
 
 .chat-conv-empty {
-  color: #b0b7c0;
+  color: var(--text-subtle);
   font-size: 13px;
   text-align: center;
   margin-top: 24px;
@@ -93,17 +94,17 @@
 .chat-welcome {
   margin: auto;
   text-align: center;
-  color: #8a909c;
+  color: var(--text-subtle);
 }
 
 .chat-welcome-icon {
   font-size: 56px;
-  color: #c5cdf5;
+  color: var(--text-subtle);
 }
 
 .chat-welcome h2 {
   margin: 16px 0 4px;
-  color: #4e5969;
+  color: var(--text-muted);
 }
 
 .chat-bubble-row {
@@ -130,11 +131,11 @@
 }
 
 .chat-bubble-row.assistant .chat-avatar {
-  background: #4b6ef5;
+  background: var(--page-text);
 }
 
 .chat-bubble-row.user .chat-avatar {
-  background: #38b865;
+  background: var(--text-muted);
 }
 
 .chat-bubble {
@@ -147,24 +148,23 @@
 }
 
 .chat-bubble-row.assistant .chat-bubble {
-  background: #f3f5f9;
-  color: #1f2329;
-  border-top-left-radius: 2px;
+  background: var(--surface-hover);
+  color: var(--page-text);
+  border: 1px solid var(--border-color);
 }
 
 .chat-bubble-row.user .chat-bubble {
-  background: #4b6ef5;
-  color: #fff;
-  border-top-right-radius: 2px;
+  background: var(--page-text);
+  color: var(--page-background);
 }
 
 .chat-typing {
-  color: #8a909c;
+  color: var(--text-subtle);
   margin-left: 6px;
 }
 
 .chat-input-area {
-  border-top: 1px solid #eef0f3;
+  border-top: 1px solid var(--border-color);
   padding: 16px 24px;
   display: flex;
   gap: 12px;

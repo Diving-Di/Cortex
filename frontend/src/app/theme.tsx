@@ -24,7 +24,7 @@ function applyDocumentTheme(resolved: ResolvedTheme) {
   document.documentElement.style.colorScheme = resolved;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', resolved === 'dark' ? '#151925' : '#f5f7fa');
+    ?.setAttribute('content', resolved === 'dark' ? '#111111' : '#fcfcfc');
 }
 
 export function initializeTheme() {
@@ -68,8 +68,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         theme={{
           algorithm: resolved === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
           token: {
-            colorPrimary: '#4b6ef5',
-            borderRadius: 8,
+            colorPrimary: resolved === 'dark' ? '#e5e1da' : '#171717',
+            colorInfo: resolved === 'dark' ? '#e5e1da' : '#171717',
+            colorBgLayout: resolved === 'dark' ? '#111111' : '#fcfcfc',
+            colorBgContainer: resolved === 'dark' ? '#1b1b1b' : '#ffffff',
+            colorBorderSecondary: resolved === 'dark' ? '#333333' : '#e5e5e5',
+            fontFamily: "'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+            borderRadius: 10,
+            borderRadiusLG: 16,
+            boxShadowSecondary: '0 1px 2px rgb(23 23 23 / 4%)',
           },
         }}
       >

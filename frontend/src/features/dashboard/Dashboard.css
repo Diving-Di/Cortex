@@ -12,7 +12,7 @@
 }
 .dashboard-heading span,
 .muted {
-  color: #7b8190;
+  color: var(--text-subtle);
 }
 .dashboard-stats {
   margin: 16px 0;
@@ -21,7 +21,7 @@
   cursor: pointer;
 }
 .recent-note:hover {
-  background: #f7f9ff;
+  background: var(--surface-hover);
 }
 .report-tag {
   cursor: pointer;
@@ -39,19 +39,19 @@
 .activity-cell {
   display: block;
   border-radius: 3px;
-  background: #edf0f5;
+  background: var(--surface-muted);
 }
 .activity-cell.level-1 {
-  background: #b8c8ff;
+  background: #dcfce7;
 }
 .activity-cell.level-2 {
-  background: #7895fb;
+  background: #bbf7d0;
 }
 .activity-cell.level-3 {
-  background: #4b6ef5;
+  background: #86efac;
 }
 .activity-cell.level-4 {
-  background: #2948bd;
+  background: #4ade80;
 }
 @media (max-width: 700px) {
   .dashboard-heading {

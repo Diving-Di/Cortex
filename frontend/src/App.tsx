@@ -1,12 +1,15 @@
 import { lazy, Suspense } from 'react';
 import { Button, Menu, Spin } from 'antd';
 import {
+  BarChartOutlined,
   BookOutlined,
   BulbOutlined,
   EditOutlined,
+  FileTextOutlined,
   LogoutOutlined,
   MessageOutlined,
-  RobotOutlined,
+  SearchOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import ProtectedRoute from './routes/ProtectedRoute';
@@ -39,7 +42,7 @@ function AppLayout() {
     <div className="app">
       <nav className="app-nav">
         <div className="app-logo">
-          <RobotOutlined className="app-logo-icon" />
+          <span className="app-logo-mark">D</span>
           <span>Cortex</span>
         </div>
         <Menu
@@ -52,10 +55,10 @@ function AppLayout() {
             { key: '/notes', icon: <EditOutlined />, label: '笔记本' },
             { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
             { key: '/assistant', icon: <BulbOutlined />, label: '成长助手' },
-            { key: '/reports', label: '周期报告' },
-            { key: '/memory', label: '回忆书' },
-            { key: '/search', label: '搜索' },
-            { key: '/settings', label: '设置' },
+            { key: '/reports', icon: <BarChartOutlined />, label: '周期报告' },
+            { key: '/memory', icon: <FileTextOutlined />, label: '回忆书' },
+            { key: '/search', icon: <SearchOutlined />, label: '搜索' },
+            { key: '/settings', icon: <SettingOutlined />, label: '设置' },
           ]}
         />
         <div className="app-nav-footer">

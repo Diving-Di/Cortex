@@ -2,7 +2,7 @@ import type { ChangeEvent } from 'react';
 import { useState } from 'react';
 import type { AxiosError } from 'axios';
 import { Button, Card, Form, Input, Tabs, message } from 'antd';
-import { LockOutlined, MailOutlined, MessageOutlined, UserOutlined } from '@ant-design/icons';
+import { EditOutlined, LockOutlined, MailOutlined, UserOutlined } from '@ant-design/icons';
 import { loginUser, registerUser } from '../../api/auth';
 import './Auth.css';
 
@@ -56,9 +56,9 @@ export default function Auth({ onLogin }: AuthProps) {
   return (
     <div className="auth-page">
       <div className="auth-brand">
-        <MessageOutlined className="auth-brand-icon" />
-        <h1>AI 聊天 & 轻日记</h1>
-        <p>与 AI 多轮对话，用一张图 + 一段话记录生活</p>
+        <EditOutlined className="auth-brand-icon" />
+        <h1>Cortex</h1>
+        <p>记录日常，整理思绪，找回重要的片段</p>
       </div>
       <Card className="auth-card">
         <Tabs
