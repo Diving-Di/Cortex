@@ -1,6 +1,0 @@
-apiVersion: v2
-name: diary-listener
-description: Diary Listener web application (external PostgreSQL and LiteLLM)
-type: application
-version: 0.1.0
-appVersion: "dev"

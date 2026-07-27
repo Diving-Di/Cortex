@@ -1,7 +1,7 @@
 {
-  "name": "Diary Listener",
-  "short_name": "Diary",
-  "description": "本地优先、带 AI 整理能力的个人笔记应用",
+  "name": "Cortex",
+  "short_name": "Cortex",
+  "description": "记录个人成长并连接私人知识库的 AI 工作台",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

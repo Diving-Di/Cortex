@@ -1,85 +1,170 @@
-# Diary Listener
+# Cortex
 
-Diary Listener 是一个本地优先、AI 辅助的个人笔记与回忆工作台。它将随手记录沉淀为可检索的 Markdown 笔记，并基于真实笔记生成日报、周报、月报和带来源引用的回忆回答。
+Cortex 是一个面向个人成长记录的 AI 知识工作台：用 Markdown 记录日常与周期笔记，沉淀自己的知识文件，并让 AI 在可追溯的个人资料范围内帮助整理、总结和回顾。
 
-AI 是可选能力：未配置模型或网络不可用时，笔记、标签、附件、搜索、版本历史、导出和备份仍可正常使用。AI 生成的内容必须经过用户预览和确认后才会写入笔记。
+> 当前状态：核心笔记功能与知识库/RAG MVP 已实现，但知识库链路尚未通过完整生产验收，**当前版本禁止直接发布到生产环境**。已知阻断项和复验要求见 [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)。
 
-## 核心能力
+AI 是可选能力。生成模型、Embedding 或 Reranker 不可用时，账号、笔记、标签、附件、搜索、版本历史、知识文件管理和 Markdown 导出仍应保持可用；依赖模型的整理、报告、回忆、索引或问答会返回明确错误。
 
-- **快速记录**：在工作台记录文字，直接保存或交给 AI 整理为结构化草稿。
-- **Markdown 笔记**：管理普通笔记、日报、周报和月报，支持编辑预览与历史版本恢复。
-- **内容组织**：使用标签、附件、日期和笔记类型组织内容，并进行中文关键词检索。
-- **周期报告**：从指定周期的笔记生成报告，保存报告与来源笔记之间的关系。
-- **回忆书**：用自然语言询问过往经历，回答仅基于当前用户的笔记并保留引用。
-- **数据自主**：支持 Markdown ZIP 导出、完整备份，以及向空个人空间受控恢复。
-- **个人空间隔离**：每个账号自动拥有唯一的个人空间；后端解析租户，不接受客户端传入 `tenant_id`。
+## 能做什么
 
-旧版 AI 聊天和图片轻日记接口暂时保留用于兼容，但不再是当前产品的核心入口。
+### 记录与整理
 
-## 技术栈
+- 创建普通笔记、日报、周报和月报，支持 Markdown 编辑与预览。
+- 使用标签、日期、笔记类型和附件组织内容，进行中文关键词搜索。
+- 在 Dashboard 查看记录统计、活跃趋势、最近笔记和待处理周期报告。
+- 每次正文更新保留历史版本，可查看并恢复指定 revision。
+- 快速记录可以先交给 AI 整理为草稿，确认后才写入笔记。
+
+### 报告与回忆
+
+- 从指定周期内的笔记生成日报、周报或月报草稿。
+- 为报告保存来源笔记，避免无来源生成；无来源时直接拒绝。
+- 配置按 IANA 时区运行的周期报告任务，并查看运行记录或手动重试。
+- 通过回忆问答检索自己的历史笔记，回答保留可追踪引用。
+
+### 个人知识库与成长助手
+
+- 创建知识集合，上传 UTF-8 TXT、文本型 PDF 和 DOCX 文件。
+- 异步执行内容提取、父子切块、向量索引和全文索引，并展示处理状态。
+- 在集合或指定文件范围内进行向量与 PostgreSQL 全文混合召回，再经 Reranker 重排。
+- 成长助手仅依据命中的知识来源回答；没有足够证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
+- 原文件只能通过鉴权接口下载；删除后文件与索引立即对当前用户失效。
+
+### 数据自主与隔离
+
+- 将有效笔记导出为 Markdown ZIP，用于内容交换或迁移。
+- 每个账号自动对应一个个人空间，租户身份只由服务端根据 Token 解析。
+- PostgreSQL RLS 与显式 `tenant_id` 条件共同约束业务查询。
+- 附件和知识原文件保存在受控数据目录中，不作为公开静态资源暴露。
+
+Markdown ZIP 不是完整备份。Cortex 当前不提供应用级完整备份/恢复 API；生产灾备应覆盖 PostgreSQL 数据库与应用数据卷。个人空间软删除恢复和笔记版本恢复仍属于产品功能。
+
+## 技术架构
 
 | 层级 | 技术 |
 | --- | --- |
 | 前端 | React 18、TypeScript、Webpack 5、Ant Design、TanStack Query、CodeMirror |
 | 后端 | Go、Gin、pgx/v5 |
-| 数据 | PostgreSQL 16、RLS；附件存储在受控本地目录 |
-| AI | LiteLLM Proxy、OpenAI 兼容接口、SSE 流式输出 |
-| 测试与格式 | Go test、Vitest、Prettier |
-| 部署 | Docker、Docker Compose |
+| 数据 | PostgreSQL 16、pgvector、RLS |
+| AI 网关 | LiteLLM、OpenAI 兼容 Chat Completions / Embeddings、SSE |
+| RAG | 父子切块、PostgreSQL FTS、向量召回、BGE Reranker |
+| 部署 | Docker Compose |
+
+```text
+Browser
+   │
+   ├── React UI ────────────────┐
+   │                            │
+   └────────────────────── Go / Gin API
+                                ├── PostgreSQL + pgvector
+                                ├── 受控文件存储
+                                ├── LiteLLM ── 生成 / Embedding 模型
+                                └── Reranker 服务（可选本地部署）
+```
+
+后端唯一入口是 `backend/cmd/server/main.go`。PostgreSQL 是笔记正文的唯一权威来源，Markdown 只用于交换与导出。
 
 ## 项目结构
 
 ```text
 .
 ├── backend/
-│   ├── cmd/server/          # 服务入口
-│   ├── internal/            # Gin API、业务、AI、配置和 pgx 数据层
-│   ├── db/                  # Schema 快照与 sqlc 查询
-│   ├── scripts/             # 冒烟与真实 AI 验收脚本
-│   └── Dockerfile
-├── frontend/
-│   └── src/
-│       ├── api/             # 前端请求封装
-│       ├── features/        # 工作台、笔记、报告、回忆、搜索、设置
-│       └── routes/          # 路由与登录保护
-├── docs/                    # API、工程基线与设计说明
+│   ├── cmd/
+│   │   ├── server/              # 唯一后端服务入口
+│   │   └── migrate/             # 显式数据库迁移工具
+│   ├── db/schema.sql            # 新实例初始化基线
+│   ├── internal/
+│   │   ├── ai/                  # 生成、Embedding 与 Rerank 客户端
+│   │   ├── knowledge/           # 文档提取、切块与索引
+│   │   ├── server/              # HTTP 契约和后台 worker
+│   │   └── store/               # SQL、事务与 RLS 数据访问
+│   └── scripts/                 # 数据库初始化与验收脚本
+├── frontend/src/
+│   ├── api/                     # API 请求封装
+│   ├── features/                # 工作台、笔记、知识库、助手、报告等
+│   └── routes/                  # 路由保护
+├── docs/                        # API、设计、网关与验收文档
 ├── docker-compose.yml
-└── README.md
+└── litellm-config.yaml
 ```
 
 ## 快速启动
 
-### Docker Compose（推荐）
+### 前置条件
 
-需要 Docker 与 Docker Compose。首先创建环境文件，并为迁移角色和应用角色设置两个不同的强密码：
+- Docker Engine 和 Docker Compose
+- 可用的上游生成模型配置
+- 宿主机安装并启动 Ollama；知识向量统一使用本地 `qwen3-embedding:0.6b`
+- 如启用可选的本地 BGE Reranker v2 M3，首次启动需要访问模型仓库并预留足够内存
+
+### 使用 Docker Compose
+
+先在宿主机启动 Ollama 并拉取 0.6B Embedding 模型。Windows 上需让
+Docker Desktop 能访问 Ollama 监听端口：
+
+在第一个 PowerShell 窗口运行：
+
+```powershell
+$env:OLLAMA_HOST = "0.0.0.0:11434"
+ollama serve
+```
+
+保持该进程运行，再在第二个 PowerShell 窗口执行：
+
+```powershell
+ollama pull qwen3-embedding:0.6b
+```
+
+`ollama serve` 需要保持运行。通过 Windows 防火墙将 `11434` 限制为本机和
+Docker 私有网络可访问，不要将它暴露到公网。
+
+然后复制环境变量模板，并替换其中所有 `replace-with-...` 占位值。数据库应用角色、迁移角色和 LiteLLM 数据库角色必须使用不同的强密码；生成模型供应商 Key 只提供给 LiteLLM。
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up --build
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
 ```
 
-首次创建 `db_data` 卷时会依次创建低权限应用角色并应用 `backend/db/schema.sql` 基线。服务地址：
+默认地址：
 
-- Web 应用：<http://127.0.0.1:5173>
-- 后端 API：<http://127.0.0.1:8000>
-- 健康检查：<http://127.0.0.1:8000/healthz>
+- Web：<http://127.0.0.1:5173>
+- API：<http://127.0.0.1:8000>
+- 存活检查：<http://127.0.0.1:8000/healthz>
+- 就绪检查：<http://127.0.0.1:8000/readyz>
 
-> 修改 `.env` 中的数据库密码后，如果复用了已有 `db_data` 卷，PostgreSQL 不会自动重建角色密码。请使用与该数据卷初始化时一致的密码，或在确认无需保留数据后重新初始化数据库卷。
+`db` 和 `llm-gateway` 不暴露宿主机端口。后端只监听本机映射的 `8000`，前端监听 `5173`。
 
-### 本地开发
+可选的本地 BGE Reranker 服务位于 `local-ai` Profile：
 
-本地开发同样要求 PostgreSQL 16，以及权限分离的 `diary_migrator`、`diary_app` 角色。
+```powershell
+docker compose --profile local-ai up -d --build
+```
 
-后端（PowerShell）：
+Backend 始终通过 LiteLLM 的 `cortex-embedding` 逻辑模型调用宿主机 Ollama
+中的 `qwen3-embedding:0.6b`，不直接访问 Ollama。该模型固定返回 1024
+维向量，与当前 pgvector Schema 一致。`local-ai` Profile 只启动可选
+Reranker；Embedding 模型不运行在 Docker 中。
+
+> `.env` 只用于本地部署且已被 Git 忽略。修改数据库密码不会更新已有 `db_data` 卷中的角色密码；复用旧卷时应继续使用初始化该卷时的密码，或在确认数据已备份且不再需要后重新初始化。
+
+## 本地开发
+
+需要 Go、Node.js 20+、PostgreSQL 16 + pgvector，以及权限分离的 `diary_migrator` 和 `diary_app` 数据库角色。
+
+启动后端：
 
 ```powershell
 Set-Location backend
 $env:DATABASE_URL = "postgresql://diary_app:<app-password>@127.0.0.1:5432/diary_listener"
 $env:MIGRATION_DATABASE_URL = "postgresql://diary_migrator:<migrator-password>@127.0.0.1:5432/diary_listener"
+$env:DIARY_DATA_DIR = ".\data"
 go run ./cmd/server
 ```
 
-前端（另开一个 PowerShell）：
+启动前端：
 
 ```powershell
 Set-Location frontend
@@ -87,67 +172,97 @@ npm install
 npm run dev
 ```
 
-Webpack DevServer 默认将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`。
+Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`。
 
-## 配置
+## 关键配置
 
-运行配置只读取服务端环境变量。
+完整示例见 [.env.example](.env.example)。
 
-常用环境变量：
-
-| 变量 | 说明 |
+| 变量 | 用途 |
 | --- | --- |
-| `DATABASE_URL` | 应用运行时 PostgreSQL 连接，必须使用低权限角色 |
-| `MIGRATION_DATABASE_URL` | 管理与调度连接，使用迁移角色 |
-| `CORS_ORIGINS` | 逗号分隔的可信前端来源，不允许 `*` |
-| `DIARY_DATA_DIR` | 附件、导出、备份和日志的数据根目录 |
-| `MAX_ATTACHMENT_BYTES` | 单个附件大小上限，默认 20 MiB |
-| `LITELLM_MASTER_KEY` | LiteLLM 管理密钥，仅供网关管理操作 |
-| `LITELLM_VIRTUAL_KEY` | LiteLLM 签发给业务后端的限模型、限预算虚拟密钥 |
-| `LITELLM_DB_PASSWORD` | LiteLLM 独立管理数据库角色密码 |
-| `OPENAI_API_KEY` | LiteLLM 使用的 OpenAI 上游密钥 |
-| `KIMI_API_KEY` | LiteLLM 使用的 Kimi 上游密钥 |
+| `DATABASE_URL` | 业务连接，必须使用低权限 `diary_app` |
+| `MIGRATION_DATABASE_URL` | 迁移与 scheduler claim 使用的管理连接 |
+| `DIARY_DATA_DIR` | 附件、知识原文件、导出和日志的数据根目录 |
+| `MAX_ATTACHMENT_BYTES` | 单附件上限，默认 20 MiB |
+| `KNOWLEDGE_MAX_FILE_BYTES` | 单知识文件上限，默认 50 MiB |
+| `KNOWLEDGE_MAX_PDF_PAGES` | PDF 页数上限，默认 500 |
+| `KNOWLEDGE_MAX_EXTRACTED_CHARS` | 单文件提取字符上限，默认 5,000,000 |
+| `RAG_INDEX_WORKERS` | 知识索引 worker 数，默认 2 |
+| `RAG_EMBEDDING_*` | Embedding 地址、凭据、逻辑模型和维度 |
+| `RAG_RERANK_*` | Reranker 地址和模型 |
+| `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 后端访问 LiteLLM 的生成配置 |
+| `LITELLM_MASTER_KEY` | LiteLLM 管理密钥，不注入业务前端 |
+| `LITELLM_VIRTUAL_KEY` | 后端使用的限模型、限预算虚拟密钥 |
+| `LOCAL_EMBEDDING_BASE_URL` | LiteLLM 访问宿主机 Ollama 的 OpenAI 兼容地址 |
+| `LOCAL_EMBEDDING_API_KEY` | 本地接口占位凭据，不产生 API 费用 |
+| `OPENAI_API_KEY` / `KIMI_API_KEY` | 仅由 LiteLLM 使用的生成模型供应商凭据 |
 
-AI 密钥只保存在服务端。Compose 将 `LITELLM_VIRTUAL_KEY` 作为后端的
-`AI_API_KEY`，master key 仅由网关持有。未配置时 AI 接口返回
-`AI_NOT_CONFIGURED`，其余本地笔记能力不受影响。
+生产环境不得把真实 Key 写入仓库、URL、Cookie、普通日志、审计业务字段或导出文件。
 
-## 数据与安全约定
+## API 与安全约定
 
-- PostgreSQL 是笔记正文的唯一权威来源，Markdown 用于交换和导出。
-- 全新数据库由 `backend/db/schema.sql` 初始化；后续结构升级必须增加版本化 Go/SQL 迁移。
-- 登录 Token 仅以 SHA-256 摘要持久化，并具有有效期和撤销状态。
-- 笔记、消息、附件和 AI 用量均绑定个人空间；数据库使用行级安全策略强化隔离。
-- 附件通过鉴权接口访问，不作为公开静态目录暴露。
-- AI 整理和报告遵循“生成草稿 → 用户确认 → 写入”，回忆回答和报告均保留来源。
+- 主业务接口使用 `/api/v1`，认证头为 `Authorization: Token <token>`。
+- `/healthz` 只反映进程存活；`/readyz` 验证数据库可用，不依赖 AI。
+- 更新笔记使用乐观冲突保护；正文更新和 AI 覆盖前先创建 revision，删除默认软删除。
+- 跨租户资源统一表现为 404；软删除空间的普通业务请求返回 403。
+- 周报日期归一到周一，月报日期归一到月初。
+- AI 整理与报告遵循“生成草稿 → 用户确认 → 写入”，报告、回忆与知识问答保留来源。
+- 旧聊天 `/api/chat/` 和图片轻日记 `/api/diary/` 接口仅为兼容保留。
 
-## 开发与验证
+接口列表、请求约定和错误语义见 [API 概览](docs/api.md)。
+
+## 数据库升级
+
+新数据库由 `backend/db/schema.sql` 初始化。已部署实例必须通过版本化迁移升级，不能依赖应用启动时临时修改 Schema。
 
 ```powershell
-# 后端格式与测试
 Set-Location backend
+go run ./cmd/migrate status
+go run ./cmd/migrate up
+```
+
+迁移工具使用 PostgreSQL advisory lock，并支持 `up`、`down` 和 `status`。Docker Compose 后端入口会在启动服务进程前执行待处理迁移。
+
+## 开发验证
+
+后端：
+
+```powershell
+Set-Location backend
+gofmt -l .
 go vet ./...
 go test ./...
+go build ./cmd/server
+go build ./cmd/migrate
+```
 
-# 前端格式、测试与生产构建
-Set-Location ..\frontend
+前端：
+
+```powershell
+Set-Location frontend
 npm run format:check
 npm test
 npm run build
 ```
 
-真实数据库冒烟可执行 `backend/scripts/non_ai_smoke.ps1` 和 `backend/scripts/ai_acceptance.ps1`。生产前端构建输出到 `frontend/dist/`。
+部署与端到端验收：
+
+```powershell
+docker compose config --quiet
+.\backend\scripts\non_ai_smoke.ps1
+.\backend\scripts\ai_acceptance.ps1
+```
+
+生产发布前还必须完成知识库文档列出的双租户隔离、上传—索引—检索—删除、引用准确性、无证据拒答和模型故障降级验收。
 
 ## 文档
 
-- [API 概览](docs/api.md)
-- [工程基线](docs/BASELINE.md)
-- [软件设计说明书](docs/SDD.md)
-- [大模型网关规范](docs/LLM_GATEWAY.md)
+- [API 概览](docs/api.md)：认证、笔记、AI、知识库、调度和导出接口
+- [工程基线](docs/BASELINE.md)：当前技术与安全基线
+- [软件设计说明书](docs/SDD.md)：当前已实现的系统架构、数据、知识库、RAG、AI 工作流和部署设计
+- [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)：未实现、部分实现、待验证事项和发布阻断
+- [大模型网关规范](docs/LLM_GATEWAY.md)：LiteLLM 路由、密钥、隐私和用量治理
 
-## 数据库升级与 Kubernetes
+## 当前非目标
 
-已部署数据库通过 `backend/cmd/migrate` 显式升级，迁移持有 PostgreSQL
-advisory lock，并支持事务化 `up/down/status`。可选 Helm Chart 位于
-`packaging/helm/diary-listener`，升级前会以 Hook Job 运行迁移；PostgreSQL
-与 LiteLLM 作为生产托管依赖由部署环境提供。
+桌面组件、团队协作、计费、数据库与 Markdown 双向同步，以及应用级完整备份包不在当前产品范围内。

@@ -1,20 +1,20 @@
 # 大模型网关接入规范
 
 > 文档状态：阶段一已实施并验收
-> 适用范围：Diary Listener 后端的通用 AI 生成、M2 AI 工作流和定时报告
+> 适用范围：Cortex 后端的通用 AI 生成、M2 AI 工作流和定时报告
 > 关联文档：`SDD.md`
 > 参考资料：[有没有用过大模型的网关框架？网关层解决了什么问题？](https://xiaolinnote.com/ai/tools/16_llm_gateway.html)
 
 ## 1. 背景与目标
 
-Diary Listener 当前通过 OpenAI 兼容的 Chat Completions 接口调用大模型，并由后端环境变量维护模型服务地址、密钥和默认模型。随着模型调用场景增加，重试、故障转移、模型路由、配额、成本统计和安全策略不应继续分散在业务代码中。
+Cortex 当前通过 OpenAI 兼容的 Chat Completions 接口调用大模型，并由后端环境变量维护模型服务地址、密钥和默认模型。随着模型调用场景增加，重试、故障转移、模型路由、配额、成本统计和安全策略不应继续分散在业务代码中。
 
 本项目计划在应用后端与模型供应商之间增加独立的大模型网关：
 
 ```text
 浏览器
   |
-Diary Listener 后端
+Cortex 后端
   |
   | OpenAI 兼容协议、网关虚拟密钥
   v
@@ -33,7 +33,7 @@ Diary Listener 后端
 - 获得准确的 token、成本、延迟和错误统计。
 - 在满足租户隔离和隐私要求的前提下评估缓存。
 
-网关不是 Diary Listener 的业务功能，不应在前端暴露为普通用户设置。
+网关不是 Cortex 的业务功能，不应在前端暴露为普通用户设置。
 
 ## 2. 现状与可行性
 
@@ -53,7 +53,7 @@ Diary Listener 后端
 
 ## 3. 技术选型原则
 
-优先采用独立部署的成熟网关，不在 Diary Listener 内部自行实现完整网关能力。
+优先采用独立部署的成熟网关，不在 Cortex 内部自行实现完整网关能力。
 
 候选方案：
 
@@ -96,7 +96,7 @@ LiteLLM 配置以 Kimi 为主路由，并将 OpenAI 放入 fallback。OpenAI 额
 
 ## 4. 配置规范
 
-Diary Listener 后端继续只读取以下部署配置：
+Cortex 后端继续只读取以下部署配置：
 
 ```env
 AI_BASE_URL=http://llm-gateway:4000/v1
@@ -113,6 +113,33 @@ AI_MODEL=diary-default
 - API Key 不进入前端状态、浏览器存储、URL、Cookie、数据库业务字段、日志、审计详情或备份包。
 - 网关管理端口不得公开暴露；仅应用调用端口允许在内部网络访问。
 - 开发、测试和生产环境使用不同的虚拟密钥、预算与日志空间。
+
+### 4.1 本地知识库 Embedding
+
+LiteLLM 暴露逻辑模型 `cortex-embedding`，并将请求转发到
+宿主机 Ollama 的 OpenAI 兼容接口。当前模型为
+`qwen3-embedding:0.6b`，默认返回 1024 维向量，支持中英文和中英混合语料。
+Cortex Backend 只持有 `LITELLM_VIRTUAL_KEY`，不得绕过 LiteLLM 直连
+Ollama。Ollama 不使用付费供应商 Key；`LOCAL_EMBEDDING_API_KEY` 只是
+LiteLLM OpenAI 兼容客户端所需的本地占位凭据。
+
+Backend 默认不发送 `dimensions`，但仍严格校验响应必须为 1024 维；
+`RAG_EMBEDDING_SEND_DIMENSIONS` 保持 `false`。配置如下：
+
+```env
+LOCAL_EMBEDDING_BASE_URL=http://host.docker.internal:11434/v1
+LOCAL_EMBEDDING_API_KEY=ollama-local
+RAG_EMBEDDING_BASE_URL=http://llm-gateway:4000/v1
+RAG_EMBEDDING_API_KEY=<LiteLLM virtual key>
+RAG_EMBEDDING_MODEL=cortex-embedding
+RAG_EMBEDDING_DIMENSIONS=1024
+RAG_EMBEDDING_SEND_DIMENSIONS=false
+```
+
+原文件、提取文本、父子分片和 embedding 返回值都保存在本机；
+只有生成向量所需的 child 文本和查询文本会经 LiteLLM 发送给宿主机 Ollama。
+Windows 上 Ollama 必须监听 Docker Desktop 可访问的地址，例如
+`OLLAMA_HOST=0.0.0.0:11434`，并通过防火墙禁止公网访问该端口。
 
 ## 5. 路由与可靠性规范
 
@@ -144,7 +171,7 @@ diary-default
 
 ## 6. 租户、隐私与日志
 
-日记正文属于高敏感个人内容。网关必须延续 Diary Listener 的多租户隔离原则。
+日记正文属于高敏感个人内容。网关必须延续 Cortex 的多租户隔离原则。
 
 应用向网关传递观测元数据时，应使用不可直接识别个人身份的内部标识，并至少区分：
 
@@ -171,7 +198,7 @@ diary-default
 
 | 数据来源 | 用途 |
 | --- | --- |
-| Diary Listener `AiUsageRecord` | 租户内产品统计、请求状态、业务类型和用户体验指标 |
+| Cortex `AiUsageRecord` | 租户内产品统计、请求状态、业务类型和用户体验指标 |
 | 网关指标 | 准确 token、模型成本、上游延迟、路由、重试和供应商错误 |
 
 如网关能在流式完成后返回标准 usage，后续可将准确值回填应用记录；不能可靠取得时，应保留估算值并明确标记为估算，禁止将其用于账单结算。
@@ -322,13 +349,13 @@ LiteLLM 已使用独立管理数据库。业务后端通过 `LITELLM_VIRTUAL_KEY
 
 - 在设置页中提供供应商密钥、模型路由或连接测试。
 - 允许浏览器直接调用网关或模型供应商。
-- 在 Diary Listener 内部重新实现通用 LLM 网关。
+- 在 Cortex 内部重新实现通用 LLM 网关。
 - 默认启用全局缓存或跨租户语义缓存。
 - 用网关替代应用自身的身份认证、租户鉴权和数据行级安全。
 - 首期同时引入多个网关产品或复杂的跨区域多活部署。
 
 ## 12. 推荐决策
 
-Diary Listener 应增加独立的大模型网关。首期重点是透明代理、密钥集中管理、可靠路由、配额和成本观测；缓存不是首期依赖。
+Cortex 应增加独立的大模型网关。首期重点是透明代理、密钥集中管理、可靠路由、配额和成本观测；缓存不是首期依赖。
 
-语义缓存只有在严格租户隔离、数据保留和删除机制、离线误命中测试以及真实成本收益均得到验证后才能启用。任何无法提供租户级缓存命名空间的网关实现，都不得缓存 Diary Listener 的 Prompt 或响应。
+语义缓存只有在严格租户隔离、数据保留和删除机制、离线误命中测试以及真实成本收益均得到验证后才能启用。任何无法提供租户级缓存命名空间的网关实现，都不得缓存 Cortex 的 Prompt 或响应。

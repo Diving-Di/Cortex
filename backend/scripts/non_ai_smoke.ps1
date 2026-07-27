@@ -4,7 +4,6 @@ $base = if ($env:GO_BACKEND_URL) { $env:GO_BACKEND_URL } else { "http://127.0.0.
 $suffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
 $users = @("nonai_${suffix}_a", "nonai_${suffix}_b")
 $headers = @()
-$backupFile = Join-Path $PSScriptRoot "..\bin\non-ai-backup.zip"
 $exportFile = Join-Path $PSScriptRoot "..\bin\non-ai-export.zip"
 
 try {
@@ -57,12 +56,6 @@ try {
 
     Invoke-WebRequest "$base/api/v1/exports/markdown" `
         -Method Post -Headers $headers[0] -OutFile $exportFile
-    Invoke-WebRequest "$base/api/v1/backups" `
-        -Method Post -Headers $headers[0] -OutFile $backupFile
-    $restored = Invoke-RestMethod "$base/api/v1/backups/restore" `
-        -Method Post -Headers $headers[1] -Form @{ file = Get-Item $backupFile }
-    $restoredSearch = Invoke-RestMethod "$base/api/v1/search?q=西湖" -Headers $headers[1]
-
     Invoke-WebRequest "$base/api/v1/tenant" -Method Delete -Headers $headers[0] | Out-Null
     $deletedStatus = 0
     try {
@@ -83,14 +76,9 @@ try {
         AttachmentSize = $upload.size
         CrossTenantAttachment = $crossAttachment
         ExportBytes = (Get-Item $exportFile).Length
-        BackupBytes = (Get-Item $backupFile).Length
-        RestoredNotes = $restored.notes
-        RestoredTags = $restored.tags
-        RestoredAttachments = $restored.attachments
-        RestoredSearch = $restoredSearch.total
         DeletedTenantStatus = $deletedStatus
         RestoredTenantStatus = $restoredTenant.status
     } | ConvertTo-Json -Compress
 } finally {
-    Remove-Item -LiteralPath $backupFile, $exportFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $exportFile -Force -ErrorAction SilentlyContinue
 }

@@ -17,6 +17,8 @@ services:
       - DATABASE_URL=postgresql://diary_litellm:${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD}@db:5432/diary_litellm
       - OPENAI_API_KEY=${OPENAI_API_KEY:?set OPENAI_API_KEY}
       - KIMI_API_KEY=${KIMI_API_KEY:?set KIMI_API_KEY}
+      - LOCAL_EMBEDDING_BASE_URL=${LOCAL_EMBEDDING_BASE_URL:-http://host.docker.internal:11434/v1}
+      - LOCAL_EMBEDDING_API_KEY=${LOCAL_EMBEDDING_API_KEY:-ollama-local}
     expose:
       - "4000"
     healthcheck:
@@ -36,7 +38,7 @@ services:
         condition: service_healthy
 
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:0.8.1-pg16-bookworm@sha256:33198da2828a14c30348d2ccb4750833d5ed9a44c88d840a0e523d7417120337
     environment:
       POSTGRES_DB: diary_listener
       POSTGRES_USER: diary_migrator
@@ -59,6 +61,9 @@ services:
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
     ports:
       - "127.0.0.1:8000:8000"
+    cpus: 2.0
+    mem_limit: 2g
+    pids_limit: 256
     volumes:
       - app_data:/app/data
     environment:
@@ -68,6 +73,22 @@ services:
       - LISTEN_ADDRESS=0.0.0.0:8000
       - DIARY_DATA_DIR=/app/data
       - MAX_ATTACHMENT_BYTES=${MAX_ATTACHMENT_BYTES:-20971520}
+      - KNOWLEDGE_MAX_FILE_BYTES=${KNOWLEDGE_MAX_FILE_BYTES:-52428800}
+      - KNOWLEDGE_MAX_PDF_PAGES=${KNOWLEDGE_MAX_PDF_PAGES:-500}
+      - KNOWLEDGE_MAX_EXTRACTED_CHARS=${KNOWLEDGE_MAX_EXTRACTED_CHARS:-5000000}
+      - RAG_INDEX_WORKERS=${RAG_INDEX_WORKERS:-2}
+      - RAG_PARENT_TARGET_TOKENS=${RAG_PARENT_TARGET_TOKENS:-1800}
+      - RAG_PARENT_MAX_TOKENS=${RAG_PARENT_MAX_TOKENS:-2500}
+      - RAG_CHILD_TARGET_TOKENS=${RAG_CHILD_TARGET_TOKENS:-350}
+      - RAG_CHILD_MAX_TOKENS=${RAG_CHILD_MAX_TOKENS:-500}
+      - RAG_CHILD_OVERLAP_TOKENS=${RAG_CHILD_OVERLAP_TOKENS:-50}
+      - RAG_EMBEDDING_BASE_URL=${RAG_EMBEDDING_BASE_URL:-http://llm-gateway:4000/v1}
+      - RAG_EMBEDDING_API_KEY=${LITELLM_VIRTUAL_KEY:?set LITELLM_VIRTUAL_KEY}
+      - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-cortex-embedding}
+      - RAG_EMBEDDING_DIMENSIONS=${RAG_EMBEDDING_DIMENSIONS:-1024}
+      - RAG_EMBEDDING_SEND_DIMENSIONS=${RAG_EMBEDDING_SEND_DIMENSIONS:-false}
+      - RAG_RERANK_BASE_URL=${RAG_RERANK_BASE_URL:-http://reranker-service:8080}
+      - RAG_RERANK_MODEL=${RAG_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
       - AI_API_KEY=${LITELLM_VIRTUAL_KEY:?set LITELLM_VIRTUAL_KEY}
       - AI_BASE_URL=http://llm-gateway:4000/v1
       - AI_MODEL=diary-default
@@ -81,6 +102,41 @@ services:
       llm-gateway:
         condition: service_healthy
 
+  reranker-service:
+    profiles: ["local-ai"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8@sha256:8de25e75ce39617f17f2f6c77d60a4f75b65e779ed5005420eb1400072a15c1c
+    cpus: 4.0
+    mem_limit: 8g
+    pids_limit: 512
+    command:
+      [
+        "--model-id",
+        "BAAI/bge-reranker-v2-m3",
+        "--revision",
+        "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+        "--port",
+        "8080",
+        "--tokenization-workers",
+        "2",
+        "--max-concurrent-requests",
+        "32",
+        "--max-batch-tokens",
+        "4096",
+        "--max-client-batch-size",
+        "16",
+        "--auto-truncate",
+      ]
+    volumes:
+      - reranker_models:/data
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
   frontend:
     build: ./frontend
     ports:
@@ -92,3 +148,4 @@ services:
 volumes:
   db_data:
   app_data:
+  reranker_models:

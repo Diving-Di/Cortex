@@ -6,7 +6,7 @@ Diary Listener 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。
 
 - 认证、个人租户与 PostgreSQL RLS；
 - 笔记、版本、标签、搜索和 dashboard；
-- 附件、Markdown 导出、备份与恢复；
+- 附件、知识原文件和 Markdown 导出；
 - LiteLLM Proxy 上的 SSE、AI 整理、报告与回忆问答；
 - 旧聊天和轻日记兼容接口；
 - 并发安全的定时报表 scheduler。
@@ -58,4 +58,31 @@ LISTEN_ADDRESS=0.0.0.0:8000
 AI_BASE_URL=http://llm-gateway:4000/v1
 AI_API_KEY=<gateway-key>
 AI_MODEL=diary-default
+KNOWLEDGE_MAX_FILE_BYTES=52428800
+KNOWLEDGE_MAX_PDF_PAGES=500
+KNOWLEDGE_MAX_EXTRACTED_CHARS=5000000
+RAG_INDEX_WORKERS=2
+RAG_PARENT_TARGET_TOKENS=1800
+RAG_PARENT_MAX_TOKENS=2500
+RAG_CHILD_TARGET_TOKENS=350
+RAG_CHILD_MAX_TOKENS=500
+RAG_CHILD_OVERLAP_TOKENS=50
+RAG_EMBEDDING_BASE_URL=http://llm-gateway:4000/v1
+RAG_EMBEDDING_MODEL=cortex-embedding
+RAG_EMBEDDING_DIMENSIONS=1024
+RAG_RERANK_BASE_URL=http://reranker-service:8080
+RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 ```
+
+`cortex-embedding` 默认由 LiteLLM 转发到宿主机 Ollama 的
+`qwen3-embedding:0.6b`。模型输出固定为 1024 维，本地接口不需要付费
+供应商 API Key。
+
+知识文件上传、下载和删除不依赖生成模型。索引 worker 对 embedding 请求按 16 条分批，
+对 429/502/503/504 和网络瞬时错误最多重试 2 次；embedding 不可用时文档保持失败状态并可
+后续重建索引。知识问答的 embedding 不可用时退化为 FTS，reranker 不可用时退化为 RRF；
+生成模型未配置时返回 `AI_NOT_CONFIGURED`，不影响知识文件管理。
+
+父子块配置在启动时做强校验：target 不得大于 max，child max 必须小于 parent max，
+overlap 必须小于 child target。PDF 提取受 45 秒 worker 超时、页数和字符数限制，
+DOCX 还受 ZIP 条目、解压规模和压缩比限制。

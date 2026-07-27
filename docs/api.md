@@ -1,4 +1,4 @@
-# Diary Listener API 概览
+# Cortex API 概览
 
 后端基于 Go/Gin，当前产品接口以 `/api/v1` 为主；认证和旧聊天/轻日记接口同时提供无版本前缀的兼容路径。
 
@@ -103,6 +103,26 @@ data: [DONE]
 Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 master key
 不会进入业务后端或前端。未配置虚拟密钥时返回 `AI_NOT_CONFIGURED`。
 
+## 个人知识库与 RAG Chat
+
+所有知识资源均从服务端认证主体解析租户，客户端不能提交 `tenant_id` 选择空间。上传使用 `multipart/form-data`，字段为 `file`，可选 `collection_id`；支持 `.txt`、文本型 `.pdf` 和 `.docx`，默认上限 50 MiB。文件进入异步索引流程，状态依次为 `uploaded`、`extracting`、`indexing`、`ready` 或 `failed`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` / `POST` | `/api/v1/knowledge/collections` | 查询或创建知识集合 |
+| `GET` / `POST` | `/api/v1/knowledge/documents` | 分页查询或上传知识文件 |
+| `GET` | `/api/v1/knowledge/documents/{document_id}` | 获取文件与索引状态 |
+| `GET` | `/api/v1/knowledge/documents/{document_id}/download` | 鉴权下载原文件 |
+| `DELETE` | `/api/v1/knowledge/documents/{document_id}` | 删除原文件并立即使索引失效 |
+| `POST` | `/api/v1/knowledge/chat` | 在指定集合/文件范围内检索并以 SSE 回答 |
+| `GET` | `/api/v1/knowledge/messages/{message_id}/sources` | 查询回答引用的知识来源 |
+
+Chat 请求包含 `question`，可选 `conversation_id`、`collection_ids` 和 `document_ids`。
+检索采用经 LiteLLM 调用本地 `qwen3-embedding:0.6b` 得到的向量召回与 PostgreSQL
+全文召回进行混合排序，再使用可选的 BGE Reranker v2 M3 重排；回答只能依据返回的
+父块上下文。无证据时返回 `KNOWLEDGE_NO_EVIDENCE`，不会调用生成模型。Embedding
+不可用时降级为 FTS，不绕过 LiteLLM 切换调用路径。
+
 ## 定时报告
 
 | 方法 | 路径 | 说明 |
@@ -116,15 +136,13 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 任务使用 IANA 时区，调度时间在数据库中保存为 UTC。多个 worker 通过数据库
 claim 保证同一到期任务只生成一条运行记录。
 
-## 导出、备份与恢复
+## 内容导出
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/api/v1/exports/markdown` | 下载全部有效笔记的 Markdown ZIP |
-| `POST` | `/api/v1/backups` | 创建带 SHA-256 清单的完整备份 ZIP |
-| `POST` | `/api/v1/backups/restore` | 将备份恢复到空个人空间 |
 
-恢复是受控操作：目标空间必须为空，上传包具有大小限制，并会校验清单及租户边界。
+Markdown ZIP 用于内容交换，不是完整备份。Cortex 不提供应用级完整备份/恢复 API；数据库与文件卷灾备由部署者负责。
 
 ## 旧版兼容接口
 

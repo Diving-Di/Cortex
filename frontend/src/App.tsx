@@ -1,6 +1,13 @@
 import { lazy, Suspense } from 'react';
 import { Button, Menu, Spin } from 'antd';
-import { EditOutlined, LogoutOutlined, MessageOutlined, RobotOutlined } from '@ant-design/icons';
+import {
+  BookOutlined,
+  BulbOutlined,
+  EditOutlined,
+  LogoutOutlined,
+  MessageOutlined,
+  RobotOutlined,
+} from '@ant-design/icons';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import ProtectedRoute from './routes/ProtectedRoute';
 import './App.css';
@@ -12,6 +19,8 @@ const ReportsPage = lazy(() => import('./features/reports/ReportsPage'));
 const MemoryPage = lazy(() => import('./features/memory/MemoryPage'));
 const SearchPage = lazy(() => import('./features/search/SearchPage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
+const KnowledgePage = lazy(() => import('./features/knowledge/KnowledgePage'));
+const GrowthAssistantPage = lazy(() => import('./features/assistant/GrowthAssistantPage'));
 
 function AppLayout() {
   const navigate = useNavigate();
@@ -31,7 +40,7 @@ function AppLayout() {
       <nav className="app-nav">
         <div className="app-logo">
           <RobotOutlined className="app-logo-icon" />
-          <span>Diary Listener</span>
+          <span>Cortex</span>
         </div>
         <Menu
           mode="inline"
@@ -41,6 +50,8 @@ function AppLayout() {
           items={[
             { key: '/', icon: <MessageOutlined />, label: '工作台' },
             { key: '/notes', icon: <EditOutlined />, label: '笔记本' },
+            { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
+            { key: '/assistant', icon: <BulbOutlined />, label: '成长助手' },
             { key: '/reports', label: '周期报告' },
             { key: '/memory', label: '回忆书' },
             { key: '/search', label: '搜索' },
@@ -59,6 +70,8 @@ function AppLayout() {
           <Routes>
             <Route index element={<DashboardPage token={token} />} />
             <Route path="notes/*" element={<NotesPage token={token} />} />
+            <Route path="knowledge" element={<KnowledgePage token={token} />} />
+            <Route path="assistant" element={<GrowthAssistantPage token={token} />} />
             <Route path="reports" element={<ReportsPage token={token} />} />
             <Route path="memory" element={<MemoryPage token={token} />} />
             <Route path="search" element={<SearchPage />} />

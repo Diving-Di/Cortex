@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 FROM alpine:3.23
 
-RUN apk add --no-cache ca-certificates tzdata su-exec \
+RUN apk add --no-cache ca-certificates poppler-utils tzdata su-exec \
     && addgroup -S diary \
     && adduser -S -G diary -h /app diary
 

@@ -1,4 +1,10 @@
 model_list:
+  - model_name: cortex-embedding
+    litellm_params:
+      model: openai/qwen3-embedding:0.6b
+      api_base: os.environ/LOCAL_EMBEDDING_BASE_URL
+      api_key: os.environ/LOCAL_EMBEDDING_API_KEY
+      timeout: 60
   - model_name: diary-default
     litellm_params:
       model: openai/kimi-k2.5

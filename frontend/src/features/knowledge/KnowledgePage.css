@@ -1,0 +1,22 @@
+.knowledge-page {
+  display: grid;
+  gap: 16px;
+}
+
+.knowledge-header {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+}
+
+.knowledge-header h2 {
+  margin-bottom: 4px;
+}
+
+.knowledge-toolbar {
+  margin-bottom: 16px;
+}
+
+.knowledge-uploader {
+  margin-top: 8px;
+}
