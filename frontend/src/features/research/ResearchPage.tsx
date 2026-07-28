@@ -84,6 +84,8 @@ const sourceStatus: Record<ResearchSource['status'], { label: string; color: str
   failed: { label: '失败', color: 'error' },
 };
 
+const unknownStatus = { label: '未知状态', color: 'default' };
+
 type CreateValues = {
   mode: 'keyword' | 'urls';
   input: string;
@@ -350,9 +352,10 @@ export default function ResearchPage({ token }: Props) {
     {
       title: '状态',
       width: 110,
-      render: (_, item) => (
-        <Tag color={jobStatus[item.status].color}>{jobStatus[item.status].label}</Tag>
-      ),
+      render: (_, item) => {
+        const status = jobStatus[item.status] || unknownStatus;
+        return <Tag color={status.color}>{status.label}</Tag>;
+      },
     },
     {
       title: '创建时间',
@@ -393,9 +396,10 @@ export default function ResearchPage({ token }: Props) {
     {
       title: '状态',
       width: 110,
-      render: (_, item) => (
-        <Tag color={sourceStatus[item.status].color}>{sourceStatus[item.status].label}</Tag>
-      ),
+      render: (_, item) => {
+        const status = sourceStatus[item.status] || unknownStatus;
+        return <Tag color={status.color}>{status.label}</Tag>;
+      },
     },
     {
       title: '采集时间',
@@ -420,6 +424,7 @@ export default function ResearchPage({ token }: Props) {
         .map((item) => item.id),
     [selectedIDs, sources.data],
   );
+  const pageError = authorization.error || jobs.error || sources.error || collections.error;
 
   return (
     <div className="research-page">
@@ -440,6 +445,16 @@ export default function ResearchPage({ token }: Props) {
         type="info"
         message="仅处理你有权研究或保存的公开内容，请遵守平台规则、版权和适用法律。"
       />
+
+      {pageError ? (
+        <Alert
+          showIcon
+          type="error"
+          message="研究页面数据加载失败"
+          description="请检查网络或服务状态后重试。"
+          action={<Button onClick={() => void refresh()}>重试</Button>}
+        />
+      ) : null}
 
       <Card size="small" className="research-auth-card">
         <div>

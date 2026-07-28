@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -8,7 +8,6 @@ import {
   Modal,
   Popconfirm,
   Select,
-  Space,
   Spin,
   Typography,
   message,
@@ -16,6 +15,8 @@ import {
 import {
   DeleteOutlined,
   EditOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   PlusOutlined,
   RobotOutlined,
   SendOutlined,
@@ -26,15 +27,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  createConversation,
   deleteConversation,
   getConversation,
   listConversations,
-  listKnowledgeCollections,
-  listKnowledgeDocuments,
   renameConversation,
 } from '../../api/knowledge';
-import type { Conversation, KnowledgeDocument } from '../../api/knowledge';
+import type { Conversation } from '../../api/knowledge';
 import './GrowthAssistantPage.css';
 
 interface Props {
@@ -70,32 +68,27 @@ export default function GrowthAssistantPage({ token }: Props) {
   const [sending, setSending] = useState(false);
   const [scope, setScope] = useState<Conversation['source_scope']>('knowledge');
   const [conversationId, setConversationId] = useState<number>();
-  const [collectionIds, setCollectionIds] = useState<number[]>([]);
-  const [documentIds, setDocumentIds] = useState<number[]>([]);
-  const [conversationSearch, setConversationSearch] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const controller = useRef<AbortController>();
+  const messagesEnd = useRef<HTMLDivElement>(null);
   const conversations = useQuery({
-    queryKey: ['assistant-conversations', conversationSearch],
-    queryFn: () => listConversations(token, conversationSearch),
+    queryKey: ['assistant-conversations'],
+    queryFn: () => listConversations(token),
   });
-  const collections = useQuery({
-    queryKey: ['knowledge-collections'],
-    queryFn: () => listKnowledgeCollections(token),
-  });
-  const documents = useQuery({
-    queryKey: ['assistant-documents'],
-    queryFn: () => listKnowledgeDocuments(token, { pageSize: 100 }),
-  });
-  const readyDocuments = (documents.data?.items || []).filter((item) => item.status === 'ready');
-  const excludedCount = (documents.data?.items || []).length - readyDocuments.length;
-  const createChat = useMutation({
-    mutationFn: () => createConversation(token, scope),
-    onSuccess: async (conversation) => {
-      setConversationId(conversation.id);
-      setItems([]);
-      await queryClient.invalidateQueries({ queryKey: ['assistant-conversations'] });
-    },
-  });
+
+  useEffect(() => {
+    if (typeof messagesEnd.current?.scrollIntoView === 'function') {
+      messagesEnd.current.scrollIntoView({ block: 'end' });
+    }
+  }, [items]);
+
+  function startCleanConversation() {
+    controller.current?.abort();
+    setConversationId(undefined);
+    setItems([]);
+    setInput('');
+  }
+
   const removeChat = useMutation({
     mutationFn: (id: number) => deleteConversation(token, id),
     onSuccess: async (_, id) => {
@@ -146,8 +139,6 @@ export default function GrowthAssistantPage({ token }: Props) {
           request_id: newRequestID(),
           source_scope: scope,
           conversation_id: conversationId,
-          collection_ids: collectionIds,
-          document_ids: documentIds,
         }),
         signal: controller.current.signal,
       });
@@ -218,147 +209,110 @@ export default function GrowthAssistantPage({ token }: Props) {
   }
 
   return (
-    <div className="growth-assistant">
+    <div className={`growth-assistant${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="growth-sidebar" aria-label="会话列表">
-        <Button block icon={<PlusOutlined />} onClick={() => createChat.mutate()}>
-          新建会话
-        </Button>
-        <Input.Search
-          allowClear
-          aria-label="搜索会话"
-          placeholder="搜索标题或消息"
-          onSearch={(value) => setConversationSearch(value.trim())}
-        />
-        <List
-          loading={conversations.isLoading}
-          dataSource={conversations.data || []}
-          locale={{ emptyText: '暂无会话' }}
-          renderItem={(conversation) => (
-            <List.Item
-              className={conversation.id === conversationId ? 'active' : ''}
-              onClick={() => void openConversation(conversation.id)}
-              actions={[
-                <Button
-                  key="rename"
-                  type="text"
-                  aria-label={`重命名会话 ${conversation.title}`}
-                  icon={<EditOutlined />}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    Modal.confirm({
-                      title: '重命名会话',
-                      content: (
-                        <Input
-                          id={`rename-${conversation.id}`}
-                          defaultValue={conversation.title}
-                          maxLength={255}
-                        />
-                      ),
-                      onOk: async () => {
-                        const title = (
-                          document.getElementById(`rename-${conversation.id}`) as HTMLInputElement
-                        )?.value.trim();
-                        if (!title) return;
-                        await renameConversation(
-                          token,
-                          conversation.id,
-                          title,
-                          conversation.version,
-                        );
-                        await queryClient.invalidateQueries({
-                          queryKey: ['assistant-conversations'],
-                        });
-                      },
-                    });
-                  }}
-                />,
-                <Popconfirm
-                  key="delete"
-                  title="删除会话？"
-                  onConfirm={() => removeChat.mutate(conversation.id)}
-                >
+        <div className="growth-sidebar-header">
+          {!sidebarCollapsed ? (
+            <Button block icon={<PlusOutlined />} onClick={startCleanConversation}>
+              新建会话
+            </Button>
+          ) : null}
+          <Button
+            type="text"
+            aria-label={sidebarCollapsed ? '展开会话列表' : '折叠会话列表'}
+            icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setSidebarCollapsed((value) => !value)}
+          />
+        </div>
+        {!sidebarCollapsed ? (
+          <List
+            loading={conversations.isLoading}
+            dataSource={conversations.data || []}
+            locale={{ emptyText: '暂无会话' }}
+            renderItem={(conversation) => (
+              <List.Item
+                className={conversation.id === conversationId ? 'active' : ''}
+                onClick={() => void openConversation(conversation.id)}
+                actions={[
                   <Button
+                    key="rename"
                     type="text"
-                    danger
-                    aria-label={`删除会话 ${conversation.title}`}
-                    icon={<DeleteOutlined />}
-                    onClick={(event) => event.stopPropagation()}
-                  />
-                </Popconfirm>,
-              ]}
-            >
-              <List.Item.Meta
-                title={conversation.title}
-                description={`${conversation.source_scope} · ${conversation.message_count || 0} 条消息 · ${conversation.total_tokens || 0} tokens`}
-              />
-            </List.Item>
-          )}
-        />
+                    aria-label={`重命名会话 ${conversation.title}`}
+                    icon={<EditOutlined />}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      Modal.confirm({
+                        title: '重命名会话',
+                        content: (
+                          <Input
+                            id={`rename-${conversation.id}`}
+                            defaultValue={conversation.title}
+                            maxLength={255}
+                          />
+                        ),
+                        onOk: async () => {
+                          const title = (
+                            document.getElementById(`rename-${conversation.id}`) as HTMLInputElement
+                          )?.value.trim();
+                          if (!title) return;
+                          await renameConversation(
+                            token,
+                            conversation.id,
+                            title,
+                            conversation.version,
+                          );
+                          await queryClient.invalidateQueries({
+                            queryKey: ['assistant-conversations'],
+                          });
+                        },
+                      });
+                    }}
+                  />,
+                  <Popconfirm
+                    key="delete"
+                    title="删除会话？"
+                    onConfirm={() => removeChat.mutate(conversation.id)}
+                  >
+                    <Button
+                      type="text"
+                      danger
+                      aria-label={`删除会话 ${conversation.title}`}
+                      icon={<DeleteOutlined />}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  </Popconfirm>,
+                ]}
+              >
+                <List.Item.Meta
+                  title={conversation.title}
+                  description={`${conversation.message_count || 0} 条消息`}
+                />
+              </List.Item>
+            )}
+          />
+        ) : null}
       </aside>
       <main className="growth-main">
-        <div>
-          <Typography.Title level={2}>成长助手</Typography.Title>
-          <Typography.Text type="secondary">回答严格依据你选择的个人来源。</Typography.Text>
+        <div className="growth-source-bar">
+          <span>来源</span>
+          <Select
+            className="growth-source-select"
+            aria-label="来源范围"
+            value={scope}
+            onChange={(value) => {
+              setScope(value);
+              startCleanConversation();
+            }}
+            options={[
+              { value: 'knowledge', label: '知识库' },
+              { value: 'growth', label: '笔记本' },
+            ]}
+          />
         </div>
-        <Card>
-          <Space wrap>
-            <Select
-              className="growth-source-select"
-              aria-label="来源范围"
-              value={scope}
-              onChange={(value) => {
-                setScope(value);
-                setCollectionIds([]);
-                setDocumentIds([]);
-                setConversationId(undefined);
-                setItems([]);
-              }}
-              options={[
-                { value: 'knowledge', label: '知识库' },
-                { value: 'growth', label: '笔记本' },
-              ]}
-            />
-            {scope !== 'growth' ? (
-              <>
-                <Select
-                  mode="multiple"
-                  allowClear
-                  aria-label="选择知识集合"
-                  placeholder="全部集合"
-                  value={collectionIds}
-                  onChange={setCollectionIds}
-                  options={(collections.data || []).map((item) => ({
-                    value: item.id,
-                    label: item.name,
-                  }))}
-                  style={{ minWidth: 200 }}
-                />
-                <Select
-                  mode="multiple"
-                  allowClear
-                  aria-label="选择知识文件"
-                  placeholder="全部 ready 文件"
-                  value={documentIds}
-                  onChange={setDocumentIds}
-                  options={readyDocuments.map((item: KnowledgeDocument) => ({
-                    value: item.id,
-                    label: item.original_name,
-                  }))}
-                  style={{ minWidth: 240 }}
-                />
-                {excludedCount > 0 ? (
-                  <Typography.Text type="warning">
-                    {excludedCount} 个未 ready 文件已排除
-                  </Typography.Text>
-                ) : null}
-              </>
-            ) : null}
-          </Space>
-        </Card>
-        <Card className="growth-chat-card">
+        <Card className={`growth-chat-card${items.length === 0 ? ' empty' : ''}`}>
           <div className="growth-messages" aria-live="polite">
             {items.length === 0 ? (
-              <Empty description="选择来源后，可以开始提问" />
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="有什么想了解的？" />
             ) : (
               items.map((item) => (
                 <div key={item.id} className={`growth-message ${item.role}`}>
@@ -400,8 +354,9 @@ export default function GrowthAssistantPage({ token }: Props) {
                 </div>
               ))
             )}
+            <div ref={messagesEnd} />
           </div>
-          <Space.Compact className="growth-input">
+          <div className="growth-input">
             <Input.TextArea
               aria-label="输入问题"
               value={input}
@@ -413,18 +368,25 @@ export default function GrowthAssistantPage({ token }: Props) {
                 }
               }}
               placeholder="询问你的资料，Shift+Enter 换行"
-              autoSize={{ minRows: 1, maxRows: 5 }}
+              autoSize={{ minRows: 1, maxRows: 4 }}
             />
             {sending ? (
-              <Button icon={<StopOutlined />} onClick={() => controller.current?.abort()}>
-                停止
-              </Button>
+              <Button
+                className="growth-send"
+                aria-label="停止生成"
+                icon={<StopOutlined />}
+                onClick={() => controller.current?.abort()}
+              />
             ) : (
-              <Button type="primary" icon={<SendOutlined />} onClick={() => void send()}>
-                发送
-              </Button>
+              <Button
+                className="growth-send"
+                type="primary"
+                aria-label="发送"
+                icon={<SendOutlined />}
+                onClick={() => void send()}
+              />
             )}
-          </Space.Compact>
+          </div>
         </Card>
       </main>
     </div>

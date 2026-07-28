@@ -9,6 +9,7 @@
 | --- | --- | --- | --- |
 | `/knowledge` | `features/knowledge/KnowledgePage.tsx` | [个人知识库文档页](KNOWLEDGE_PAGE_ARCHITECTURE.md) | 已覆盖 |
 | `/research` | `features/research/ResearchPage.tsx` | [小红书研究页](RESEARCH_PAGE_ARCHITECTURE.md) | 已覆盖 |
+| `/assistant` | `features/assistant/GrowthAssistantPage.tsx` | [成长助手页](ASSISTANT_PAGE_ARCHITECTURE.md) | 已覆盖 |
 
 ## 尚未建立独立页面说明
 
@@ -19,7 +20,6 @@
 | `/login` | `features/auth/LoginPage.tsx` |
 | `/` | `features/dashboard/DashboardPage.tsx` |
 | `/notes/*` | `features/notes/NotesPage.tsx` |
-| `/assistant` | `features/assistant/GrowthAssistantPage.tsx` |
 | `/memories` | `features/memories/MemoriesPage.tsx` |
 | `/reports` | `features/reports/ReportsPage.tsx` |
 | `/settings` | `features/settings/SettingsPage.tsx` |
