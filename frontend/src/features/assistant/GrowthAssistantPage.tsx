@@ -211,19 +211,29 @@ export default function GrowthAssistantPage({ token }: Props) {
   return (
     <div className={`growth-assistant${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="growth-sidebar" aria-label="会话列表">
-        <div className="growth-sidebar-header">
-          {!sidebarCollapsed ? (
+        {!sidebarCollapsed ? (
+          <>
+            <div className="growth-sidebar-title">
+              <Typography.Title level={4}>成长助手</Typography.Title>
+              <Select
+                className="growth-source-select"
+                aria-label="来源范围"
+                value={scope}
+                onChange={(value) => {
+                  setScope(value);
+                  startCleanConversation();
+                }}
+                options={[
+                  { value: 'knowledge', label: '知识库' },
+                  { value: 'growth', label: '笔记本' },
+                ]}
+              />
+            </div>
             <Button block icon={<PlusOutlined />} onClick={startCleanConversation}>
               新建会话
             </Button>
-          ) : null}
-          <Button
-            type="text"
-            aria-label={sidebarCollapsed ? '展开会话列表' : '折叠会话列表'}
-            icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setSidebarCollapsed((value) => !value)}
-          />
-        </div>
+          </>
+        ) : null}
         {!sidebarCollapsed ? (
           <List
             loading={conversations.isLoading}
@@ -293,23 +303,14 @@ export default function GrowthAssistantPage({ token }: Props) {
         ) : null}
       </aside>
       <main className="growth-main">
-        <div className="growth-source-bar">
-          <span>来源</span>
-          <Select
-            className="growth-source-select"
-            aria-label="来源范围"
-            value={scope}
-            onChange={(value) => {
-              setScope(value);
-              startCleanConversation();
-            }}
-            options={[
-              { value: 'knowledge', label: '知识库' },
-              { value: 'growth', label: '笔记本' },
-            ]}
-          />
-        </div>
         <Card className={`growth-chat-card${items.length === 0 ? ' empty' : ''}`}>
+          <Button
+            className="growth-sidebar-toggle"
+            type="text"
+            aria-label={sidebarCollapsed ? '展开会话列表' : '折叠会话列表'}
+            icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setSidebarCollapsed((value) => !value)}
+          />
           <div className="growth-messages" aria-live="polite">
             {items.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="有什么想了解的？" />

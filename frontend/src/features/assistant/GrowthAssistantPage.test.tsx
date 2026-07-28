@@ -32,6 +32,7 @@ test('offers only knowledge base and notebook sources', async () => {
   expect(screen.queryByLabelText('搜索会话')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('选择知识集合')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('选择知识文件')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: '成长助手' })).toBeInTheDocument();
   expect(screen.getByLabelText('输入问题')).toBeInTheDocument();
   expect(screen.getByText('有什么想了解的？')).toBeInTheDocument();
 });
@@ -47,4 +48,5 @@ test('starts a clean local conversation without creating a persisted record', ()
 
   expect(knowledgeMocks.createConversation).not.toHaveBeenCalled();
   expect(screen.getByLabelText('折叠会话列表')).toBeInTheDocument();
+  expect(screen.getByLabelText('折叠会话列表').closest('.growth-chat-card')).not.toBeNull();
 });
