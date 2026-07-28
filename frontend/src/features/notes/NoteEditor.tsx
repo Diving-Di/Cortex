@@ -10,6 +10,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { authHeaders, http } from '../../api/http';
 import { getNote, saveNote } from '../../api/notes';
 import { useTheme } from '../../app/theme';
+import './Notes.css';
 
 type State = 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict';
 export default function NoteEditor({ token }: { token: string }) {
@@ -36,18 +37,23 @@ export default function NoteEditor({ token }: { token: string }) {
     [updatedAt, setUpdatedAt] = useState(''),
     [state, setState] = useState<State>('saved');
   const initialized = useRef(false);
-  const timer = useRef<number>();
+  const initialValues = useRef({ title: '', content: '', noteDate: '' });
   useEffect(() => {
     if (query.data && !initialized.current) {
       setTitle(query.data.title);
       setContent(query.data.content);
       setNoteDate(query.data.note_date || '');
       setUpdatedAt(query.data.updated_at);
+      initialValues.current = {
+        title: query.data.title,
+        content: query.data.content,
+        noteDate: query.data.note_date || '',
+      };
       initialized.current = true;
     }
   }, [query.data]);
   async function persist() {
-    if (!initialized.current) return;
+    if (!initialized.current || state === 'saving') return;
     setState('saving');
     try {
       const n = await saveNote(token, id, {
@@ -58,21 +64,25 @@ export default function NoteEditor({ token }: { token: string }) {
       });
       setUpdatedAt(n.updated_at);
       setState('saved');
-      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.setQueryData(['note', id], n);
+      await qc.invalidateQueries({ queryKey: ['notes'] });
+      navigate('/notes');
     } catch (e: any) {
       setState(e?.response?.status === 409 ? 'conflict' : 'error');
     }
   }
   useEffect(() => {
     if (!initialized.current) return;
-    setState('unsaved');
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(persist, 800);
-    return () => window.clearTimeout(timer.current);
+    const initial = initialValues.current;
+    setState(
+      title === initial.title && content === initial.content && noteDate === initial.noteDate
+        ? 'saved'
+        : 'unsaved',
+    );
   }, [title, content, noteDate]);
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (state === 'unsaved' || state === 'saving' || state === 'error') {
+      if (state !== 'saved') {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -84,32 +94,43 @@ export default function NoteEditor({ token }: { token: string }) {
   if (!query.data) return <Alert type="error" message="笔记不存在" />;
   return (
     <section>
-      <Space>
-        <Button
-          onClick={() => {
-            if (state === 'saved' || confirm('仍有未保存内容，确认离开？')) navigate('/notes');
-          }}
-        >
-          返回
-        </Button>
-        <span>
-          状态：
-          {
+      <header className="note-editor-toolbar">
+        <Space size="middle">
+          <Button
+            className="note-editor-action"
+            disabled={state === 'saving'}
+            onClick={() => navigate('/notes')}
+          >
+            取消
+          </Button>
+          <Button
+            className="note-editor-action"
+            type="primary"
+            loading={state === 'saving'}
+            disabled={state === 'saved'}
+            onClick={persist}
+          >
+            {state === 'error' || state === 'conflict' ? '重试保存' : '保存'}
+          </Button>
+          <span>
+            状态：
             {
-              saved: '已保存',
-              unsaved: '未保存',
-              saving: '保存中',
-              error: '保存失败',
-              conflict: '内容冲突',
-            }[state]
-          }
-        </span>
-        {(state === 'error' || state === 'conflict') && <Button onClick={persist}>重试保存</Button>}
-      </Space>
+              {
+                saved: '已保存',
+                unsaved: '未保存',
+                saving: '保存中',
+                error: '保存失败',
+                conflict: '内容冲突',
+              }[state]
+            }
+          </span>
+        </Space>
+      </header>
       {state === 'conflict' && (
         <Alert type="warning" message="服务器内容已更新，请刷新后合并，避免覆盖。" />
       )}
       <Input
+        disabled={state === 'saving'}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         size="large"
@@ -117,11 +138,13 @@ export default function NoteEditor({ token }: { token: string }) {
       />
       <DatePicker
         allowClear={false}
+        disabled={state === 'saving'}
         value={noteDate ? dayjs(noteDate) : null}
         onChange={(value) => value && setNoteDate(value.format('YYYY-MM-DD'))}
         style={{ marginBottom: 12 }}
       />
       <Upload
+        disabled={state === 'saving'}
         multiple
         showUploadList={false}
         customRequest={async (o) => {
@@ -188,6 +211,7 @@ export default function NoteEditor({ token }: { token: string }) {
             label: '编辑',
             children: (
               <CodeMirror
+                editable={state !== 'saving'}
                 value={content}
                 height="60vh"
                 theme={resolved}
