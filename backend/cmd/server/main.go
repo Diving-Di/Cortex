@@ -39,6 +39,7 @@ func main() {
 	handler := server.New(cfg, db, logger, version)
 	go server.RunScheduler(ctx, cfg, db, logger)
 	server.RunKnowledgeIndexer(ctx, cfg, db, logger)
+	server.RunResearchWorkers(ctx, cfg, db, logger)
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddress,
 		Handler:           handler,

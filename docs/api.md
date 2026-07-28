@@ -182,6 +182,35 @@ claim 保证同一到期任务只生成一条运行记录。
 
 Markdown ZIP 用于内容交换，不是完整备份。Cortex 不提供应用级完整备份/恢复 API；数据库与文件卷灾备由部署者负责。
 
+## 小红书研究
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/v1/research/jobs` | 按关键词或公开链接创建研究任务 |
+| `GET` | `/api/v1/research/jobs` | 分页查询研究任务 |
+| `GET` | `/api/v1/research/jobs/{job_id}` | 查询任务状态与持久化进度 |
+| `POST` | `/api/v1/research/jobs/{job_id}/cancel` | 请求取消运行中任务 |
+| `POST` | `/api/v1/research/jobs/{job_id}/retry` | 将失败或取消的任务重新排队 |
+| `GET` | `/api/v1/research/sources` | 筛选、搜索和分页查询研究结果 |
+| `GET` | `/api/v1/research/sources/{source_id}` | 查询来源、图片、OCR 和整理草稿 |
+| `DELETE` | `/api/v1/research/sources/{source_id}` | 软删除来源并使关联知识文档停止检索 |
+| `POST` | `/api/v1/research/sources/{source_id}/retry` | 为失败来源创建重新采集任务 |
+| `POST` | `/api/v1/research/sources/{source_id}/recollect` | 为来源创建重新采集任务 |
+| `PATCH` | `/api/v1/research/sources/{source_id}/draft` | 使用版本号更新整理草稿 |
+| `POST` | `/api/v1/research/sources/{source_id}/save` | 确认并保存到个人知识库 |
+| `POST` | `/api/v1/research/sources/{source_id}/ignore` | 忽略待确认结果 |
+| `POST` | `/api/v1/research/sources/batch-save` | 批量保存待确认结果 |
+| `POST` | `/api/v1/research/sources/batch-ignore` | 批量忽略待确认结果 |
+| `GET` | `/api/v1/research/assets/{asset_id}` | 鉴权预览来源图片 |
+
+创建任务时 `mode` 为 `keyword` 或 `urls`。关键词模式提交 `keywords`，链接模式提交
+`urls`；两种模式均提交 `target_count` 和幂等键 `idempotency_key`，可选
+`target_collection_id`。客户端提交的 `tenant_id` 不参与租户选择。
+
+研究任务状态为 `queued`、`collecting`、`extracting`、`organizing`、`reviewing`、
+`completed`、`failed` 或 `cancelled`。研究结果在用户确认前保持草稿状态。AI、OCR
+或采集授权不可用时返回稳定错误码，不返回第三方响应正文、页面 HTML 或内部地址。
+
 ## 旧版兼容接口
 
 以下接口仍由后端提供，但已不属于重构后主流程：
