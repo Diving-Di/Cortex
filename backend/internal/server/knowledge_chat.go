@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -132,9 +133,9 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiSources := unifiedChatSources(sources, growthSources)
-	s.writeKnowledgeSSE(w, r, prompt, events, apiSources, func(answer string) (int32, int32, error) {
+	s.writeKnowledgeSSE(w, r, prompt, events, apiSources, func(ctx context.Context, answer string) (int32, int32, error) {
 		return s.store.SaveKnowledgeAnswer(
-			r.Context(), principal, request.ConversationID, request.RequestID,
+			ctx, principal, request.ConversationID, request.RequestID,
 			request.SourceScope, request.Question, answer, sources, growthSources,
 		)
 	})
@@ -234,7 +235,7 @@ func (s *Server) knowledgeSourceList(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	result, err := s.store.GetKnowledgeSources(r.Context(), principalFrom(r.Context()), messageID)
+	result, err := s.store.GetChatSources(r.Context(), principalFrom(r.Context()), messageID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return

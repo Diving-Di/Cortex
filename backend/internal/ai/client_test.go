@@ -3,11 +3,14 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"diary-listener/backend/internal/apierror"
 )
 
 func TestOpenAICompatibleStream(t *testing.T) {
@@ -47,6 +50,31 @@ func TestOpenAICompatibleRequiresKey(t *testing.T) {
 	client := &OpenAICompatibleClient{}
 	if _, err := client.StreamChat(context.Background(), ChatRequest{}); err == nil {
 		t.Fatal("missing key accepted")
+	}
+}
+
+func TestOpenAICompatibleRedactsUpstreamErrorBody(t *testing.T) {
+	const sensitive = `supplier response contains sk-secret and private diary text`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprint(w, sensitive)
+	}))
+	defer upstream.Close()
+
+	client := &OpenAICompatibleClient{
+		BaseURL: upstream.URL, APIKey: "invalid-key", HTTPClient: upstream.Client(),
+	}
+	_, err := client.StreamChat(context.Background(), ChatRequest{Model: "test"})
+	if err == nil {
+		t.Fatal("unauthorized upstream request succeeded")
+	}
+	if strings.Contains(err.Error(), sensitive) || strings.Contains(err.Error(), "sk-secret") {
+		t.Fatalf("upstream response leaked in error: %q", err)
+	}
+	var appErr *apierror.Error
+	if !errors.As(err, &appErr) || appErr.Code != "AI_GATEWAY_AUTH_FAILED" ||
+		appErr.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("unexpected error: %#v", err)
 	}
 }
 

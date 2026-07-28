@@ -308,7 +308,7 @@ func (s *Store) KnowledgeDocumentPreview(
 			JOIN knowledge_parent_chunks p ON p.tenant_id=d.tenant_id AND p.document_id=d.id
 				AND p.index_version=d.index_version
 			WHERE d.tenant_id=$1 AND d.id=$2 AND d.status='ready' AND d.deleted_at IS NULL
-			ORDER BY p.chunk_index LIMIT 1`, principal.TenantID, documentID).Scan(&preview)
+			ORDER BY p.parent_index LIMIT 1`, principal.TenantID, documentID).Scan(&preview)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("DOCUMENT_PREVIEW_UNAVAILABLE", "文件尚未完成提取或来源已失效", 409)
 		}

@@ -254,7 +254,13 @@ npm run build
 docker compose config --quiet
 .\backend\scripts\non_ai_smoke.ps1
 .\backend\scripts\ai_acceptance.ps1
+docker compose --profile local-ai up -d --build reranker-service
+.\backend\scripts\knowledge_acceptance.ps1
 ```
+
+知识验收脚本使用固定合成 TXT/PDF/DOCX 与双租户数据，对跨租户 404、删除后不召回、
+答案事实和租户泄漏进行断言，并硬性检查 Recall@8、MRR、nDCG、citation precision、
+无答案准确率以及检索/端到端 P95 门槛。
 
 ## 文档
 

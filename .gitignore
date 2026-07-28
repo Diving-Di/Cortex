@@ -48,3 +48,4 @@ release/
 htmlcov/
 .pytest_cache/
 soak-results/
+/tmp/

@@ -1,0 +1,4 @@
+{"id":"zh-secret","question":"苍穹计划的中文发布口令是什么？","expected_document":"shared.txt","expected_phrase":"青竹七号","answerable":true}
+{"id":"exercise-date","question":"What is the fictional Project Sky exercise date?","expected_document":"shared.pdf","expected_phrase":"2042-04-17","answerable":true}
+{"id":"owner-team","question":"苍穹计划由哪个虚构团队负责？请同时给出英文名。","expected_document":"shared.docx","expected_phrase":"Aurora Lab","answerable":true}
+{"id":"no-answer","question":"火星基地的预算是多少？","expected_document":null,"expected_phrase":null,"answerable":false}

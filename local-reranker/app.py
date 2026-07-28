@@ -18,6 +18,7 @@ MODEL_REVISION = os.getenv(
 MAX_DOCUMENTS = int(os.getenv("RERANK_MAX_DOCUMENTS", "20"))
 MAX_LENGTH = int(os.getenv("RERANK_MAX_LENGTH", "2048"))
 BATCH_SIZE = int(os.getenv("RERANK_BATCH_SIZE", "4"))
+CPU_THREADS = int(os.getenv("RERANK_CPU_THREADS", "4"))
 DocumentText = Annotated[str, Field(min_length=1, max_length=131_072)]
 TASK = (
     "Given a personal knowledge-base search query, retrieve passages that provide "
@@ -52,6 +53,9 @@ class QwenReranker:
     def __init__(self) -> None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if device == "cuda" else torch.float32
+        if device == "cpu":
+            torch.set_num_threads(CPU_THREADS)
+            torch.set_num_interop_threads(1)
         offline = os.getenv("HF_HUB_OFFLINE") == "1"
         self.tokenizer = AutoTokenizer.from_pretrained(
             MODEL_ID,
@@ -112,6 +116,7 @@ class QwenReranker:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.reranker = QwenReranker()
+    app.state.reranker.score("health check", ["health check"])
     yield
 
 

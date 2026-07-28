@@ -38,8 +38,9 @@ go run ./cmd/migrate -steps=1 down
 独立事务中执行，并校验已应用迁移的 SHA-256。
 
 LiteLLM 首次启动后，用 `scripts/provision-litellm-key.ps1` 签发仅允许
-`diary-default` 且带预算的虚拟密钥，再将结果写入部署 Secret
-`LITELLM_VIRTUAL_KEY`。应用不得使用 `LITELLM_MASTER_KEY`。
+`diary-default`、`cortex-embedding` 且带预算的虚拟密钥。传入
+`-EnvironmentFile ..\..\.env` 可在不显示 key 的情况下原子更新本地 Compose
+Secret；生产环境应将值写入其 Secret 管理系统。应用不得使用 `LITELLM_MASTER_KEY`。
 
 ## Docker Compose
 
@@ -95,3 +96,8 @@ overlap 必须小于 child target。PDF 提取受 45 秒 worker 超时、页数�
 `GET /metrics` 输出知识索引队列、失败数、累计处理时间以及检索请求数和累计延迟。
 指标不包含问题、正文、文件名或租户身份。知识文件删除失败留下的受控
 `.deleting` tombstone 会由后台清理器持续重试。
+
+可重复的知识库验收使用 `scripts/knowledge_acceptance.ps1`。它会创建两个临时租户，
+上传 `testdata/knowledge` 中的 TXT/PDF/DOCX 合成资料，验证跨租户隔离、完整 RAG、
+引用、无答案和删除后不可召回，并对 `testdata/rag/evaluation.jsonl` 的质量与延迟
+门槛硬失败。实际 reranker 路径需先启动 Compose 的 `local-ai` profile。

@@ -125,13 +125,17 @@ $reportSources = Invoke-RestMethod "$BaseURL/api/v1/reports/$($report.id)/source
 
 $notebookText = Invoke-AIStream "/api/v1/knowledge/chat" `
     @{ question = "Go 后端验收完成了什么？"; source_scope = "growth" } $login.token
-$conversations = Invoke-RestMethod "$BaseURL/api/chat/conversations/" -Headers $headers
+$conversations = Invoke-RestMethod "$BaseURL/api/v1/conversations" -Headers $headers
 $notebookConversation = @($conversations | Sort-Object id -Descending)[0]
 $conversation = Invoke-RestMethod `
-    "$BaseURL/api/chat/conversations/$($notebookConversation.id)/" -Headers $headers
+    "$BaseURL/api/v1/conversations/$($notebookConversation.id)" -Headers $headers
 $assistantMessage = @($conversation.messages | Where-Object { $_.role -eq "assistant" })[-1]
 $notebookSources = Invoke-RestMethod `
     "$BaseURL/api/v1/knowledge/messages/$($assistantMessage.id)/sources" -Headers $headers
+if (@($notebookSources).Count -lt 1 -or
+    @($notebookSources | Where-Object { $_.source_type -eq "growth_note" }).Count -lt 1) {
+    throw "Growth answer did not persist a unified growth_note source."
+}
 
 [pscustomobject]@{
     Configured = $settings.configured

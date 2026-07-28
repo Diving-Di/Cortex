@@ -27,6 +27,17 @@ func TestValidateKnowledgeTXT(t *testing.T) {
 	}
 }
 
+func TestValidateKnowledgeTXTDoesNotSplitMultibyteRune(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "multibyte.txt")
+	content := strings.Repeat("中文混合 English ", 4097)
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateKnowledgeFile(path, ".txt", int64(len([]byte(content))+1)); err != nil {
+		t.Fatalf("valid UTF-8 rejected: %v", err)
+	}
+}
+
 func TestLimitKnowledgeContextEnforcesUnifiedBudget(t *testing.T) {
 	sources := []store.KnowledgeCandidate{
 		{Parent: strings.Repeat("证据", 30), Child: strings.Repeat("引用", 10)},

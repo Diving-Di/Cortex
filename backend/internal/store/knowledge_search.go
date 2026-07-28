@@ -170,9 +170,27 @@ func (s *Store) SearchKnowledge(
 	if err != nil {
 		return nil, err
 	}
+	semantic = filterKnowledgeSemanticCandidates(semantic, len(lexical) > 0)
 	result := fuseKnowledgeCandidates(lexical, semantic, limit)
 	err = s.expandAdjacentKnowledgeParents(ctx, principal, result, 1200)
 	return result, err
+}
+
+const knowledgeSemanticOnlyMinimumScore = 0.70
+
+func filterKnowledgeSemanticCandidates(
+	candidates []KnowledgeCandidate, hasLexicalEvidence bool,
+) []KnowledgeCandidate {
+	if hasLexicalEvidence {
+		return candidates
+	}
+	result := candidates[:0]
+	for _, candidate := range candidates {
+		if candidate.Score >= knowledgeSemanticOnlyMinimumScore {
+			result = append(result, candidate)
+		}
+	}
+	return result
 }
 
 func (s *Store) expandAdjacentKnowledgeParents(
@@ -187,16 +205,16 @@ func (s *Store) expandAdjacentKnowledgeParents(
 		}
 		remaining := tokenBudget
 		for index := range candidates {
-			rows, err := tx.Query(ctx, `SELECT neighbor.content,neighbor.chunk_index-current.chunk_index direction
+			rows, err := tx.Query(ctx, `SELECT neighbor.content,neighbor.parent_index-current.parent_index direction
 				FROM knowledge_parent_chunks current
 				JOIN knowledge_parent_chunks neighbor ON neighbor.tenant_id=current.tenant_id
 					AND neighbor.document_id=current.document_id
 					AND neighbor.index_version=current.index_version
-					AND neighbor.chunk_index IN (current.chunk_index-1,current.chunk_index+1)
+					AND neighbor.parent_index IN (current.parent_index-1,current.parent_index+1)
 				JOIN knowledge_documents d ON d.tenant_id=current.tenant_id AND d.id=current.document_id
 				WHERE current.tenant_id=$1 AND current.id=$2 AND d.status='ready'
 					AND d.deleted_at IS NULL AND current.index_version=d.index_version
-				ORDER BY abs(neighbor.chunk_index-current.chunk_index),neighbor.chunk_index`,
+				ORDER BY abs(neighbor.parent_index-current.parent_index),neighbor.parent_index`,
 				principal.TenantID, candidates[index].ParentID)
 			if err != nil {
 				return err
@@ -493,4 +511,43 @@ func (s *Store) GetKnowledgeSources(
 		return rows.Err()
 	})
 	return result, err
+}
+
+func (s *Store) GetChatSources(
+	ctx context.Context, principal domain.Principal, messageID int32,
+) ([]map[string]any, error) {
+	knowledgeSources, err := s.GetKnowledgeSources(ctx, principal, messageID)
+	if err != nil {
+		return nil, err
+	}
+	growthSources, err := s.GetMemorySources(ctx, principal, messageID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]map[string]any, 0, len(knowledgeSources)+len(growthSources))
+	for _, source := range knowledgeSources {
+		result = append(result, map[string]any{
+			"source_type":    "knowledge_document",
+			"source_id":      source["document_id"],
+			"title":          source["original_name"],
+			"document_id":    source["document_id"],
+			"original_name":  source["original_name"],
+			"snippet":        source["snippet"],
+			"page_from":      source["page_from"],
+			"page_to":        source["page_to"],
+			"rank":           source["rank"],
+			"source_deleted": source["source_deleted"],
+		})
+	}
+	for _, source := range growthSources {
+		result = append(result, map[string]any{
+			"source_type":    "growth_note",
+			"source_id":      source["id"],
+			"title":          source["title"],
+			"snippet":        source["snippet"],
+			"rank":           source["rank"],
+			"source_deleted": false,
+		})
+	}
+	return result, nil
 }

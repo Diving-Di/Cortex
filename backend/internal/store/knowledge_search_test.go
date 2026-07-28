@@ -23,3 +23,22 @@ func TestKnowledgeLexicalQueryHasFallback(t *testing.T) {
 		t.Fatalf("unexpected fallback: %q", got)
 	}
 }
+
+func TestFilterKnowledgeSemanticCandidatesRequiresStrongSemanticOnlyEvidence(t *testing.T) {
+	candidates := []KnowledgeCandidate{
+		{ChildID: 1, Score: knowledgeSemanticOnlyMinimumScore - 0.01},
+		{ChildID: 2, Score: knowledgeSemanticOnlyMinimumScore},
+	}
+	filtered := filterKnowledgeSemanticCandidates(candidates, false)
+	if len(filtered) != 1 || filtered[0].ChildID != 2 {
+		t.Fatalf("unexpected semantic-only candidates: %#v", filtered)
+	}
+}
+
+func TestFilterKnowledgeSemanticCandidatesKeepsHybridCandidates(t *testing.T) {
+	candidates := []KnowledgeCandidate{{ChildID: 1, Score: 0.1}}
+	filtered := filterKnowledgeSemanticCandidates(candidates, true)
+	if len(filtered) != 1 || filtered[0].ChildID != 1 {
+		t.Fatalf("unexpected hybrid candidates: %#v", filtered)
+	}
+}

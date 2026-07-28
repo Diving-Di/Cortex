@@ -283,7 +283,9 @@ normalized_request_hash
 
 LiteLLM 已使用独立管理数据库。业务后端通过 `LITELLM_VIRTUAL_KEY` 访问网关；
 `LITELLM_MASTER_KEY` 仅用于管理。`backend/scripts/provision-litellm-key.ps1`
-负责签发只允许 `diary-default` 且具有预算周期的虚拟密钥。
+负责签发只允许 `diary-default`、`cortex-embedding` 且具有预算周期的虚拟密钥；
+默认不显示 key，传入 `-EnvironmentFile` 时可原子更新被忽略的本地 Compose
+环境文件。生产发布仍应接入平台 Secret 管理系统。
 
 ### 阶段二：可靠性与治理
 

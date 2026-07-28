@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,6 +103,7 @@ func (s *Server) writeSSE(
 		httpx.WriteError(w, s.logger, errors.New("streaming unsupported"))
 		return
 	}
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -141,7 +143,9 @@ func (s *Server) writeSSE(
 	}
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	flusher.Flush()
-	if err := s.store.RecordAIUsage(r.Context(), principalFrom(r.Context()), store.AIUsage{
+	usageCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancel()
+	if err := s.store.RecordAIUsage(usageCtx, principalFrom(r.Context()), store.AIUsage{
 		RequestType: requestType, Model: model,
 		InputTokens:  max(1, len([]rune(prompt))/4),
 		OutputTokens: len([]rune(output.String())) / 4,

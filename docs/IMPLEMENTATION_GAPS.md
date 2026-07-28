@@ -1,8 +1,8 @@
 # Cortex 实现与生产验收待办
 
 > 状态：未完成、部分完成和待验证事项的唯一清单
-> 更新日期：2026-07-27
-> 当前发布结论：**不通过，禁止发布**
+> 更新日期：2026-07-28
+> 当前发布结论：**不通过；功能与数据卷复验通过，但 Ollama 仍监听 IPv6 全接口**
 
 本文只记录尚未完成的工作和缺失的生产证据。已经落地的设计与代码基线见
 [软件设计说明书](SDD.md)。
@@ -16,17 +16,32 @@
 
 ## 1. 发布阻断项
 
-### P0：配置真实生成模型
+### P0（已解除）：配置真实生成模型
 
 知识问答和现有 AI 工作流需要有效 LiteLLM virtual key 及至少一个可用生成模型。
 验收不得输出 Key，并需分别验证生成供应商、Ollama 和 reranker 不可用时的脱敏错误与降级。
 
-### P0：完成知识库端到端和双租户验收
+> 2026-07-28：已在 LiteLLM 内部签发 30 天、限预算、仅允许 `diary-default` 和
+> `cortex-embedding` 的 virtual key，并在不显示 key 的情况下原子写入被 Git 忽略的
+> Compose 环境文件。后端未注入临时变量即完成强制重建，容器凭据与持久 Secret 一致。
+> 使用该凭据经真实上游完成 Chat、整理、报告、成长问答和
+> 知识问答；无效生成凭据返回脱敏 `AI_GATEWAY_AUTH_FAILED`，embedding 中断返回
+> `EMBEDDING_UNAVAILABLE` 且文件管理可用，reranker 中断时安全回退到融合排序。
+> `backend/scripts/provision-litellm-key.ps1` 默认不再显示 key，并可通过
+> `-EnvironmentFile` 原子更新本地部署 Secret。
+
+### P0（已解除）：完成知识库端到端和双租户验收
 
 - 两个租户分别上传相同文件名、相同摘要和语义相似内容。
 - 列表、详情、下载、删除、FTS、向量、rerank、Chat 和引用均不得跨租户。
 - TXT、文本 PDF、DOCX 完成上传—解析—索引—检索—问答—删除。
 - 删除后立即不再召回，旧 worker 不得重新激活文档。
+
+> 2026-07-28：本地 Compose 已通过 2 租户、6 文件全链路验收，跨租户详情/下载/删除
+> 共 9 项均为 404，三个格式均完成 ready、检索、问答和引用，删除后查询为 404。
+> 额外上传约 2 MB 合成文本，在 worker 处理窗口内删除并等待旧任务回写后仍为 404，
+> 证明旧 worker 不会重新激活文档。固定 revision reranker 已以离线、只读模型运行并
+> 通过可用与不可用两条路径。
 
 ### P1：完成检索质量和性能门槛
 
@@ -37,6 +52,14 @@
 - citation precision。
 - 无答案准确率。
 - P95 检索和端到端延迟。
+
+> 门槛：Recall@8 ≥ 1.0、MRR ≥ 0.8、nDCG ≥ 0.8、citation precision ≥ 0.9、
+> 无答案准确率 ≥ 1.0、检索 P95 ≤ 10 秒、端到端 P95 ≤ 30 秒。
+>
+> 2026-07-28 固定合成评测集结果：Recall@8 1.0、MRR 1.0、nDCG 1.0、
+> citation precision 1.0、无答案准确率 1.0、检索 P95 5.392 秒、端到端
+> P95 10.773 秒。`backend/scripts/knowledge_acceptance.ps1` 会先预热完整调用链，
+> 再对上述门槛和旧 worker 删除竞态硬失败。
 
 ## 2. 确认未实现
 
@@ -51,9 +74,6 @@
 
 ### 2.2 测试资料与评测工具
 
-- 在 `backend/testdata/knowledge/` 建立无真实个人数据的 TXT/PDF/DOCX 样本。
-- 在 `backend/testdata/rag/` 建立问题、正确文档、正确片段和无答案样本。
-- 建立可重复运行的检索质量与延迟评测工具。
 - 增加知识库和成长助手页面测试。
 
 ### 2.3 AI 工作流迁移至 Eino
@@ -173,22 +193,16 @@ tombstone 文件名清理磁盘；受控 `.deleting` 文件本身是持久重试
 ### 3.10 Docker 与可观测性
 
 - 固定 Ollama 模型 digest。
-- 在运行环境验证 reranker 使用固定官方 revision、离线启动且模型目录不可写。
-- 已增加队列长度、失败数、累计处理时长和检索延迟指标，且不记录正文；仍需模型 warm-up
-  和生产监控采集验证。
+- 本地 Compose 已验证 reranker 使用固定官方 revision、离线启动且模型目录不可写；
+  仍需在生产发布环境复核镜像 digest。
+- 已增加队列长度、失败数、累计处理时长和检索延迟指标，且不记录正文；reranker
+  readiness 前已完成 warm-up，仍需生产监控采集验证。
 - 验证容器重建后数据库、附件和知识文件仍存在。
 - 验证 `db`、`llm-gateway` 和 `backend` healthy。
 
-### 3.11 品牌与兼容
-
-浏览器标题、PWA metadata、应用导航和容器 OCI label 已使用 Cortex。Go module、前端
-package、环境变量、数据库角色、数据目录和 localStorage key 暂时保留旧技术标识，
-双读迁移、数据卷兼容和回滚约束见 [技术标识兼容策略](COMPATIBILITY.md)。后续只有实际
-启动技术标识重命名时，才需新增版本化迁移与生产回滚验收。
-
 ## 4. 生产复验步骤
 
-解除全部 P0 阻断后，在隔离环境执行：
+P0 本地阻断已经解除。正式发布前仍须在目标隔离环境执行：
 
 1. 拉取所有镜像并核对固定 digest。
 2. 在宿主机预拉取 `qwen3-embedding:0.6b`，记录模型清单和磁盘占用。
@@ -207,16 +221,53 @@ package、环境变量、数据库角色、数据目录和 localStorage key 暂�
 
 只有所有 P0 阻断解除、复验通过、质量门槛达标后，才可将发布结论改为“允许发布”。
 
+### 2026-07-28 本地 Compose 复验记录
+
+通过项：
+
+- LiteLLM 与 PostgreSQL 镜像 digest 与 Compose 固定值一致；本地
+  `qwen3-embedding:0.6b` 模型 digest 为
+  `ac6da0dfba84a81fdbfbaf330198c33cd77c4cdfc53e8bc50eb581914a15621d`。
+- `db`、`llm-gateway`、`backend`、固定 revision `reranker-service` 均 healthy；
+  含 `local-ai` profile 的 Compose 配置解析通过。
+- 数据库共 26 张 public 表；21 张业务表启用且强制 RLS，并有 21 条 policy；
+  pgvector 0.8.1；`diary_app` 不是超级用户且不能绕过 RLS。
+- 经 LiteLLM 的 3 条单批中英混合 embedding 均为有限的 1024 维向量；
+  reranker 将直接证据排在首位。
+- `non_ai_smoke.ps1` 和 `ai_acceptance.ps1` 通过；真实 AI 复验覆盖 Chat、整理确认、
+  报告与引用、成长问答与引用。
+- `knowledge_acceptance.ps1` 在 reranker 可用时通过：Recall@8、MRR、nDCG、
+  citation precision、无答案准确率均为 1.0，检索 P95 5.207 秒，端到端
+  P95 14.178 秒，跨租户 9 项均为 404，普通删除和旧 worker 回写后均为 404。
+- 停止 reranker 后完整知识验收仍通过，检索 P95 7.380 秒、端到端 P95
+  15.779 秒；embedding 不可达时返回 `EMBEDDING_UNAVAILABLE` 且文件列表可用；
+  无效生成凭据返回脱敏 `AI_GATEWAY_AUTH_FAILED`。三个服务随后均已恢复。
+- 强制重建 `db` 与 `backend` 容器且不删除卷后，哨兵账号可重新登录，笔记仍可读取，
+  附件和知识原文件均可下载且字节数一致，知识文档仍为 `ready`。
+- 后端 `go vet ./...`、`go test ./...`、`go build ./cmd/server` 通过；前端
+  `npm run format:check`、5 个测试文件共 8 项测试、生产构建通过。
+
+未通过项：
+
+- 宿主机端口检查显示 Ollama 同时监听 `127.0.0.1:11434` 和 `[::]:11434`。
+  `[::]` 是 IPv6 全接口，因此第 3 步“只监听受信地址”未通过。须将 Ollama
+  绑定到明确受信地址，并确认 Docker 私有网络仍可访问后重新执行网络边界和 embedding
+  复验；在此之前不得发布。
+
 ## 5. 当前已有但仅待复验的证据
 
 2026-07-27 本地复核记录显示：
 
 - `go vet ./...`、`go test ./...` 和 `go build ./cmd/server` 通过。
 - `npm run format:check`、`npm test` 和 `npm run build` 通过。
-- 注入无生产意义的临时占位配置后，Compose 配置解析通过。
-- 后端和前端生产镜像曾成功构建。
+- 使用短期、限额 virtual key 的真实生成验收通过；Key 未输出、未写入仓库或业务数据。
+- `db`、`llm-gateway`、`backend` 和固定 revision `reranker-service` healthy，
+  Compose（含 `local-ai` profile）配置解析通过。
+- `non_ai_smoke.ps1`、`ai_acceptance.ps1` 和 `knowledge_acceptance.ps1` 通过。
+- TXT/PDF/DOCX、双租户隔离、删除后不召回、生成/embedding/reranker 降级及固定评测门槛
+  已有本地可复现证据。
 
-这些结果不证明真实 Secret、本地模型、双租户 RAG、PDF/DOCX、删除并发或生产持久化可用。
+这些结果仍不证明生产 Secret 持久化、生产数据卷重建、删除并发竞争或生产监控可用。
 
 ## 6. 非 MVP 与按阈值启用
 

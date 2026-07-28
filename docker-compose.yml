@@ -118,6 +118,7 @@ services:
       - RERANK_MAX_DOCUMENTS=20
       - RERANK_MAX_LENGTH=2048
       - RERANK_BATCH_SIZE=4
+      - RERANK_CPU_THREADS=4
     expose:
       - "8080"
     healthcheck:

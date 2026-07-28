@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -15,12 +16,16 @@ func (s *Server) writeKnowledgeSSE(
 	prompt string,
 	events <-chan ai.StreamEvent,
 	sources []domain.Source,
-	save func(string) (int32, int32, error),
+	save func(context.Context, string) (int32, int32, error),
 ) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return
 	}
+	// A model response can legitimately take longer than the HTTP server's
+	// ordinary WriteTimeout. Keep that protection for non-streaming handlers,
+	// but allow this SSE response to remain open until the upstream stream ends.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -51,8 +56,10 @@ func (s *Server) writeKnowledgeSSE(
 	}
 	var messageID, conversationID int32
 	if status == "success" {
+		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 		var err error
-		messageID, conversationID, err = save(answer)
+		messageID, conversationID, err = save(persistCtx, answer)
+		cancel()
 		if err != nil {
 			status = "error"
 			code := "KNOWLEDGE_SOURCE_INVALID"
@@ -66,7 +73,9 @@ func (s *Server) writeKnowledgeSSE(
 		}
 		flusher.Flush()
 	}
-	if err := s.store.RecordAIUsage(r.Context(), principalFrom(r.Context()), store.AIUsage{
+	usageCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancel()
+	if err := s.store.RecordAIUsage(usageCtx, principalFrom(r.Context()), store.AIUsage{
 		RequestType: "knowledge_chat", Model: s.cfg.AIModel,
 		InputTokens: max(1, len([]rune(prompt))/4), OutputTokens: len([]rune(answer)) / 4,
 		Duration: time.Since(started), Status: status, ErrorCode: errorCode,

@@ -4,7 +4,9 @@ param(
     [string]$MasterKey,
     [decimal]$MaxBudget = 100,
     [string]$BudgetDuration = "30d",
-    [string]$KeyAlias = "diary-listener"
+    [string]$KeyAlias = "diary-listener",
+    [string]$EnvironmentFile,
+    [switch]$ShowKey
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,7 +16,7 @@ $headers = @{
 }
 $body = @{
     key_alias = $KeyAlias
-    models = @("diary-default")
+    models = @("diary-default", "cortex-embedding")
     max_budget = $MaxBudget
     budget_duration = $BudgetDuration
     metadata = @{
@@ -30,5 +32,12 @@ if ([string]::IsNullOrWhiteSpace($response.key)) {
     throw "LiteLLM did not return a virtual key."
 }
 
-Write-Output "LITELLM_VIRTUAL_KEY=$($response.key)"
-Write-Output "Store this value in the deployment secret store; it is shown only now."
+if (-not [string]::IsNullOrWhiteSpace($EnvironmentFile)) {
+    & (Join-Path $PSScriptRoot "set-env-secret.ps1") -Name "LITELLM_VIRTUAL_KEY" `
+        -Value ([string]$response.key) -EnvironmentFile $EnvironmentFile
+}
+if ($ShowKey) {
+    Write-Output "LITELLM_VIRTUAL_KEY=$($response.key)"
+} else {
+    Write-Output "LiteLLM virtual key provisioned without displaying its value."
+}

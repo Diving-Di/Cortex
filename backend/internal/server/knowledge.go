@@ -362,8 +362,8 @@ func validateKnowledgeFile(path, extension string, maxBytes int64) (string, erro
 			if n > 0 {
 				pending = append(pending, buffer[:n]...)
 				if len(pending) > 4 {
-					validateTo := len(pending) - 4
-					if !utf8.Valid(pending[:validateTo]) || containsNUL(pending[:validateTo]) {
+					validateTo := validUTF8PrefixLength(pending)
+					if validateTo < 0 || containsNUL(pending[:validateTo]) {
 						return "", apierror.New("DOCUMENT_INVALID_SIGNATURE", "TXT 必须是 UTF-8 文本", 422)
 					}
 					pending = append([]byte(nil), pending[validateTo:]...)
@@ -426,6 +426,16 @@ func validateKnowledgeFile(path, extension string, maxBytes int64) (string, erro
 	default:
 		return "", apierror.New("DOCUMENT_UNSUPPORTED_TYPE", "不支持的知识文件类型", 422)
 	}
+}
+
+func validUTF8PrefixLength(value []byte) int {
+	for suffix := 0; suffix <= min(3, len(value)); suffix++ {
+		end := len(value) - suffix
+		if utf8.Valid(value[:end]) {
+			return end
+		}
+	}
+	return -1
 }
 
 func containsNUL(value []byte) bool {

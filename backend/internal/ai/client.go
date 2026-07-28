@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"diary-listener/backend/internal/apierror"
 )
 
 type Message struct {
@@ -139,9 +141,18 @@ func requestWithRetry(
 			return nil, err
 		}
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			detail, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 			response.Body.Close()
-			return nil, fmt.Errorf("AI upstream HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(detail)))
+			switch response.StatusCode {
+			case http.StatusUnauthorized, http.StatusForbidden:
+				return nil, apierror.New(
+					"AI_GATEWAY_AUTH_FAILED", "AI 网关认证失败，请联系管理员更新服务凭据", 503,
+				)
+			case http.StatusTooManyRequests:
+				return nil, apierror.New("AI_RATE_LIMITED", "AI 服务繁忙，请稍后重试", 503)
+			default:
+				return nil, apierror.New("AI_UPSTREAM_UNAVAILABLE", "AI 服务暂时不可用", 503)
+			}
 		}
 		return response, nil
 	}
