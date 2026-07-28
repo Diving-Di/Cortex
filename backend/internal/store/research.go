@@ -368,6 +368,22 @@ func (s *Store) SetResearchJobStage(
 	})
 }
 
+func (s *Store) RequeueResearchJob(
+	ctx context.Context, principal domain.Principal, jobID int64, delay time.Duration,
+) error {
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE research_jobs SET status='queued',available_at=now()+$3::interval,
+			lease_owner=NULL,lease_until=NULL,attempt_count=GREATEST(attempt_count-1,0),updated_at=now()
+			WHERE tenant_id=$1 AND id=$2 AND cancel_requested_at IS NULL
+			AND status IN ('collecting','extracting','organizing')`,
+			principal.TenantID, jobID, delay.String())
+		return err
+	})
+}
+
 type ResearchSourceFilter struct {
 	JobID  *int64
 	Status string

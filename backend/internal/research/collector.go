@@ -44,6 +44,7 @@ type Collector struct {
 	MaxBodyChars    int
 	MaxImages       int
 	RequestInterval time.Duration
+	CookieHeader    string
 }
 
 func NormalizeURL(raw string) (string, error) {
@@ -191,6 +192,9 @@ func (c Collector) fetch(ctx context.Context, rawURL string) ([]byte, string, er
 	}
 	request.Header.Set("User-Agent", "Mozilla/5.0 (compatible; CortexResearch/1.0)")
 	request.Header.Set("Accept", "text/html,application/xhtml+xml")
+	if c.CookieHeader != "" {
+		request.Header.Set("Cookie", c.CookieHeader)
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, "", errors.New("XHS_SOURCE_UNAVAILABLE")

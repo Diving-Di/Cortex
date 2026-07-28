@@ -49,3 +49,28 @@ func (s *Store) ExportNotes(ctx context.Context, principal domain.Principal) ([]
 	})
 	return result, err
 }
+
+func (s *Store) ExportGrowthMemories(ctx context.Context, principal domain.Principal) ([]GrowthMemory, error) {
+	var result []GrowthMemory
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, `SELECT id,category,content,importance,source_type,creation_mode,version,created_at,updated_at
+			FROM growth_memories WHERE tenant_id=$1 AND user_id=$2 AND deleted_at IS NULL ORDER BY id`,
+			principal.TenantID, principal.UserID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var v GrowthMemory
+			if err := rows.Scan(&v.ID, &v.Category, &v.Content, &v.Importance, &v.SourceType, &v.CreationMode, &v.Version, &v.CreatedAt, &v.UpdatedAt); err != nil {
+				return err
+			}
+			result = append(result, v)
+		}
+		return rows.Err()
+	})
+	return result, err
+}

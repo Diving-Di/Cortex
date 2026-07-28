@@ -45,6 +45,14 @@ func (s *Server) createResearchJob(w http.ResponseWriter, r *http.Request) {
 	var payload any
 	switch request.Mode {
 	case "keyword":
+		if !s.xhsAuthorizationConfigured() {
+			httpx.WriteError(w, s.logger, apierror.New("XHS_AUTH_NOT_CONFIGURED", "小红书授权功能未配置", 503))
+			return
+		}
+		if _, _, err := s.loadXHSSession(r.Context(), principalFrom(r.Context())); err != nil {
+			httpx.WriteError(w, s.logger, err)
+			return
+		}
 		values, err := research.ValidateKeywords(request.Keywords, s.cfg.ResearchMaxKeywords)
 		if err != nil {
 			httpx.WriteError(w, s.logger, apierror.New("RESEARCH_INVALID_KEYWORD", "研究关键词无效", 422))

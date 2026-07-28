@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,13 +28,51 @@ type conversationRequest struct {
 }
 
 func (s *Server) listV1Conversations(w http.ResponseWriter, r *http.Request) {
-	result, err := s.store.ListScopedConversations(r.Context(), principalFrom(r.Context()))
+	limit, err := positiveQueryInt(r.URL.Query().Get("limit"), 20, 100)
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, _ = strconv.Atoi(raw)
+	}
+	scope := strings.TrimSpace(r.URL.Query().Get("source_scope"))
+	if err == nil && scope != "" && !store.ValidSourceScope(scope) {
+		err = apierror.Validation(nil)
+	}
+	var result []store.Conversation
+	var total int
+	if err == nil {
+		result, total, err = s.store.ListScopedConversations(r.Context(), principalFrom(r.Context()), strings.TrimSpace(r.URL.Query().Get("search")), scope, limit, offset)
+	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	if result == nil {
 		result = []store.Conversation{}
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"items": result, "total": total})
+}
+
+func (s *Server) renameV1Conversation(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "conversationID")
+	var request struct {
+		Title   string `json:"title"`
+		Version int    `json:"version"`
+	}
+	if err == nil {
+		err = httpx.DecodeJSON(r, &request)
+	}
+	request.Title = strings.TrimSpace(request.Title)
+	if err == nil && (len([]rune(request.Title)) < 1 || len([]rune(request.Title)) > 255 || request.Version < 1) {
+		err = apierror.Validation(nil)
+	}
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	result, err := s.store.RenameConversation(r.Context(), principalFrom(r.Context()), id, request.Title, request.Version)
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
 	}
 	httpx.JSON(w, http.StatusOK, result)
 }

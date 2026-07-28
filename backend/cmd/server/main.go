@@ -40,6 +40,7 @@ func main() {
 	go server.RunScheduler(ctx, cfg, db, logger)
 	server.RunKnowledgeIndexer(ctx, cfg, db, logger)
 	server.RunResearchWorkers(ctx, cfg, db, logger)
+	server.RunXHSAuthorizationWorkers(ctx, cfg, db, logger)
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddress,
 		Handler:           handler,

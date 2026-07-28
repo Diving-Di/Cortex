@@ -79,6 +79,12 @@ func (s *Server) writeKnowledgeSSE(
 		RequestType: "knowledge_chat", Model: s.cfg.AIModel,
 		InputTokens: max(1, len([]rune(prompt))/4), OutputTokens: len([]rune(answer)) / 4,
 		Duration: time.Since(started), Status: status, ErrorCode: errorCode,
+		ConversationID: func() *int32 {
+			if conversationID == 0 {
+				return nil
+			}
+			return &conversationID
+		}(),
 	}); err != nil {
 		s.logger.Error("record AI usage", "error", err)
 	}

@@ -138,9 +138,17 @@ func processKnowledgeIndexJob(
 		failKnowledgeJob(ctx, database, logger, principal, job, "DOCUMENT_PATH_INVALID", false)
 		return
 	}
-	document, err := knowledge.Extract(ctx, path, documentRow.Extension, documentRow.OriginalName, knowledge.ExtractLimits{
+	limits := knowledge.ExtractLimits{
 		MaxPages: cfg.MaxKnowledgePDFPages, MaxCharacters: cfg.MaxKnowledgeChars, TimeoutSecs: 45,
-	})
+	}
+	var document knowledge.Document
+	if cfg.DocumentParserURL != "" {
+		document, err = (knowledge.ParserClient{BaseURL: cfg.DocumentParserURL}).Parse(
+			ctx, path, documentRow.Extension, documentRow.OriginalName, limits,
+		)
+	} else {
+		document, err = knowledge.Extract(ctx, path, documentRow.Extension, documentRow.OriginalName, limits)
+	}
 	if err != nil {
 		code := "DOCUMENT_PARSE_FAILED"
 		switch {

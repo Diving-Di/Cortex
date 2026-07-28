@@ -48,6 +48,13 @@ import {
   recollectResearchSource,
   saveResearchSource,
   updateResearchDraft,
+  getXHSAuthorization,
+  startXHSAuthorization,
+  getXHSAuthAttempt,
+  loadXHSAuthQR,
+  cancelXHSAuthorization,
+  verifyXHSAuthorization,
+  revokeXHSAuthorization,
 } from '../../api/research';
 import type { ResearchAsset, ResearchDraft, ResearchJob, ResearchSource } from '../../api/research';
 import './ResearchPage.css';
@@ -97,6 +104,85 @@ export default function ResearchPage({ token }: Props) {
   const [selectedIDs, setSelectedIDs] = useState<number[]>([]);
   const [selectedSourceID, setSelectedSourceID] = useState<number>();
   const [draftForm] = Form.useForm<Record<string, string>>();
+  const [authAttemptID, setAuthAttemptID] = useState<string>();
+  const [authQR, setAuthQR] = useState<string>();
+
+  const authorization = useQuery({
+    queryKey: ['xhs-authorization'],
+    queryFn: () => getXHSAuthorization(token),
+    retry: false,
+  });
+  const authAttempt = useQuery({
+    queryKey: ['xhs-auth-attempt', authAttemptID],
+    queryFn: () => getXHSAuthAttempt(token, authAttemptID!),
+    enabled: Boolean(authAttemptID),
+    refetchInterval: (query) =>
+      query.state.data &&
+      ['authorized', 'failed', 'cancelled', 'expired'].includes(query.state.data.status)
+        ? false
+        : 2000,
+  });
+
+  useEffect(() => {
+    const status = authAttempt.data?.status;
+    if (
+      !authAttemptID ||
+      !status ||
+      !['waiting_for_scan', 'verification_required'].includes(status)
+    ) {
+      return;
+    }
+    let active = true;
+    loadXHSAuthQR(token, authAttemptID)
+      .then((url) => {
+        if (!active) return URL.revokeObjectURL(url);
+        setAuthQR((previous) => {
+          if (previous) URL.revokeObjectURL(previous);
+          return url;
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [authAttempt.data?.updated_at, authAttempt.data?.status, authAttemptID, token]);
+
+  useEffect(() => {
+    if (authAttempt.data?.status === 'authorized') {
+      void queryClient.invalidateQueries({ queryKey: ['xhs-authorization'] });
+      message.success('小红书授权成功');
+      setAuthAttemptID(undefined);
+    }
+  }, [authAttempt.data?.status, queryClient]);
+
+  useEffect(
+    () => () => {
+      if (authQR) URL.revokeObjectURL(authQR);
+    },
+    [authQR],
+  );
+
+  const startAuthorization = useMutation({
+    mutationFn: () => startXHSAuthorization(token),
+    onSuccess: (attempt) => {
+      setAuthQR(undefined);
+      setAuthAttemptID(attempt.id);
+    },
+  });
+  const verifyAuthorization = useMutation({
+    mutationFn: () => verifyXHSAuthorization(token),
+    onSuccess: async () => {
+      message.success('授权有效');
+      await queryClient.invalidateQueries({ queryKey: ['xhs-authorization'] });
+    },
+  });
+  const revokeAuthorization = useMutation({
+    mutationFn: () => revokeXHSAuthorization(token),
+    onSuccess: async () => {
+      message.success('授权已撤销');
+      await queryClient.invalidateQueries({ queryKey: ['xhs-authorization'] });
+    },
+  });
 
   const jobs = useQuery({
     queryKey: ['research-jobs', jobPage],
@@ -355,6 +441,44 @@ export default function ResearchPage({ token }: Props) {
         message="仅处理你有权研究或保存的公开内容，请遵守平台规则、版权和适用法律。"
       />
 
+      <Card size="small" className="research-auth-card">
+        <div>
+          <Space>
+            <Typography.Text strong>小红书账号授权</Typography.Text>
+            <Tag color={authorization.data?.status === 'authorized' ? 'success' : 'default'}>
+              {authorization.data?.status === 'authorized' ? '已授权' : '未授权'}
+            </Tag>
+          </Space>
+          <div className="research-source-meta">
+            授权按当前个人租户隔离保存，仅用于你发起的研究任务。
+          </div>
+        </div>
+        <Space wrap>
+          {authorization.data?.status === 'authorized' && (
+            <Button
+              loading={verifyAuthorization.isPending}
+              onClick={() => verifyAuthorization.mutate()}
+            >
+              验证授权
+            </Button>
+          )}
+          <Button
+            type={authorization.data?.status === 'authorized' ? 'default' : 'primary'}
+            onClick={() => startAuthorization.mutate()}
+          >
+            {authorization.data?.status === 'authorized' ? '重新授权' : '扫码授权'}
+          </Button>
+          {authorization.data?.status === 'authorized' && (
+            <Popconfirm
+              title="撤销后，正在运行的研究任务也会取消。确定撤销？"
+              onConfirm={() => revokeAuthorization.mutate()}
+            >
+              <Button danger>撤销</Button>
+            </Popconfirm>
+          )}
+        </Space>
+      </Card>
+
       <Tabs
         items={[
           {
@@ -454,6 +578,35 @@ export default function ResearchPage({ token }: Props) {
           },
         ]}
       />
+
+      <Modal
+        title="扫码授权小红书"
+        open={Boolean(authAttemptID)}
+        footer={
+          <Button
+            onClick={async () => {
+              if (authAttemptID) await cancelXHSAuthorization(token, authAttemptID);
+              setAuthAttemptID(undefined);
+            }}
+          >
+            取消授权
+          </Button>
+        }
+        onCancel={() => setAuthAttemptID(undefined)}
+      >
+        <div className="research-auth-modal">
+          {authQR ? (
+            <Image preview={false} src={authQR} alt="小红书登录二维码页面" />
+          ) : (
+            <Progress type="circle" percent={30} status="active" />
+          )}
+          <Typography.Text type="secondary">
+            {authAttempt.data?.status === 'verification_required'
+              ? '页面需要安全验证，请稍后重试或重新扫码。'
+              : '请使用小红书 App 扫描页面中的二维码，授权完成后会自动关闭。'}
+          </Typography.Text>
+        </div>
+      </Modal>
 
       <Modal
         title="新建研究"

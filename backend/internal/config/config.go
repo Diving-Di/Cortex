@@ -30,6 +30,7 @@ type Config struct {
 	KnowledgeChildTarget    int
 	KnowledgeChildMax       int
 	KnowledgeChildOverlap   int
+	DocumentParserURL       string
 	EmbeddingBaseURL        string
 	EmbeddingAPIKey         string
 	EmbeddingModel          string
@@ -57,6 +58,11 @@ type Config struct {
 	ResearchRequestInterval time.Duration
 	ResearchHTTPTimeout     time.Duration
 	ResearchOCRURL          string
+	XHSSessionEncryptionKey string
+	XHSSessionKeyVersion    int
+	XHSAuthorizationTTL     time.Duration
+	XHSAuthorizationEnabled bool
+	XHSChromePath           string
 }
 
 func Load() (Config, error) {
@@ -197,6 +203,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	xhsKeyVersion, err := positiveInt("XHS_SESSION_KEY_VERSION", 1)
+	if err != nil {
+		return Config{}, err
+	}
+	xhsAuthorizationTTLSeconds, err := positiveInt("XHS_AUTHORIZATION_TTL_SECONDS", 180)
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{
 		DatabaseURL:             databaseURL,
 		MigrationDatabaseURL:    migrationDatabaseURL,
@@ -217,6 +231,7 @@ func Load() (Config, error) {
 		KnowledgeChildTarget:    childTarget,
 		KnowledgeChildMax:       childMax,
 		KnowledgeChildOverlap:   childOverlap,
+		DocumentParserURL:       strings.TrimSpace(os.Getenv("DOCUMENT_PARSER_URL")),
 		EmbeddingBaseURL:        valueOrDefault("RAG_EMBEDDING_BASE_URL", "http://llm-gateway:4000/v1"),
 		EmbeddingAPIKey:         strings.TrimSpace(os.Getenv("RAG_EMBEDDING_API_KEY")),
 		EmbeddingModel:          valueOrDefault("RAG_EMBEDDING_MODEL", "cortex-embedding"),
@@ -244,6 +259,11 @@ func Load() (Config, error) {
 		ResearchRequestInterval: time.Duration(researchIntervalMS) * time.Millisecond,
 		ResearchHTTPTimeout:     time.Duration(researchTimeoutSeconds) * time.Second,
 		ResearchOCRURL:          strings.TrimSpace(os.Getenv("RESEARCH_OCR_URL")),
+		XHSSessionEncryptionKey: strings.TrimSpace(os.Getenv("XHS_SESSION_ENCRYPTION_KEY")),
+		XHSSessionKeyVersion:    xhsKeyVersion,
+		XHSAuthorizationTTL:     time.Duration(xhsAuthorizationTTLSeconds) * time.Second,
+		XHSAuthorizationEnabled: parseBool(valueOrDefault("XHS_AUTHORIZATION_ENABLED", "false")),
+		XHSChromePath:           valueOrDefault("XHS_CHROME_PATH", "/usr/bin/chromium-browser"),
 	}, nil
 }
 

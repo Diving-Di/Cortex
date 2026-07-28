@@ -17,6 +17,27 @@
   margin-bottom: 16px;
 }
 
+.research-auth-card .ant-card-body {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.research-auth-modal {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 320px;
+  justify-content: center;
+}
+
+.research-auth-modal .ant-image-img {
+  max-height: 55vh;
+  object-fit: contain;
+}
+
 .research-toolbar .ant-input-search {
   width: 240px;
 }

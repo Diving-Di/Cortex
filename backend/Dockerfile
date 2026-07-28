@@ -24,7 +24,7 @@ FROM alpine:3.23
 LABEL org.opencontainers.image.title="Cortex Backend" \
       org.opencontainers.image.description="Personal notes and knowledge service"
 
-RUN apk add --no-cache ca-certificates poppler-utils tzdata su-exec \
+RUN apk add --no-cache ca-certificates chromium poppler-utils tzdata su-exec \
     && addgroup -S diary \
     && adduser -S -G diary -h /app diary
 

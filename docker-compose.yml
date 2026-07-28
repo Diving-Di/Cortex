@@ -76,6 +76,7 @@ services:
       - KNOWLEDGE_MAX_FILE_BYTES=${KNOWLEDGE_MAX_FILE_BYTES:-52428800}
       - KNOWLEDGE_MAX_PDF_PAGES=${KNOWLEDGE_MAX_PDF_PAGES:-500}
       - KNOWLEDGE_MAX_EXTRACTED_CHARS=${KNOWLEDGE_MAX_EXTRACTED_CHARS:-5000000}
+      - DOCUMENT_PARSER_URL=http://document-parser:8090
       - RAG_INDEX_WORKERS=${RAG_INDEX_WORKERS:-2}
       - RAG_PARENT_TARGET_TOKENS=${RAG_PARENT_TARGET_TOKENS:-1800}
       - RAG_PARENT_MAX_TOKENS=${RAG_PARENT_MAX_TOKENS:-2500}
@@ -109,11 +110,44 @@ services:
       - RESEARCH_REQUEST_INTERVAL_MS=${RESEARCH_REQUEST_INTERVAL_MS:-1500}
       - RESEARCH_HTTP_TIMEOUT_SECONDS=${RESEARCH_HTTP_TIMEOUT_SECONDS:-20}
       - RESEARCH_OCR_URL=${RESEARCH_OCR_URL:-}
+      - XHS_AUTHORIZATION_ENABLED=${XHS_AUTHORIZATION_ENABLED:-false}
+      - XHS_AUTHORIZATION_TTL_SECONDS=${XHS_AUTHORIZATION_TTL_SECONDS:-180}
+      - XHS_SESSION_ENCRYPTION_KEY=${XHS_SESSION_ENCRYPTION_KEY:-}
+      - XHS_SESSION_KEY_VERSION=${XHS_SESSION_KEY_VERSION:-1}
+      - XHS_CHROME_PATH=${XHS_CHROME_PATH:-/usr/bin/chromium-browser}
     depends_on:
       db:
         condition: service_healthy
       llm-gateway:
         condition: service_healthy
+      document-parser:
+        condition: service_healthy
+
+  document-parser:
+    build: ./document-parser
+    cpus: 1.0
+    mem_limit: 1g
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    environment:
+      - PARSER_MAX_FILE_BYTES=${KNOWLEDGE_MAX_FILE_BYTES:-52428800}
+      - PARSER_MAX_CHARS=${KNOWLEDGE_MAX_EXTRACTED_CHARS:-5000000}
+      - PARSER_MAX_PAGES=${KNOWLEDGE_MAX_PDF_PAGES:-500}
+    expose:
+      - "8090"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
 
   reranker-service:
     profiles: ["local-ai"]

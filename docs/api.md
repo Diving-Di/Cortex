@@ -157,6 +157,25 @@ event: done
 data: {"conversation_id":12,"message_id":34}
 ```
 
+会话列表还支持 `search`、`source_scope`、`limit` 和 `offset`，响应为
+`{"items":[],"total":0}`。`PATCH /api/v1/conversations/{id}` 使用 `title` 与 `version`
+重命名；版本冲突返回 `CONVERSATION_VERSION_CONFLICT`。超过 20 条消息的会话会保存压缩摘要，
+回答上下文使用摘要与最近 10 条消息，但事实来源仍在每轮重新检索。
+
+### 成长记忆
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET/POST` | `/api/v1/growth-memories` | 搜索、分页或手动创建成长记忆 |
+| `PATCH/DELETE` | `/api/v1/growth-memories/{id}` | 乐观锁更新或软删除 |
+| `GET/PUT` | `/api/v1/settings/memories` | 读取或保存记忆建议策略 |
+| `POST` | `/api/v1/growth-memory-drafts` | 从当前租户笔记、会话或消息生成 AI 草稿 |
+| `POST` | `/api/v1/growth-memory-drafts/{id}/confirm` | 编辑后确认并事务写入 |
+| `POST` | `/api/v1/growth-memory-drafts/{id}/reject` | 拒绝草稿 |
+
+AI 草稿默认关闭、30 分钟过期且只能处理一次。确认时服务端重新校验来源租户与状态。成长记忆
+同时包含在 Markdown ZIP 的 `growth-memories.md` 中。
+
 失败使用 `event: error`，`data` 只包含稳定 `code` 和脱敏 `message`。来源统一包含
 `source_type`、`source_id`、`title`、`rank` 和 `source_deleted`，知识文件还可包含
 `heading`、`page_from`、`page_to` 与最小 `snippet`。
@@ -202,6 +221,57 @@ Markdown ZIP 用于内容交换，不是完整备份。Cortex 不提供应用级
 | `POST` | `/api/v1/research/sources/batch-save` | 批量保存待确认结果 |
 | `POST` | `/api/v1/research/sources/batch-ignore` | 批量忽略待确认结果 |
 | `GET` | `/api/v1/research/assets/{asset_id}` | 鉴权预览来源图片 |
+| `GET` | `/api/v1/research/xhs/authorization` | 查询当前租户授权状态（不返回会话凭据） |
+| `POST` | `/api/v1/research/xhs/authorizations` | 创建限时扫码授权任务 |
+| `GET` | `/api/v1/research/xhs/authorizations/{attempt_id}` | 查询扫码任务状态 |
+| `GET` | `/api/v1/research/xhs/authorizations/{attempt_id}/qr` | 鉴权获取登录二维码页面图片，禁止缓存 |
+| `POST` | `/api/v1/research/xhs/authorizations/{attempt_id}/cancel` | 取消扫码授权任务 |
+| `POST` | `/api/v1/research/xhs/authorization/verify` | 联网验证当前租户授权 |
+| `DELETE` | `/api/v1/research/xhs/authorization` | 撤销授权并取消运行中的研究任务 |
+
+授权接口只返回状态元数据，不返回 Cookie、密文、nonce 或服务器文件路径。创建授权返回
+`202` 和扫码任务对象；二维码尚未生成时返回 `XHS_QR_PENDING`，任务结束或超时后返回
+`XHS_QR_EXPIRED`。二维码响应为 `image/png`，并带有
+`Cache-Control: no-store, private`。
+
+关键词研究要求当前租户存在可解密的 `authorized` 会话，否则返回
+`XHS_AUTH_REQUIRED`；授权功能未配置时返回 `XHS_AUTH_NOT_CONFIGURED`。公开 URL 模式
+可以在无授权时尝试匿名采集。验证失败会把授权标记为 `expired`，撤销会清除会话密文并
+取消当前租户运行中的研究任务。
+
+授权状态响应示例：
+
+```json
+{
+  "id": 12,
+  "status": "authorized",
+  "account_display_name": null,
+  "authorized_at": "2026-07-28T06:52:00Z",
+  "last_verified_at": "2026-07-28T06:52:00Z",
+  "expires_at": null,
+  "failure_code": null,
+  "version": 2,
+  "created_at": "2026-07-28T06:50:00Z",
+  "updated_at": "2026-07-28T06:52:00Z"
+}
+```
+
+创建或查询扫码任务返回：
+
+```json
+{
+  "id": "8feaa44b-44c8-45a3-a817-f86cc6942781",
+  "authorization_id": 12,
+  "status": "waiting_for_scan",
+  "failure_code": null,
+  "expires_at": "2026-07-28T06:53:00Z",
+  "created_at": "2026-07-28T06:50:00Z",
+  "updated_at": "2026-07-28T06:50:04Z"
+}
+```
+
+`status` 的扫码取值为 `queued`、`starting`、`waiting_for_scan`、`scanned`、
+`verification_required`、`authorized`、`failed`、`cancelled` 或 `expired`。
 
 创建任务时 `mode` 为 `keyword` 或 `urls`。关键词模式提交 `keywords`，链接模式提交
 `urls`；两种模式均提交 `target_count` 和幂等键 `idempotency_key`，可选

@@ -115,14 +115,35 @@ export interface Conversation {
   source_scope: 'knowledge' | 'growth' | 'all';
   created_at: string;
   updated_at: string;
+  version: number;
+  message_count: number;
+  total_tokens: number;
   messages?: Array<{ id: number; role: 'user' | 'assistant'; content: string; created_at: string }>;
 }
 
-export async function listConversations(token: string) {
-  const response = await http.get<Conversation[]>('/api/v1/conversations', {
-    headers: authHeaders(token),
-  });
-  return response.data || [];
+export async function listConversations(token: string, search = '', sourceScope = '') {
+  const response = await http.get<{ items: Conversation[]; total: number }>(
+    '/api/v1/conversations',
+    {
+      headers: authHeaders(token),
+      params: { search, source_scope: sourceScope },
+    },
+  );
+  return response.data?.items || [];
+}
+export async function renameConversation(
+  token: string,
+  id: number,
+  title: string,
+  version: number,
+) {
+  return (
+    await http.patch<Conversation>(
+      `/api/v1/conversations/${id}`,
+      { title, version },
+      { headers: authHeaders(token) },
+    )
+  ).data;
 }
 
 export async function createConversation(token: string, sourceScope: Conversation['source_scope']) {

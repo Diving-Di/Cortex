@@ -735,3 +735,46 @@ docker compose config --quiet
 - 后端、前端、部署和专项验收测试全部通过。
 - README、API 文档、数据库基线、迁移说明和运行配置已同步更新。
 - 没有修改或覆盖与本功能无关的用户工作区改动。
+# 多租户小红书授权管理
+
+`/research` 内置按个人租户隔离的扫码授权。系统不会复用全局账号，也不引入 Redis：授权状态、任务租约和并发控制均使用 PostgreSQL。
+
+## 实现内容
+
+- `POST /api/v1/research/xhs/authorizations` 创建限时扫码任务，后端使用独立临时 Chromium 用户目录打开小红书登录页。
+- `GET /api/v1/research/xhs/authorizations/{attemptID}/qr` 经过登录认证和 RLS 校验后返回登录页面截图，响应禁止缓存。
+- 前端轮询授权任务；支持查询、验证、重新授权、取消和撤销。
+- 登录完成后只提取 Cookie 会话，使用 AES-256-GCM 加密后写入 PostgreSQL；AAD 绑定租户 ID、授权 ID 和密钥版本。
+- Chromium 临时资料和二维码位于 `DIARY_DATA_DIR/runtime/xhs-auth`，任务结束即清理，不进入静态文件、导出或备份。
+- 关键词研究必须使用当前租户有效授权。指定公开链接在无授权时仍可尝试匿名采集。
+- 撤销授权会擦除密文和 nonce，并取消该租户仍在执行的研究任务。
+- 所有授权表启用并强制执行 RLS，同时查询保留显式 `tenant_id` 条件。跨租户访问统一表现为不存在。
+
+## 配置
+
+默认关闭扫码授权，避免密钥或 Chromium 未配置时影响笔记等核心能力：
+
+```dotenv
+XHS_AUTHORIZATION_ENABLED=true
+XHS_AUTHORIZATION_TTL_SECONDS=180
+XHS_SESSION_ENCRYPTION_KEY=<32 字节随机值的 Base64>
+XHS_SESSION_KEY_VERSION=1
+XHS_CHROME_PATH=/usr/bin/chromium-browser
+```
+
+生成密钥（PowerShell）：
+
+```powershell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+密钥不得提交到仓库、返回前端、写入日志或备份。轮换密钥时先保留旧版本解密能力或要求用户重新授权；当前实现采用后者。
+
+## 验收流程
+
+1. 关闭授权开关启动服务，确认笔记、知识库和公开链接研究仍可使用，关键词研究返回 `XHS_AUTH_NOT_CONFIGURED`。
+2. 配置随机加密密钥并启动服务，两个不同租户分别扫码，确认只能读取自己的授权状态和二维码。
+3. 检查浏览器网络响应，确认任何 API 均不包含 Cookie、密文、nonce 或二维码磁盘路径。
+4. 授权后创建关键词研究，确认 worker 使用当前租户会话；撤销授权后确认密文清空、运行中任务取消、关键词研究要求重新授权。
+5. 用错误密钥启动并验证授权，确认只返回稳定错误 `XHS_SESSION_DECRYPT_FAILED`，日志不包含密文或 Cookie。
+6. 执行 `go vet ./...`、`go test ./...`、`go build ./cmd/server`、前端格式/测试/构建和 `docker compose config --quiet`。

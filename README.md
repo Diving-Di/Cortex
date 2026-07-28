@@ -39,6 +39,7 @@ AI 是可选能力。生成模型、Embedding 或 Reranker 不可用时，账号
 - 对公开正文和图片执行受控采集，图片 OCR 可通过 `RESEARCH_OCR_URL` 接入内部服务。
 - 通过 LiteLLM 生成摘要、关键观点、分类和标签草稿，用户确认后才写入个人知识库。
 - 任务、来源和草稿使用 PostgreSQL 持久化并受 RLS 隔离，不依赖 Redis。
+- 支持按个人租户扫码授权；会话使用 AES-256-GCM 加密保存，二维码和 Chromium Profile 仅临时存在。
 - 采集授权、平台限流或 AI/OCR 不可用时按能力降级，不影响笔记和知识库管理。
 
 ### 数据自主与隔离
@@ -277,3 +278,5 @@ docker compose --profile local-ai up -d --build reranker-service
 - [软件设计说明书](docs/SDD.md)：当前已实现的系统架构、数据、知识库、RAG、AI 工作流和部署设计
 - [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)：未实现、部分实现、待验证事项和发布阻断
 - [大模型网关规范](docs/LLM_GATEWAY.md)：LiteLLM 路由、密钥、隐私和用量治理
+- [小红书授权架构](docs/XHS_AUTHORIZATION_ARCHITECTURE.md)：功能页、扫码授权、会话加密、租户隔离与 API 数据流
+- [小红书研究实现](docs/XHS_RESEARCH_IMPLEMENTATION.md)：研究采集、整理、保存和验收说明

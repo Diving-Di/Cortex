@@ -52,6 +52,8 @@ Go / Gin Backend
   |-- Extraction / Parent-Child Chunking / Index Worker
   |-- FTS + Vector + RRF + Optional Rerank
   |-- AI Workflows / Knowledge Chat
+  |-- XHS Authorization API / Chromium Worker
+  |-- Research Collector / Organizer Worker
   `-- Scheduled Report Worker
        |                         |
        v                         v
@@ -67,12 +69,18 @@ Optional internal service
 
 DIARY_DATA_DIR
   |-- attachments/<tenant>/...
-  `-- knowledge/<tenant>/...
+  |-- knowledge/<tenant>/...
+  `-- runtime/xhs-auth/<tenant>/<attempt>/... (temporary)
 ```
 
 `backend/cmd/server/main.go` 是唯一后端服务入口。后端 HTTP 进程无状态；持久数据位于
 PostgreSQL、Docker 数据卷和 `DIARY_DATA_DIR`。多个后端实例通过数据库租约争抢
 scheduler 和知识索引任务。
+
+小红书授权同样保持后端无状态：每个租户的会话经 AES-256-GCM 加密存入
+PostgreSQL，临时 Chromium Profile 和二维码只存在于运行时目录并在任务结束后清理。
+授权 attempt 与研究任务通过数据库租约 claim，不依赖 Redis。详细设计见
+[小红书授权架构](XHS_AUTHORIZATION_ARCHITECTURE.md)。
 
 ## 3. 后端边界
 
@@ -130,6 +138,8 @@ scheduler 和知识索引任务。
 
 - `knowledge_collections`：租户内知识集合，支持描述、版本和软删除。
 - `knowledge_documents`：原文件元数据、摘要、状态、解析统计和 active index version。
+- `growth_memories`、`growth_memory_drafts`、`memory_settings`：经确认的结构化成长记忆、
+  限时 AI 草稿和租户级提取策略，全部强制 RLS。
 - `knowledge_parent_chunks`：用于生成上下文的结构完整父块。
 - `knowledge_child_chunks`：用于 FTS/向量召回的细粒度子块，向量维度为 1024。
 - `knowledge_index_jobs`：带租约、尝试次数和目标代次的异步索引任务。

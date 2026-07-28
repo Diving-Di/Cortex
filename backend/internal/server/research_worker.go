@@ -79,6 +79,29 @@ func processResearchJob(ctx context.Context, cfg config.Config, database *store.
 		MaxBodyChars: cfg.ResearchMaxBodyChars, MaxImages: cfg.ResearchMaxImages,
 		RequestInterval: cfg.ResearchRequestInterval,
 	}
+	if cfg.XHSAuthorizationEnabled && strings.TrimSpace(cfg.XHSSessionEncryptionKey) != "" {
+		_, session, sessionErr := loadXHSSession(ctx, cfg, database, principal)
+		if sessionErr == nil {
+			collector.CookieHeader = session.CookieHeader("www.xiaohongshu.com", time.Now())
+			leaseOwner := "research-session-" + uuid.NewString()
+			acquired, leaseErr := database.AcquireXHSAuthorizationLease(ctx, principal, leaseOwner, cfg.ResearchLease)
+			if leaseErr != nil || !acquired {
+				_ = database.RequeueResearchJob(ctx, principal, job.ID, 5*time.Second)
+				return
+			}
+			defer func() {
+				releaseContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = database.ReleaseXHSAuthorizationLease(releaseContext, principal, leaseOwner)
+			}()
+		} else if job.Mode == "keyword" {
+			_ = database.CompleteResearchJob(ctx, principal, job.ID, true, "XHS_AUTH_REQUIRED")
+			return
+		}
+	} else if job.Mode == "keyword" {
+		_ = database.CompleteResearchJob(ctx, principal, job.ID, true, "XHS_AUTH_NOT_CONFIGURED")
+		return
+	}
 	urls := payload.URLs
 	if job.Mode == "keyword" {
 		seen := map[string]bool{}

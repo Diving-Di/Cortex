@@ -5,6 +5,7 @@ import {
   Empty,
   Input,
   List,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -14,6 +15,7 @@ import {
 } from 'antd';
 import {
   DeleteOutlined,
+  EditOutlined,
   PlusOutlined,
   RobotOutlined,
   SendOutlined,
@@ -30,6 +32,7 @@ import {
   listConversations,
   listKnowledgeCollections,
   listKnowledgeDocuments,
+  renameConversation,
 } from '../../api/knowledge';
 import type { Conversation, KnowledgeDocument } from '../../api/knowledge';
 import './GrowthAssistantPage.css';
@@ -69,10 +72,11 @@ export default function GrowthAssistantPage({ token }: Props) {
   const [conversationId, setConversationId] = useState<number>();
   const [collectionIds, setCollectionIds] = useState<number[]>([]);
   const [documentIds, setDocumentIds] = useState<number[]>([]);
+  const [conversationSearch, setConversationSearch] = useState('');
   const controller = useRef<AbortController>();
   const conversations = useQuery({
-    queryKey: ['assistant-conversations'],
-    queryFn: () => listConversations(token),
+    queryKey: ['assistant-conversations', conversationSearch],
+    queryFn: () => listConversations(token, conversationSearch),
   });
   const collections = useQuery({
     queryKey: ['knowledge-collections'],
@@ -219,6 +223,12 @@ export default function GrowthAssistantPage({ token }: Props) {
         <Button block icon={<PlusOutlined />} onClick={() => createChat.mutate()}>
           新建会话
         </Button>
+        <Input.Search
+          allowClear
+          aria-label="搜索会话"
+          placeholder="搜索标题或消息"
+          onSearch={(value) => setConversationSearch(value.trim())}
+        />
         <List
           loading={conversations.isLoading}
           dataSource={conversations.data || []}
@@ -228,6 +238,40 @@ export default function GrowthAssistantPage({ token }: Props) {
               className={conversation.id === conversationId ? 'active' : ''}
               onClick={() => void openConversation(conversation.id)}
               actions={[
+                <Button
+                  key="rename"
+                  type="text"
+                  aria-label={`重命名会话 ${conversation.title}`}
+                  icon={<EditOutlined />}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    Modal.confirm({
+                      title: '重命名会话',
+                      content: (
+                        <Input
+                          id={`rename-${conversation.id}`}
+                          defaultValue={conversation.title}
+                          maxLength={255}
+                        />
+                      ),
+                      onOk: async () => {
+                        const title = (
+                          document.getElementById(`rename-${conversation.id}`) as HTMLInputElement
+                        )?.value.trim();
+                        if (!title) return;
+                        await renameConversation(
+                          token,
+                          conversation.id,
+                          title,
+                          conversation.version,
+                        );
+                        await queryClient.invalidateQueries({
+                          queryKey: ['assistant-conversations'],
+                        });
+                      },
+                    });
+                  }}
+                />,
                 <Popconfirm
                   key="delete"
                   title="删除会话？"
@@ -243,7 +287,10 @@ export default function GrowthAssistantPage({ token }: Props) {
                 </Popconfirm>,
               ]}
             >
-              <List.Item.Meta title={conversation.title} description={conversation.source_scope} />
+              <List.Item.Meta
+                title={conversation.title}
+                description={`${conversation.source_scope} · ${conversation.message_count || 0} 条消息 · ${conversation.total_tokens || 0} tokens`}
+              />
             </List.Item>
           )}
         />

@@ -1,4 +1,90 @@
 import { authHeaders, http } from './http';
+import axios from 'axios';
+
+export interface XHSAuthorization {
+  id: number;
+  status: 'pending' | 'authorized' | 'expired' | 'revoked' | 'failed';
+  account_display_name?: string | null;
+  authorized_at?: string | null;
+  last_verified_at?: string | null;
+  expires_at?: string | null;
+  failure_code?: string | null;
+  version: number;
+}
+
+export interface XHSAuthAttempt {
+  id: string;
+  authorization_id: number;
+  status:
+    | 'queued'
+    | 'starting'
+    | 'waiting_for_scan'
+    | 'scanned'
+    | 'verification_required'
+    | 'authorized'
+    | 'failed'
+    | 'cancelled'
+    | 'expired';
+  failure_code?: string | null;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getXHSAuthorization(token: string) {
+  try {
+    const response = await http.get<XHSAuthorization>('/api/v1/research/xhs/authorization', {
+      headers: authHeaders(token),
+    });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function startXHSAuthorization(token: string) {
+  const response = await http.post<XHSAuthAttempt>(
+    '/api/v1/research/xhs/authorizations',
+    undefined,
+    { headers: authHeaders(token) },
+  );
+  return response.data;
+}
+
+export async function getXHSAuthAttempt(token: string, id: string) {
+  const response = await http.get<XHSAuthAttempt>(`/api/v1/research/xhs/authorizations/${id}`, {
+    headers: authHeaders(token),
+  });
+  return response.data;
+}
+
+export async function loadXHSAuthQR(token: string, id: string) {
+  const response = await http.get<Blob>(`/api/v1/research/xhs/authorizations/${id}/qr`, {
+    headers: authHeaders(token),
+    responseType: 'blob',
+  });
+  return URL.createObjectURL(response.data);
+}
+
+export async function cancelXHSAuthorization(token: string, id: string) {
+  await http.post(`/api/v1/research/xhs/authorizations/${id}/cancel`, undefined, {
+    headers: authHeaders(token),
+  });
+}
+
+export async function verifyXHSAuthorization(token: string) {
+  const response = await http.post<XHSAuthorization>(
+    '/api/v1/research/xhs/authorization/verify',
+    undefined,
+    { headers: authHeaders(token) },
+  );
+  return response.data;
+}
+
+export async function revokeXHSAuthorization(token: string) {
+  await http.delete('/api/v1/research/xhs/authorization', { headers: authHeaders(token) });
+}
 
 export type ResearchJobStatus =
   | 'queued'
