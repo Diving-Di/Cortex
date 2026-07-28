@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"diary-listener/backend/internal/apierror"
 	"diary-listener/backend/internal/httpx"
@@ -60,7 +61,9 @@ func (s *Server) updateGrowthMemory(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("memoryID"), 10, 64)
 	var v store.GrowthMemory
 	if err == nil {
-		err = httpx.DecodeJSON(r, &v)
+		if decodeErr := httpx.DecodeJSON(r, &v); decodeErr != nil {
+			err = decodeErr
+		}
 	}
 	v.Content = strings.TrimSpace(v.Content)
 	if err != nil || id <= 0 || v.Version < 1 || !validMemory(v) {
@@ -118,6 +121,9 @@ func (s *Server) saveMemorySettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createMemoryDraft(w http.ResponseWriter, r *http.Request) {
+	// Draft generation can legitimately outlast the ordinary HTTP write
+	// timeout while LiteLLM is still producing the JSON response.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	var request struct {
 		SourceType string `json:"source_type"`
 		SourceID   int32  `json:"source_id"`
@@ -186,14 +192,15 @@ func (s *Server) createMemoryDraft(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) confirmMemoryDraft(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("draftID"))
+	if err != nil {
+		httpx.WriteError(w, s.logger, apierror.Validation(nil))
+		return
+	}
 	var request struct {
 		Items []store.MemoryDraftItem `json:"items"`
 	}
-	if err == nil {
-		err = httpx.DecodeJSON(r, &request)
-	}
-	if err != nil {
-		httpx.WriteError(w, s.logger, apierror.Validation(nil))
+	if decodeErr := httpx.DecodeJSON(r, &request); decodeErr != nil {
+		httpx.WriteError(w, s.logger, decodeErr)
 		return
 	}
 	items, err := s.store.CompleteMemoryDraft(r.Context(), principalFrom(r.Context()), id, request.Items, false)

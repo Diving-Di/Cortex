@@ -91,9 +91,9 @@ func (s *Store) CreateConversation(ctx context.Context, principal domain.Princip
 		}
 		var created, updated time.Time
 		if err := tx.QueryRow(ctx, `INSERT INTO conversations (tenant_id,user_id,title,source_scope)
-			VALUES ($1,$2,$3,$4) RETURNING id,title,source_scope,created_at,updated_at`,
+			VALUES ($1,$2,$3,$4) RETURNING id,title,source_scope,created_at,updated_at,version`,
 			principal.TenantID, principal.UserID, title, sourceScope,
-		).Scan(&result.ID, &result.Title, &result.SourceScope, &created, &updated); err != nil {
+		).Scan(&result.ID, &result.Title, &result.SourceScope, &created, &updated, &result.Version); err != nil {
 			return err
 		}
 		result.CreatedAt = created.Format(time.RFC3339Nano)

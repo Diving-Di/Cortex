@@ -47,7 +47,9 @@ func (s *Server) renameV1Conversation(w http.ResponseWriter, r *http.Request) {
 		Version int    `json:"version"`
 	}
 	if err == nil {
-		err = httpx.DecodeJSON(r, &request)
+		if decodeErr := httpx.DecodeJSON(r, &request); decodeErr != nil {
+			err = decodeErr
+		}
 	}
 	request.Title = strings.TrimSpace(request.Title)
 	if err == nil && (len([]rune(request.Title)) < 1 || len([]rune(request.Title)) > 255 || request.Version < 1) {

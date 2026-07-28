@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import MemoriesPage from './MemoriesPage';
 
 vi.mock('../../api/memories', () => ({

@@ -126,7 +126,7 @@ $reportSources = Invoke-RestMethod "$BaseURL/api/v1/reports/$($report.id)/source
 $notebookText = Invoke-AIStream "/api/v1/knowledge/chat" `
     @{ question = "Go 后端验收完成了什么？"; source_scope = "growth" } $login.token
 $conversations = Invoke-RestMethod "$BaseURL/api/v1/conversations" -Headers $headers
-$notebookConversation = @($conversations | Sort-Object id -Descending)[0]
+$notebookConversation = @($conversations.items | Sort-Object id -Descending)[0]
 $conversation = Invoke-RestMethod `
     "$BaseURL/api/v1/conversations/$($notebookConversation.id)" -Headers $headers
 $assistantMessage = @($conversation.messages | Where-Object { $_.role -eq "assistant" })[-1]

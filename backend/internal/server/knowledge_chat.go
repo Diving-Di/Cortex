@@ -136,7 +136,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 	}
 	apiSources := unifiedChatSources(sources, growthSources)
 	s.writeKnowledgeSSE(w, r, prompt, events, apiSources, func(ctx context.Context, answer string) (int32, int32, error) {
-		conversationID, messageID, err := s.store.SaveKnowledgeAnswer(
+		messageID, conversationID, err := s.store.SaveKnowledgeAnswer(
 			ctx, principal, request.ConversationID, request.RequestID,
 			request.SourceScope, request.Question, answer, sources, growthSources,
 		)

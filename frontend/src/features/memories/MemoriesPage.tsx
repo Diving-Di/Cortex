@@ -154,7 +154,7 @@ export default function MemoriesPage({ token }: { token: string }) {
         title={editing?.id ? '编辑记忆' : '新增记忆'}
         footer={null}
         onCancel={() => setEditing(undefined)}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           initialValues={editing}
