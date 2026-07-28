@@ -137,8 +137,6 @@ PostgreSQL，临时 Chromium Profile 和二维码只存在于运行时目录并�
 
 - `knowledge_collections`：租户内知识集合，支持描述、版本和软删除。
 - `knowledge_documents`：原文件元数据、摘要、状态、解析统计和 active index version。
-- `growth_memories`、`growth_memory_drafts`、`memory_settings`：经确认的结构化成长记忆、
-  限时 AI 草稿和租户级提取策略，全部强制 RLS。
 - `knowledge_parent_chunks`：用于生成上下文的结构完整父块。
 - `knowledge_child_chunks`：用于 FTS/向量召回的细粒度子块，向量维度为 1024。
 - `knowledge_index_jobs`：带租约、尝试次数和目标代次的异步索引任务。

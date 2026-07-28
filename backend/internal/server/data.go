@@ -20,11 +20,6 @@ func (s *Server) exportMarkdown(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	memories, err := s.store.ExportGrowthMemories(r.Context(), principalFrom(r.Context()))
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
 	var output bytes.Buffer
 	archive := zip.NewWriter(&output)
 	used := make(map[string]bool)
@@ -49,23 +44,6 @@ func (s *Server) exportMarkdown(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := writer.Write([]byte("# " + note.Title + "\n\n" + note.Content)); err != nil {
-			httpx.WriteError(w, s.logger, err)
-			return
-		}
-	}
-	if len(memories) > 0 {
-		writer, err := archive.Create("growth-memories.md")
-		if err != nil {
-			httpx.WriteError(w, s.logger, err)
-			return
-		}
-		var content strings.Builder
-		content.WriteString("# 成长记忆\n\n")
-		for _, memory := range memories {
-			fmt.Fprintf(&content, "## %s · 重要度 %d\n\n%s\n\n- 来源类型：%s\n- 创建方式：%s\n\n",
-				memory.Category, memory.Importance, memory.Content, memory.SourceType, memory.CreationMode)
-		}
-		if _, err := writer.Write([]byte(content.String())); err != nil {
 			httpx.WriteError(w, s.logger, err)
 			return
 		}

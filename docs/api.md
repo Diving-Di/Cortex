@@ -162,20 +162,6 @@ data: {"conversation_id":12,"message_id":34}
 重命名；版本冲突返回 `CONVERSATION_VERSION_CONFLICT`。超过 20 条消息的会话会保存压缩摘要，
 回答上下文使用摘要与最近 10 条消息，但事实来源仍在每轮重新检索。
 
-### 成长记忆
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| `GET/POST` | `/api/v1/growth-memories` | 搜索、分页或手动创建成长记忆 |
-| `PATCH/DELETE` | `/api/v1/growth-memories/{id}` | 乐观锁更新或软删除 |
-| `GET/PUT` | `/api/v1/settings/memories` | 读取或保存记忆建议策略 |
-| `POST` | `/api/v1/growth-memory-drafts` | 从当前租户笔记、会话或消息生成 AI 草稿 |
-| `POST` | `/api/v1/growth-memory-drafts/{id}/confirm` | 编辑后确认并事务写入 |
-| `POST` | `/api/v1/growth-memory-drafts/{id}/reject` | 拒绝草稿 |
-
-AI 草稿默认关闭、30 分钟过期且只能处理一次。确认时服务端重新校验来源租户与状态。成长记忆
-同时包含在 Markdown ZIP 的 `growth-memories.md` 中。
-
 失败使用 `event: error`，`data` 只包含稳定 `code` 和脱敏 `message`。来源统一包含
 `source_type`、`source_id`、`title`、`rank` 和 `source_deleted`，知识文件还可包含
 `heading`、`page_from`、`page_to` 与最小 `snippet`。

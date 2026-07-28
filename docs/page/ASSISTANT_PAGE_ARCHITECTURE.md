@@ -29,7 +29,7 @@ flowchart LR
     DB[("PostgreSQL 16<br/>会话、消息、引用、用量")]
     AI["AIWorkflow<br/>LiteLLM diary-default SSE"]
     KB["ready 知识文档<br/>全文 + pgvector"]
-    NOTES["个人笔记与成长记忆"]
+    NOTES["个人笔记"]
 
     UI -->|"Token + POST /knowledge/chat"| API
     UI -->|"会话 CRUD"| API
