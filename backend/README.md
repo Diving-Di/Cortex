@@ -11,7 +11,6 @@ Cortex 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。Go module、
 - 附件、知识原文件和 Markdown 导出；
 - LiteLLM Proxy 上的 SSE、AI 整理、报告、回忆与统一来源知识问答；
 - `/api/v1` 会话、知识文件预览/下载/重新索引和 Prometheus 文本指标；
-- 旧聊天和轻日记兼容接口；
 - 并发安全的定时报表 scheduler。
 
 ## 本地验证

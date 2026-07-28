@@ -27,3 +27,37 @@ func TestRouterStartsAndServesHealth(t *testing.T) {
 		t.Fatal("missing response request ID")
 	}
 }
+
+func TestLegacyRoutesAreNotRegistered(t *testing.T) {
+	handler := New(
+		config.Config{CORSOrigins: []string{"http://localhost:5173"}},
+		nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		"test",
+	)
+	routes := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/register/"},
+		{http.MethodPost, "/api/login/"},
+		{http.MethodPost, "/api/logout/"},
+		{http.MethodPost, "/api/chat/"},
+		{http.MethodGet, "/api/chat/conversations/"},
+		{http.MethodGet, "/api/chat/conversations/1/"},
+		{http.MethodDelete, "/api/chat/conversations/1/"},
+		{http.MethodGet, "/api/diary/"},
+		{http.MethodPost, "/api/diary/"},
+		{http.MethodDelete, "/api/diary/1/"},
+	}
+	for _, route := range routes {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			request := httptest.NewRequest(route.method, route.path, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+			}
+		})
+	}
+}
