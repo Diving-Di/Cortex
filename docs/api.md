@@ -1,6 +1,6 @@
 # Cortex API 概览
 
-后端基于 Go/Gin，当前产品接口以 `/api/v1` 为主；认证和旧聊天/轻日记接口同时提供无版本前缀的兼容路径。
+后端基于 Go/Gin，产品业务接口统一使用 `/api/v1`。
 
 ## 通用约定
 
@@ -36,7 +36,7 @@ data: [DONE]
 | `POST` | `/api/v1/auth/login` | 否 | 登录并返回 Token |
 | `POST` | `/api/v1/auth/logout` | 是 | 撤销当前 Token |
 
-认证接口兼容路径为 `/api/register/`、`/api/login/` 和 `/api/logout/`。用户名和密码至少 6 个字符，用户名与邮箱唯一。
+用户名和密码至少 6 个字符，用户名与邮箱唯一。
 
 ## 个人空间与工作台
 
@@ -280,12 +280,3 @@ Markdown ZIP 用于内容交换，不是完整备份。Cortex 不提供应用级
 研究任务状态为 `queued`、`collecting`、`extracting`、`organizing`、`reviewing`、
 `completed`、`failed` 或 `cancelled`。研究结果在用户确认前保持草稿状态。AI、OCR
 或采集授权不可用时返回稳定错误码，不返回第三方响应正文、页面 HTML 或内部地址。
-
-## 旧版兼容接口
-
-以下接口仍由后端提供，但已不属于重构后主流程：
-
-- `/api/chat/`、`/api/chat/conversations/`：旧版同步聊天。
-- `/api/diary/`：旧版图片轻日记。
-
-新功能应优先使用 `/api/v1` 笔记、AI 整理、周期报告和回忆接口。

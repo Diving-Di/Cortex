@@ -87,7 +87,6 @@ PostgreSQL，临时 Chromium Profile 和二维码只存在于运行时目录并�
 ### 3.1 HTTP、中间件与错误
 
 - Gin 是唯一 Web 框架，当前业务接口位于 `/api/v1`。
-- 旧认证、聊天和轻日记路径为兼容保留。
 - 中间件负责 CORS、panic recovery、请求追踪、Token 认证和 Principal 注入。
 - 合法的 `X-Request-ID` 可继续使用，否则服务端生成 UUID，并在响应中回传。
 - handler 负责 HTTP/SSE 契约；持久化 SQL 和事务位于 `backend/internal/store`。

@@ -219,7 +219,6 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 - 跨租户资源统一表现为 404；软删除空间的普通业务请求返回 403。
 - 周报日期归一到周一，月报日期归一到月初。
 - AI 整理与报告遵循“生成草稿 → 用户确认 → 写入”，报告、回忆与知识问答保留来源。
-- 旧聊天 `/api/chat/` 和图片轻日记 `/api/diary/` 接口仅为兼容保留。
 
 接口列表、请求约定和错误语义见 [API 概览](docs/api.md)。
 
@@ -279,4 +278,4 @@ docker compose --profile local-ai up -d --build reranker-service
 - [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)：未实现、部分实现、待验证事项和发布阻断
 - [大模型网关规范](docs/LLM_GATEWAY.md)：LiteLLM 路由、密钥、隐私和用量治理
 - [小红书授权架构](docs/XHS_AUTHORIZATION_ARCHITECTURE.md)：功能页、扫码授权、会话加密、租户隔离与 API 数据流
-- [小红书研究实现](docs/XHS_RESEARCH_IMPLEMENTATION.md)：研究采集、整理、保存和验收说明
+- [研究页面架构](docs/page/RESEARCH_PAGE_ARCHITECTURE.md)：研究采集、整理、保存、授权和验收说明
