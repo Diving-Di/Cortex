@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import ResearchPage from './ResearchPage';
 
@@ -8,13 +8,14 @@ const researchMocks = vi.hoisted(() => ({
   listResearchSources: vi.fn(),
   getXHSAuthorization: vi.fn(),
   startXHSAuthorization: vi.fn(),
+  createResearchJob: vi.fn(),
 }));
 
 vi.mock('../../api/research', () => ({
   listResearchJobs: researchMocks.listResearchJobs,
   listResearchSources: researchMocks.listResearchSources,
   getResearchSource: vi.fn(),
-  createResearchJob: vi.fn(),
+  createResearchJob: researchMocks.createResearchJob,
   cancelResearchJob: vi.fn(),
   retryResearchJob: vi.fn(),
   recollectResearchSource: vi.fn(),
@@ -107,4 +108,45 @@ test('shows the authorization gate before loading the research workspace', async
   expect(screen.queryByRole('button', { name: /新建研究/ })).not.toBeInTheDocument();
   expect(researchMocks.listResearchJobs).not.toHaveBeenCalled();
   expect(researchMocks.listResearchSources).not.toHaveBeenCalled();
+});
+
+test('creates a keyword research job from the modal', async () => {
+  researchMocks.createResearchJob.mockResolvedValue({ id: 9, status: 'queued' });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ResearchPage token="test-token" />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: /新建研究/ }));
+  fireEvent.change(screen.getByLabelText('研究关键词'), {
+    target: { value: 'Agent 面试\nRAG 实践' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '开始研究' }));
+
+  await waitFor(() =>
+    expect(researchMocks.createResearchJob).toHaveBeenCalledWith(
+      'test-token',
+      expect.objectContaining({
+        mode: 'keyword',
+        keywords: ['Agent 面试', 'RAG 实践'],
+        target_count: 10,
+        target_collection_id: undefined,
+        idempotency_key: expect.any(String),
+      }),
+    ),
+  );
+});
+
+test('shows a recoverable page error when jobs fail to load', async () => {
+  researchMocks.listResearchJobs.mockRejectedValue(new Error('offline'));
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <ResearchPage token="test-token" />
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByText('研究页面数据加载失败')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /重\s*试/ })).toBeInTheDocument();
 });

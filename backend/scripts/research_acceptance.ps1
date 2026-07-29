@@ -35,14 +35,20 @@ if (-not $token) {
 }
 $headers = @{ Authorization = "Token $token" }
 
-$job = Invoke-Json -Method Post -Uri "$BaseUrl/api/v1/research/jobs" -Headers $headers -Body @{
+$idempotencyKey = "acceptance-$([guid]::NewGuid())"
+$jobBody = @{
     mode = "urls"
     urls = @("https://www.xiaohongshu.com/explore/000000000000000000000000")
     target_count = 1
-    idempotency_key = "acceptance-$([guid]::NewGuid())"
+    idempotency_key = $idempotencyKey
 }
+$job = Invoke-Json -Method Post -Uri "$BaseUrl/api/v1/research/jobs" -Headers $headers -Body $jobBody
 if ($job.status -ne "queued") {
     throw "Research job was not queued"
+}
+$duplicate = Invoke-Json -Method Post -Uri "$BaseUrl/api/v1/research/jobs" -Headers $headers -Body $jobBody
+if ($duplicate.id -ne $job.id) {
+    throw "Research idempotency key created duplicate jobs"
 }
 
 $jobs = Invoke-Json -Method Get -Uri "$BaseUrl/api/v1/research/jobs" -Headers $headers -Body $null

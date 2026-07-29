@@ -332,25 +332,38 @@ export default function GrowthAssistantPage({ token }: Props) {
                         item.content
                       )}
                     </div>
-                    {item.sources?.map((source) => (
-                      <Card
-                        key={`${source.source_type}-${source.source_id}`}
-                        size="small"
-                        className="source-card"
-                      >
-                        <Typography.Text strong>{source.title}</Typography.Text>
-                        <Typography.Text type={source.source_deleted ? 'danger' : 'secondary'}>
-                          {source.source_deleted
-                            ? '来源已删除，无法查看或下载'
-                            : `${source.heading || ''}${source.page_from ? ` · 第 ${source.page_from} 页` : ''}`}
-                        </Typography.Text>
-                        {!source.source_deleted && source.snippet ? (
-                          <Typography.Paragraph ellipsis={{ rows: 3 }}>
-                            {source.snippet}
-                          </Typography.Paragraph>
-                        ) : null}
-                      </Card>
-                    ))}
+                    {item.sources?.map((source) => {
+                      const card = (
+                        <Card size="small" className="source-card">
+                          <Typography.Text strong>{source.title}</Typography.Text>
+                          <Typography.Text type={source.source_deleted ? 'danger' : 'secondary'}>
+                            {source.source_deleted
+                              ? '来源已删除，无法查看或下载'
+                              : `${source.heading || ''}${source.page_from ? ` · 第 ${source.page_from} 页` : ''}`}
+                          </Typography.Text>
+                          {!source.source_deleted && source.snippet ? (
+                            <Typography.Paragraph ellipsis={{ rows: 3 }}>
+                              {source.snippet}
+                            </Typography.Paragraph>
+                          ) : null}
+                        </Card>
+                      );
+                      return source.source_deleted ? (
+                        <div key={`${source.source_type}-${source.source_id}`}>{card}</div>
+                      ) : (
+                        <a
+                          key={`${source.source_type}-${source.source_id}`}
+                          href={
+                            source.source_type === 'knowledge_document'
+                              ? `/knowledge?document_id=${source.source_id}`
+                              : `/notes/${source.source_id}`
+                          }
+                          aria-label={`查看引用：${source.title}`}
+                        >
+                          {card}
+                        </a>
+                      );
+                    })}
                   </div>
                 </div>
               ))

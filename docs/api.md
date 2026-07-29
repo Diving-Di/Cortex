@@ -184,8 +184,14 @@ claim 保证同一到期任务只生成一条运行记录。
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/api/v1/exports/markdown` | 下载全部有效笔记的 Markdown ZIP |
+| `GET` | `/api/v1/backups/full` | 下载版本化完整备份 ZIP |
+| `POST` | `/api/v1/backups/full/restore` | 将完整备份 ZIP 恢复到空租户 |
 
-Markdown ZIP 用于内容交换，不是完整备份。Cortex 不提供应用级完整备份/恢复 API；数据库与文件卷灾备由部署者负责。
+Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 格式，包含笔记、标签、
+版本、附件、定时报告、知识原文件以及研究来源、草稿和资产；不包含 Token、AI Provider、
+用量、敏感审计、小红书 Cookie 或授权尝试。恢复会重新分配并映射资源 ID，校验 ZIP 路径和
+文件 SHA-256，且只允许目标租户为空时执行。数据库与文件卷的基础设施灾备仍由部署者负责。
+备份超过目标租户的笔记、附件或知识文件配额时返回 `BACKUP_RESTORE_QUOTA_EXCEEDED`。
 
 ## 小红书研究
 

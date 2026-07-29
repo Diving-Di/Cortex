@@ -45,6 +45,7 @@ func (s *Server) startXHSAuthorization(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
+	researchAuthorizationsStarted.Add(1)
 	httpx.JSON(w, http.StatusAccepted, item)
 }
 

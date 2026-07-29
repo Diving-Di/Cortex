@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -33,6 +33,7 @@ import {
   deleteKnowledgeCollection,
   deleteKnowledgeDocument,
   downloadKnowledgeDocument,
+  getKnowledgeDocument,
   getKnowledgePreview,
   listKnowledgeCollections,
   listKnowledgeDocuments,
@@ -64,6 +65,15 @@ export default function KnowledgePage({ token }: Props) {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<KnowledgeDocument>();
   const [form] = Form.useForm();
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get('document_id');
+    if (!value || !/^\d+$/.test(value)) return;
+    void getKnowledgeDocument(token, Number(value))
+      .then(setSelected)
+      .catch(() => {
+        message.warning('引用的知识文件不存在或无权访问');
+      });
+  }, [token]);
   const collections = useQuery({
     queryKey: ['knowledge-collections'],
     queryFn: () => listKnowledgeCollections(token),

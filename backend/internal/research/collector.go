@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"sort"
@@ -90,18 +91,78 @@ func ValidatePublicDestination(ctx context.Context, hostname string, resolver *n
 		return errors.New("XHS_SOURCE_UNAVAILABLE")
 	}
 	for _, address := range addresses {
-		ip := address.IP
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalMulticast() ||
-			ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+		if !isPublicIP(address.IP) {
 			return errors.New("RESEARCH_INVALID_URL")
 		}
 	}
 	return nil
 }
 
+var nonPublicPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/128"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+	netip.MustParsePrefix("2001:db8::/32"),
+}
+
+func isPublicIP(value net.IP) bool {
+	address, ok := netip.AddrFromSlice(value)
+	if !ok {
+		return false
+	}
+	address = address.Unmap()
+	if !address.IsGlobalUnicast() {
+		return false
+	}
+	for _, prefix := range nonPublicPrefixes {
+		if prefix.Contains(address) {
+			return false
+		}
+	}
+	return true
+}
+
 func NewHTTPClient(timeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = http.ProxyFromEnvironment
+	// Environment proxies can turn an allow-listed URL into a request to an
+	// unvalidated internal hop, so the collector never inherits proxy settings.
+	transport.Proxy = nil
+	dialer := &net.Dialer{Timeout: timeout}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, errors.New("invalid destination")
+		}
+		if err := ValidatePublicDestination(ctx, host, nil); err != nil {
+			return nil, err
+		}
+		addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil || len(addresses) == 0 {
+			return nil, errors.New("XHS_SOURCE_UNAVAILABLE")
+		}
+		for _, resolved := range addresses {
+			if !isPublicIP(resolved.IP) {
+				return nil, errors.New("RESEARCH_INVALID_URL")
+			}
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(addresses[0].IP.String(), port))
+	}
 	client := &http.Client{Timeout: timeout, Transport: transport}
 	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {

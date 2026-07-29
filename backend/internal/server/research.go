@@ -104,6 +104,7 @@ func (s *Server) createResearchJob(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
+	researchJobsCreated.Add(1)
 	httpx.JSON(w, http.StatusAccepted, job)
 }
 
@@ -143,6 +144,7 @@ func (s *Server) cancelResearchJob(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
+	researchJobsCancelled.Add(1)
 	httpx.JSON(w, http.StatusAccepted, map[string]string{"status": "cancel_requested"})
 }
 
@@ -306,6 +308,7 @@ func (s *Server) saveResearchSource(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
+	researchSourcesSaved.Add(1)
 	httpx.JSON(w, http.StatusAccepted, document.Response())
 }
 
@@ -328,6 +331,7 @@ func (s *Server) batchSaveResearchSources(w http.ResponseWriter, r *http.Request
 		}
 		result = append(result, document.Response())
 	}
+	researchSourcesSaved.Add(uint64(len(result)))
 	httpx.JSON(w, http.StatusAccepted, result)
 }
 
