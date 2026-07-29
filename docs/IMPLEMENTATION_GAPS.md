@@ -26,13 +26,21 @@
 
 ### 1.2 Eino 渐进迁移（部分实现）
 
+- 目标架构为 `Gin handler → 可信业务层 → Eino Workflow → LiteLLM → 模型`。Gin 与
+  Eino 分属不同层级并长期共存：Gin 继续负责 HTTP 路由、中间件、认证、参数解析及
+  SSE 契约；Eino 负责 Prompt、模型组件、检索适配、结构化输出和 AI Chain/Graph
+  编排，不以 Eino 替代 Gin。
 - 已增加 CloudWeGo Eino OpenAI 兼容适配器，继续通过 LiteLLM 逻辑模型访问；保留
   `AIClient` 和 `AIWorkflow` 契约，并支持全局开关及按 `organize`、`report`、
   `knowledge` 工作流灰度、回滚。
+- 当前处于模型客户端适配阶段；后续按工作流逐步将 Prompt Template、Retriever Adapter、
+  输出解析和 Chain/Graph 迁入 Eino，在契约与验收完成前不得一次性删除旧实现。
 - 按“笔记整理 → 报告生成 → 回忆/知识问答”的顺序迁移 Prompt、检索、结构化输出和
   模型流，不进行一次性重写。
 - Principal、租户/RLS、显式 `tenant_id`、配额、审计、revision、草稿确认写入、
-  来源归属和引用校验继续留在可信业务层。
+  来源归属和引用校验继续留在 Eino 外部的可信业务层；Eino Retriever 只能通过携带
+  可信 Principal 且已设置 transaction-local RLS 的适配器访问数据，不得直接接受客户端
+  `tenant_id` 或绕过 `Store.WithTx`。
 - 保持公开 API、稳定错误码、现有 SSE 事件、客户端断线取消及“已经输出后不从头重试”
   的兼容行为。
 - callback、trace、日志和缓存不得包含邮箱、姓名、完整正文、供应商 Key 或上游响应
