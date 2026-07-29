@@ -42,7 +42,12 @@ func (s SessionState) CookieHeader(host string, now time.Time) string {
 
 func (s SessionState) Authorized() bool {
 	for _, cookie := range s.Cookies {
-		if cookie.Name == "web_session" && strings.TrimSpace(cookie.Value) != "" {
+		name := strings.ToLower(strings.TrimSpace(cookie.Name))
+		domain := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(cookie.Domain)), ".")
+		isXHSDomain := domain == "xiaohongshu.com" || strings.HasSuffix(domain, ".xiaohongshu.com")
+		isSessionCookie := name == "web_session" || strings.HasPrefix(name, "web_session_")
+		notExpired := cookie.Expires <= 0 || time.Unix(int64(cookie.Expires), 0).After(time.Now())
+		if isXHSDomain && isSessionCookie && notExpired && strings.TrimSpace(cookie.Value) != "" {
 			return true
 		}
 	}

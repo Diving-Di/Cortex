@@ -1,9 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/png"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,7 +18,9 @@ import (
 	"diary-listener/backend/internal/research"
 	"diary-listener/backend/internal/secretbox"
 	"diary-listener/backend/internal/store"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/storage"
 	"github.com/chromedp/chromedp"
 	"github.com/google/uuid"
 )
@@ -103,7 +108,7 @@ func processXHSAuthorization(
 	}
 	qrRelative := filepath.Join("runtime", "xhs-auth", attempt.TenantID.String(), attempt.ID.String(), "qr.png")
 	qrPath := filepath.Join(cfg.DataDir, qrRelative)
-	if err := captureAuthorizationScreenshot(browserContext, qrPath); err != nil {
+	if err := captureAuthorizationQRCode(browserContext, qrPath); err != nil {
 		_ = database.FailXHSAuthAttempt(parent, principal, attempt.ID, "XHS_QR_UNAVAILABLE")
 		return
 	}
@@ -115,6 +120,7 @@ func processXHSAuthorization(
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	lastScreenshot := time.Now()
+	cookieReadFailureLogged := false
 	for {
 		select {
 		case <-browserContext.Done():
@@ -125,7 +131,12 @@ func processXHSAuthorization(
 			if err != nil || current.Status == "cancelled" {
 				return
 			}
-			cookies, err := network.GetCookies().Do(browserContext)
+			browserExecutor := cdp.WithExecutor(browserContext, chromedp.FromContext(browserContext).Browser)
+			cookies, err := storage.GetCookies().Do(browserExecutor)
+			if err != nil && !cookieReadFailureLogged {
+				logger.Error("read xhs authorization cookies", "error_code", "XHS_COOKIE_READ_FAILED")
+				cookieReadFailureLogged = true
+			}
 			if err == nil {
 				state := research.SessionState{Cookies: make([]research.SessionCookie, 0, len(cookies))}
 				for _, cookie := range cookies {
@@ -160,20 +171,71 @@ func processXHSAuthorization(
 				_ = database.UpdateXHSAuthAttempt(parent, principal, attempt.ID, "verification_required", &qrStored, "")
 			}
 			if time.Since(lastScreenshot) >= 15*time.Second {
-				_ = captureAuthorizationScreenshot(browserContext, qrPath)
+				_ = captureAuthorizationQRCode(browserContext, qrPath)
 				lastScreenshot = time.Now()
 			}
 		}
 	}
 }
 
-func captureAuthorizationScreenshot(ctx context.Context, path string) error {
+func captureAuthorizationQRCode(ctx context.Context, path string) error {
 	var screenshot []byte
-	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&screenshot, 90)); err != nil {
+	var found bool
+	const markQRCode = `(() => {
+		const visibleSquare = (element) => {
+			const rect = element.getBoundingClientRect();
+			const style = getComputedStyle(element);
+			return rect.width >= 80 && rect.width <= 800 &&
+				rect.height >= 80 && rect.height <= 800 &&
+				Math.max(rect.width, rect.height) / Math.min(rect.width, rect.height) <= 1.35 &&
+				style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) !== 0;
+		};
+		const hint = (element) => {
+			let current = element;
+			for (let depth = 0; current && depth < 4; depth++, current = current.parentElement) {
+				const value = [
+					current.id,
+					typeof current.className === 'string' ? current.className : '',
+					current.getAttribute && current.getAttribute('src'),
+					current.getAttribute && current.getAttribute('aria-label'),
+				].filter(Boolean).join(' ').toLowerCase();
+				if (/qr|qrcode|qr-code|二维码|扫码/.test(value)) return true;
+			}
+			return false;
+		};
+		const candidates = Array.from(document.querySelectorAll('img, canvas, svg'))
+			.filter(visibleSquare);
+		let target = candidates.find((element) => hint(element));
+		if (!target) {
+			target = candidates.find((element) => {
+				const container = element.closest('[role="dialog"], [class*="login"], [class*="modal"]');
+				return container && /扫码|二维码/.test(container.textContent || '');
+			});
+		}
+		if (!target) return false;
+		document.querySelectorAll('[data-diary-xhs-qr]').forEach((element) =>
+			element.removeAttribute('data-diary-xhs-qr'));
+		target.setAttribute('data-diary-xhs-qr', 'true');
+		return true;
+	})()`
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(markQRCode, &found),
+	); err != nil || !found {
+		return fmt.Errorf("xhs login qr element not found")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Screenshot(`[data-diary-xhs-qr="true"]`, &screenshot, chromedp.ByQuery),
+	); err != nil {
 		return err
 	}
 	if len(screenshot) == 0 || len(screenshot) > 10<<20 {
-		return fmt.Errorf("invalid authorization screenshot")
+		return fmt.Errorf("invalid authorization qr image")
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(screenshot))
+	if err != nil || config.Width < 80 || config.Height < 80 ||
+		config.Width > 1000 || config.Height > 1000 ||
+		float64(max(config.Width, config.Height))/float64(min(config.Width, config.Height)) > 1.35 {
+		return fmt.Errorf("invalid authorization qr dimensions")
 	}
 	return os.WriteFile(path, screenshot, 0600)
 }

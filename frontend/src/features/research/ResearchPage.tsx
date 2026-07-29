@@ -16,6 +16,7 @@ import {
   Radio,
   Select,
   Space,
+  Spin,
   Table,
   Tabs,
   Tag,
@@ -108,12 +109,14 @@ export default function ResearchPage({ token }: Props) {
   const [draftForm] = Form.useForm<Record<string, string>>();
   const [authAttemptID, setAuthAttemptID] = useState<string>();
   const [authQR, setAuthQR] = useState<string>();
+  const [authQRError, setAuthQRError] = useState(false);
 
   const authorization = useQuery({
     queryKey: ['xhs-authorization'],
     queryFn: () => getXHSAuthorization(token),
     retry: false,
   });
+  const coreEnabled = authorization.data?.status === 'authorized';
   const authAttempt = useQuery({
     queryKey: ['xhs-auth-attempt', authAttemptID],
     queryFn: () => getXHSAuthAttempt(token, authAttemptID!),
@@ -135,6 +138,7 @@ export default function ResearchPage({ token }: Props) {
       return;
     }
     let active = true;
+    setAuthQRError(false);
     loadXHSAuthQR(token, authAttemptID)
       .then((url) => {
         if (!active) return URL.revokeObjectURL(url);
@@ -143,11 +147,13 @@ export default function ResearchPage({ token }: Props) {
           return url;
         });
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setAuthQRError(true);
+      });
     return () => {
       active = false;
     };
-  }, [authAttempt.data?.updated_at, authAttempt.data?.status, authAttemptID, token]);
+  }, [authAttempt.dataUpdatedAt, authAttempt.data?.status, authAttemptID, token]);
 
   useEffect(() => {
     if (authAttempt.data?.status === 'authorized') {
@@ -168,6 +174,7 @@ export default function ResearchPage({ token }: Props) {
     mutationFn: () => startXHSAuthorization(token),
     onSuccess: (attempt) => {
       setAuthQR(undefined);
+      setAuthQRError(false);
       setAuthAttemptID(attempt.id);
     },
   });
@@ -189,6 +196,7 @@ export default function ResearchPage({ token }: Props) {
   const jobs = useQuery({
     queryKey: ['research-jobs', jobPage],
     queryFn: () => listResearchJobs(token, jobPage),
+    enabled: coreEnabled,
     refetchInterval: (query) =>
       query.state.data?.items.some((item) =>
         ['queued', 'collecting', 'extracting', 'organizing'].includes(item.status),
@@ -205,15 +213,17 @@ export default function ResearchPage({ token }: Props) {
         sort: sourceSort,
         page: sourcePage,
       }),
+    enabled: coreEnabled,
   });
   const selectedSource = useQuery({
     queryKey: ['research-source', selectedSourceID],
     queryFn: () => getResearchSource(token, selectedSourceID!),
-    enabled: Boolean(selectedSourceID),
+    enabled: coreEnabled && Boolean(selectedSourceID),
   });
   const collections = useQuery({
     queryKey: ['knowledge-collections'],
     queryFn: () => listKnowledgeCollections(token),
+    enabled: coreEnabled,
   });
 
   useEffect(() => {
@@ -425,6 +435,117 @@ export default function ResearchPage({ token }: Props) {
     [selectedIDs, sources.data],
   );
   const pageError = authorization.error || jobs.error || sources.error || collections.error;
+
+  if (authorization.isLoading) {
+    return (
+      <div className="research-auth-gate research-auth-loading">
+        <Spin size="large" />
+        <Typography.Text type="secondary">正在检查小红书授权状态…</Typography.Text>
+      </div>
+    );
+  }
+
+  if (authorization.isError) {
+    return (
+      <div className="research-auth-gate">
+        <Typography.Title level={2}>小红书研究</Typography.Title>
+        <Alert
+          showIcon
+          type="error"
+          message="授权状态加载失败"
+          description="请检查网络或服务状态后重试。"
+          action={<Button onClick={() => void authorization.refetch()}>重试</Button>}
+        />
+      </div>
+    );
+  }
+
+  if (!coreEnabled) {
+    const attemptFailed =
+      authAttempt.data && ['failed', 'cancelled', 'expired'].includes(authAttempt.data.status);
+    return (
+      <div className="research-auth-gate">
+        <div>
+          <Typography.Title level={2}>授权小红书账号</Typography.Title>
+          <Typography.Text type="secondary">
+            完成当前个人空间的扫码授权后，才能进入小红书研究页面。
+          </Typography.Text>
+        </div>
+        <Alert
+          showIcon
+          type="info"
+          message="授权凭据按个人租户隔离加密保存"
+          description="凭据仅用于你主动发起的研究任务，不会展示给其他账号。"
+        />
+        <Card className="research-auth-gate-card">
+          <Space direction="vertical" size="large">
+            <div>
+              <Typography.Title level={4}>开始扫码授权</Typography.Title>
+              <Typography.Paragraph type="secondary">
+                点击下方按钮生成限时二维码，再使用小红书 App 扫描并确认登录。
+              </Typography.Paragraph>
+            </div>
+            {startAuthorization.isError && !authAttemptID ? (
+              <Alert showIcon type="error" message="无法创建授权任务，请稍后重试。" />
+            ) : null}
+            <Button
+              type="primary"
+              size="large"
+              loading={startAuthorization.isPending}
+              onClick={() => {
+                startAuthorization.reset();
+                startAuthorization.mutate();
+              }}
+            >
+              打开扫码授权窗口
+            </Button>
+          </Space>
+        </Card>
+
+        <Modal
+          title="扫码授权小红书"
+          open={Boolean(authAttemptID)}
+          footer={
+            <Button
+              onClick={async () => {
+                if (authAttemptID) await cancelXHSAuthorization(token, authAttemptID);
+                setAuthAttemptID(undefined);
+                startAuthorization.reset();
+              }}
+            >
+              取消授权
+            </Button>
+          }
+          onCancel={() => setAuthAttemptID(undefined)}
+        >
+          <div className="research-auth-modal">
+            {attemptFailed ? (
+              <Alert
+                showIcon
+                type="error"
+                message="授权任务未完成"
+                description={authAttempt.data?.failure_code || '二维码已失效，请关闭窗口后重试。'}
+              />
+            ) : authQR ? (
+              <Image preview={false} src={authQR} alt="小红书登录二维码页面" />
+            ) : (
+              <Spin size="large" />
+            )}
+            {authQRError && !attemptFailed ? (
+              <Alert showIcon type="warning" message="二维码仍在生成，页面会自动重试。" />
+            ) : null}
+            {!attemptFailed ? (
+              <Typography.Text type="secondary">
+                {authAttempt.data?.status === 'verification_required'
+                  ? '页面需要安全验证，请稍后重试或重新扫码。'
+                  : '请使用小红书 App 扫描页面中的二维码，授权完成后会自动进入研究页面。'}
+              </Typography.Text>
+            ) : null}
+          </div>
+        </Modal>
+      </div>
+    );
+  }
 
   return (
     <div className="research-page">

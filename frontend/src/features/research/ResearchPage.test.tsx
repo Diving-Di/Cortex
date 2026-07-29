@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import ResearchPage from './ResearchPage';
 
 const researchMocks = vi.hoisted(() => ({
   listResearchJobs: vi.fn(),
   listResearchSources: vi.fn(),
+  getXHSAuthorization: vi.fn(),
+  startXHSAuthorization: vi.fn(),
 }));
 
 vi.mock('../../api/research', () => ({
@@ -23,8 +25,8 @@ vi.mock('../../api/research', () => ({
   batchIgnoreResearchSources: vi.fn(),
   updateResearchDraft: vi.fn(),
   loadResearchAsset: vi.fn(),
-  getXHSAuthorization: vi.fn().mockResolvedValue(null),
-  startXHSAuthorization: vi.fn(),
+  getXHSAuthorization: researchMocks.getXHSAuthorization,
+  startXHSAuthorization: researchMocks.startXHSAuthorization,
   getXHSAuthAttempt: vi.fn(),
   loadXHSAuthQR: vi.fn(),
   cancelXHSAuthorization: vi.fn(),
@@ -37,8 +39,15 @@ vi.mock('../../api/knowledge', () => ({
 }));
 
 beforeEach(() => {
+  cleanup();
+  vi.clearAllMocks();
   researchMocks.listResearchJobs.mockResolvedValue({ items: [], total: 0 });
   researchMocks.listResearchSources.mockResolvedValue({ items: [], total: 0 });
+  researchMocks.getXHSAuthorization.mockResolvedValue({
+    id: 1,
+    status: 'authorized',
+    version: 1,
+  });
 });
 
 test('renders research navigation content and empty jobs', async () => {
@@ -47,7 +56,7 @@ test('renders research navigation content and empty jobs', async () => {
       <ResearchPage token="test-token" />
     </QueryClientProvider>,
   );
-  expect(screen.getByRole('heading', { name: '小红书研究' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: '小红书研究' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /新建研究/ })).toBeInTheDocument();
   expect(await screen.findByText('尚未创建研究任务')).toBeInTheDocument();
 });
@@ -82,4 +91,20 @@ test('keeps rendering when the server returns an unfamiliar status', async () =>
   );
 
   expect(await screen.findByText('未知状态')).toBeInTheDocument();
+});
+
+test('shows the authorization gate before loading the research workspace', async () => {
+  researchMocks.getXHSAuthorization.mockResolvedValue(null);
+
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ResearchPage token="test-token" />
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByRole('heading', { name: '授权小红书账号' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '打开扫码授权窗口' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /新建研究/ })).not.toBeInTheDocument();
+  expect(researchMocks.listResearchJobs).not.toHaveBeenCalled();
+  expect(researchMocks.listResearchSources).not.toHaveBeenCalled();
 });

@@ -73,14 +73,21 @@ func (s *Store) CreateXHSAuthAttempt(
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
 		}
-		var running bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM xhs_auth_attempts
-			WHERE tenant_id=$1 AND status IN ('queued','starting','waiting_for_scan','scanned','verification_required')
-			AND expires_at>now())`, principal.TenantID).Scan(&running); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))`,
+			principal.TenantID); err != nil {
 			return err
 		}
-		if running {
-			return apierror.New("XHS_AUTH_IN_PROGRESS", "已有小红书授权正在进行", 409)
+		err := scanXHSAuthAttempt(tx.QueryRow(ctx, `SELECT id,tenant_id,created_by,authorization_id,
+			status,qr_path,failure_code,expires_at,created_at,updated_at
+			FROM xhs_auth_attempts
+			WHERE tenant_id=$1 AND status IN ('queued','starting','waiting_for_scan','scanned','verification_required')
+			AND expires_at>now()
+			ORDER BY created_at DESC LIMIT 1`, principal.TenantID), &result)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
 		}
 		var authorizationID int64
 		if err := tx.QueryRow(ctx, `INSERT INTO xhs_authorizations
@@ -92,7 +99,7 @@ func (s *Store) CreateXHSAuthAttempt(
 			RETURNING id`, principal.TenantID, principal.UserID, keyVersion).Scan(&authorizationID); err != nil {
 			return err
 		}
-		err := tx.QueryRow(ctx, `INSERT INTO xhs_auth_attempts
+		err = tx.QueryRow(ctx, `INSERT INTO xhs_auth_attempts
 			(tenant_id,created_by,authorization_id,expires_at)
 			VALUES($1,$2,$3,$4)
 			RETURNING id,tenant_id,created_by,authorization_id,status,qr_path,failure_code,

@@ -216,7 +216,8 @@ Markdown ZIP 用于内容交换，不是完整备份。Cortex 不提供应用级
 | `DELETE` | `/api/v1/research/xhs/authorization` | 撤销授权并取消运行中的研究任务 |
 
 授权接口只返回状态元数据，不返回 Cookie、密文、nonce 或服务器文件路径。创建授权返回
-`202` 和扫码任务对象；二维码尚未生成时返回 `XHS_QR_PENDING`，任务结束或超时后返回
+`202` 和扫码任务对象；同一租户已有未结束的扫码任务时幂等返回该任务，便于页面刷新后恢复。
+二维码尚未生成时返回 `XHS_QR_PENDING`，任务结束或超时后返回
 `XHS_QR_EXPIRED`。二维码响应为 `image/png`，并带有
 `Cache-Control: no-store, private`。
 

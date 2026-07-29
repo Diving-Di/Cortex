@@ -1,3 +1,6 @@
+DROP TABLE IF EXISTS public.growth_memory_drafts;
+DROP TABLE IF EXISTS public.memory_settings;
+DROP TABLE IF EXISTS public.growth_memories;
 ALTER TABLE public.conversations
   DROP COLUMN IF EXISTS summary_updated_at,
   DROP COLUMN IF EXISTS summary_model,

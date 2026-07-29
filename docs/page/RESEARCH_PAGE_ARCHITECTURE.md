@@ -85,7 +85,7 @@ flowchart LR
 - 撤销授权，撤销前提示运行中的任务也会取消。
 
 扫码弹窗每两秒轮询 attempt。进入 `waiting_for_scan` 或 `verification_required` 后，通过携带
-Token 的 Blob 请求获取登录页面截图。授权成功后自动刷新卡片并关闭 attempt。二维码 Blob URL
+Token 的 Blob 请求获取从登录页面 DOM 中提取的二维码元素截图，不返回完整页面截图。授权成功后自动刷新卡片并关闭 attempt。二维码 Blob URL
 在替换或组件卸载时释放。
 
 前端永远不会读取 Cookie、密文、nonce、密钥版本、Chromium profile 或服务器文件路径。
@@ -225,7 +225,8 @@ knowledge-collections
 1. Claim 当前到期的授权 attempt。
 2. 创建租户与 attempt 独立的 `0700` Chromium 临时目录。
 3. 打开小红书登录页并生成 `0600` 页面截图。
-4. 轮询登录 Cookie，以 `web_session` 判断授权完成。
+4. 从 Chromium 浏览器级 Cookie 存储轮询登录 Cookie，以小红书域的 `web_session`
+   及其版本化名称判断授权完成；不把 `a1` 等匿名 Cookie 视为登录会话。
 5. 将会话序列化后使用 AES-256-GCM 加密保存。
 6. 完成、失败、取消或超时后清理临时目录。
 

@@ -3,6 +3,24 @@
   gap: 16px;
 }
 
+.research-auth-gate {
+  display: grid;
+  gap: 20px;
+  margin: 0 auto;
+  max-width: 720px;
+  width: 100%;
+}
+
+.research-auth-loading {
+  align-content: center;
+  justify-items: center;
+  min-height: 50vh;
+}
+
+.research-auth-gate-card .ant-card-body {
+  padding: 32px;
+}
+
 .research-header {
   align-items: flex-start;
   display: flex;
@@ -34,8 +52,14 @@
 }
 
 .research-auth-modal .ant-image-img {
-  max-height: 55vh;
+  image-rendering: pixelated;
   object-fit: contain;
+  width: 100%;
+}
+
+.research-auth-modal .ant-image {
+  max-width: 70vw;
+  width: 280px;
 }
 
 .research-toolbar .ant-input-search {
