@@ -76,7 +76,7 @@ func (s *Server) streamAI(w http.ResponseWriter, r *http.Request) {
 	if request.Model != nil && strings.TrimSpace(*request.Model) != "" {
 		model = strings.TrimSpace(*request.Model)
 	}
-	client := &ai.OpenAICompatibleClient{BaseURL: s.cfg.AIBaseURL, APIKey: s.cfg.AIAPIKey}
+	client := &ai.EinoClient{BaseURL: s.cfg.AIBaseURL, APIKey: s.cfg.AIAPIKey}
 	aiCtx := s.aiContext(r.Context(), "chat", principalFrom(r.Context()))
 	events, err := client.StreamChat(aiCtx, ai.ChatRequest{
 		Model:    model,

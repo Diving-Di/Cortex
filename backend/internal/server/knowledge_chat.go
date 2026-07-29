@@ -97,10 +97,11 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 	}
 	sources = s.rerankKnowledge(r, request.Question, sources, 8)
 	sources = limitKnowledgeContext(sources, 6000)
-	evidence := make([]knowledge.ChatEvidence, 0, len(sources)+len(growthSources))
+	evidence := make([]ai.KnowledgeEvidence, 0, len(sources)+len(growthSources))
 	for index, source := range sources {
-		evidence = append(evidence, knowledge.ChatEvidence{
+		evidence = append(evidence, ai.KnowledgeEvidence{
 			Citation: fmt.Sprintf("K%d", index+1), Title: source.Document,
+			Kind:    "文件",
 			Content: source.Parent, Heading: source.HeadingPath,
 			PageFrom: source.PageFrom, PageTo: source.PageTo,
 		})
@@ -110,16 +111,16 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		if source.NoteDate != nil {
 			heading = "日期:" + *source.NoteDate
 		}
-		evidence = append(evidence, knowledge.ChatEvidence{
+		evidence = append(evidence, ai.KnowledgeEvidence{
 			Citation: fmt.Sprintf("G%d", index+1), Title: source.Title,
+			Kind:    "成长记录",
 			Content: source.Snippet, Heading: heading,
 		})
 	}
 	conversationContext := s.knowledgeConversationContext(r, principal, request.ConversationID)
-	prompt := knowledge.BuildGroundedChatPrompt(knowledge.ChatPromptInput{
+	events, err := s.aiWorkflow().AnswerKnowledge(s.aiContext(r.Context(), "knowledge_chat", principal), ai.KnowledgeInput{
 		Question: request.Question, ConversationContext: conversationContext, Evidence: evidence,
 	})
-	events, err := s.aiWorkflow().AnswerMemory(s.aiContext(r.Context(), "knowledge_chat", principal), prompt)
 	if err != nil {
 		if err.Error() == "AI_NOT_CONFIGURED" {
 			httpx.WriteError(w, s.logger, apierror.New("AI_NOT_CONFIGURED", "AI 未配置，知识库管理仍可正常使用", 503))
@@ -129,7 +130,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiSources := unifiedChatSources(sources, growthSources)
-	s.writeKnowledgeSSE(w, r, prompt, events, apiSources, func(ctx context.Context, answer string) (int32, int32, error) {
+	s.writeKnowledgeSSE(w, r, request.Question, events, apiSources, func(ctx context.Context, answer string) (int32, int32, error) {
 		messageID, conversationID, err := s.store.SaveKnowledgeAnswer(
 			ctx, principal, request.ConversationID, request.RequestID,
 			request.SourceScope, request.Question, answer, sources, growthSources,

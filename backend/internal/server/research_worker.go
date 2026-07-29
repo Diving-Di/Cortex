@@ -204,7 +204,7 @@ func organizeResearch(ctx context.Context, cfg config.Config, principal domain.P
 	if strings.TrimSpace(cfg.AIAPIKey) == "" {
 		return fallback
 	}
-	client := &ai.OpenAICompatibleClient{
+	client := &ai.EinoClient{
 		BaseURL: cfg.AIBaseURL, APIKey: cfg.AIAPIKey,
 		HTTPClient: &http.Client{Timeout: 90 * time.Second},
 	}

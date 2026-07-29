@@ -11,6 +11,8 @@ import (
 	"diary-listener/backend/internal/apierror"
 	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/components/prompt"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -22,6 +24,98 @@ type EinoClient struct {
 	APIKey     string
 	HTTPClient *http.Client
 	Model      model.BaseChatModel
+}
+
+func (c *EinoClient) chatModel(ctx context.Context, modelName string) (model.BaseChatModel, error) {
+	if c.Model != nil {
+		return c.Model, nil
+	}
+	if strings.TrimSpace(c.APIKey) == "" {
+		return nil, errors.New("AI_NOT_CONFIGURED")
+	}
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 60 * time.Second}
+	}
+	created, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
+		APIKey: c.APIKey, BaseURL: c.BaseURL, Model: modelName, HTTPClient: httpClient,
+	})
+	if err != nil {
+		return nil, stableEinoError(ctx, err)
+	}
+	return created, nil
+}
+
+// StreamChain runs the workflow as an Eino PromptTemplate -> ChatModel chain.
+// No callbacks or caches are installed, so prompt/response bodies cannot enter
+// tracing or a cross-tenant cache.
+func (c *EinoClient) StreamChain(
+	ctx context.Context,
+	modelName string,
+	operation string,
+	template prompt.ChatTemplate,
+	input map[string]any,
+) (<-chan StreamEvent, error) {
+	chatModel, err := c.chatModel(ctx, modelName)
+	if err != nil {
+		return nil, err
+	}
+	runner, err := compose.NewChain[map[string]any, *schema.Message]().
+		AppendChatTemplate(template).
+		AppendChatModel(chatModel).
+		Compile(ctx, compose.WithGraphName("diary-"+operation))
+	if err != nil {
+		return nil, stableEinoError(ctx, err)
+	}
+	reader, err := runner.Stream(ctx, input, compose.WithChatModelOption(c.modelOptions(ctx)...))
+	if err != nil {
+		return nil, stableEinoError(ctx, err)
+	}
+	return streamReaderEvents(ctx, reader), nil
+}
+
+func (c *EinoClient) modelOptions(ctx context.Context) []model.Option {
+	metadata := requestMetadataFrom(ctx)
+	if metadata.RequestID == "" {
+		return nil
+	}
+	return []model.Option{
+		einoopenai.WithExtraFields(map[string]any{"metadata": map[string]string{
+			"request_id": metadata.RequestID, "request_type": metadata.RequestType,
+			"tenant": metadata.Tenant, "environment": metadata.Environment,
+		}}),
+		einoopenai.WithExtraHeader(map[string]string{"X-Request-ID": metadata.RequestID}),
+	}
+}
+
+func streamReaderEvents(ctx context.Context, reader *schema.StreamReader[*schema.Message]) <-chan StreamEvent {
+	events := make(chan StreamEvent)
+	go func() {
+		defer close(events)
+		defer reader.Close()
+		for {
+			message, err := reader.Recv()
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			if err != nil {
+				select {
+				case events <- StreamEvent{Err: stableEinoError(ctx, err)}:
+				case <-ctx.Done():
+				}
+				return
+			}
+			if message == nil || message.Content == "" {
+				continue
+			}
+			select {
+			case events <- StreamEvent{Content: message.Content}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return events
 }
 
 func (c *EinoClient) StreamChat(ctx context.Context, request ChatRequest) (<-chan StreamEvent, error) {

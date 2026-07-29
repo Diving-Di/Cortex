@@ -41,8 +41,6 @@ type Config struct {
 	AIAPIKey                string
 	AIBaseURL               string
 	AIModel                 string
-	AIRuntime               string
-	AIEinoWorkflows         []string
 	AISystemPrompt          string
 	Environment             string
 	ScheduledReportsEnabled bool
@@ -79,17 +77,6 @@ func Load() (Config, error) {
 	origins := splitCSV(valueOrDefault("CORS_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173"))
 	if len(origins) == 0 {
 		return Config{}, fmt.Errorf("CORS_ORIGINS must contain explicit trusted origins")
-	}
-	aiRuntime := strings.ToLower(valueOrDefault("AI_RUNTIME", "legacy"))
-	if aiRuntime != "legacy" && aiRuntime != "eino" {
-		return Config{}, fmt.Errorf("AI_RUNTIME must be legacy or eino")
-	}
-	aiEinoWorkflows := splitCSV(strings.ToLower(os.Getenv("AI_EINO_WORKFLOWS")))
-	allowedAIWorkflows := map[string]bool{"organize": true, "report": true, "knowledge": true}
-	for _, workflow := range aiEinoWorkflows {
-		if !allowedAIWorkflows[workflow] {
-			return Config{}, fmt.Errorf("AI_EINO_WORKFLOWS contains unsupported workflow %q", workflow)
-		}
 	}
 	for _, origin := range origins {
 		if origin == "*" {
@@ -255,8 +242,6 @@ func Load() (Config, error) {
 		AIAPIKey:                strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIBaseURL:               valueOrDefault("AI_BASE_URL", "https://api.openai.com/v1"),
 		AIModel:                 valueOrDefault("AI_MODEL", "gpt-5.6"),
-		AIRuntime:               aiRuntime,
-		AIEinoWorkflows:         aiEinoWorkflows,
 		AISystemPrompt:          valueOrDefault("AI_SYSTEM_PROMPT", "你是一个温暖、贴心的 AI 助手。"),
 		Environment:             valueOrDefault("APP_ENV", "development"),
 		ScheduledReportsEnabled: parseBool(valueOrDefault("SCHEDULED_REPORTS_ENABLED", "true")),

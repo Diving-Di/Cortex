@@ -39,7 +39,8 @@ Cortex 后端
 
 当前实现已完成透明接入：
 
-- `backend/internal/ai/client.go` 的 `OpenAICompatibleClient` 统一调用 `{base_url}/chat/completions`，并支持 SSE 流式响应。
+- `backend/internal/ai/eino_client.go` 的 `EinoClient` 通过 Eino OpenAI 兼容组件统一调用
+  `{base_url}/chat/completions`，并支持 SSE 流式响应。
 - `backend/internal/config/config.go` 通过 `AI_API_KEY`、`AI_BASE_URL` 和 `AI_MODEL` 读取网关配置。
 - 通用 AI、M2 工作流和定时报表均复用同一客户端。
 - `docker-compose.yml` 将应用统一指向 LiteLLM Proxy。

@@ -1,19 +1,6 @@
 package ai
 
-import (
-	"bufio"
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"strings"
-	"time"
-
-	"diary-listener/backend/internal/apierror"
-)
+import "context"
 
 type Message struct {
 	Role    string `json:"role"`
@@ -30,131 +17,8 @@ type StreamEvent struct {
 	Err     error
 }
 
+// AIClient is the stable streaming boundary used by non-workflow callers.
+// The production implementation is EinoClient.
 type AIClient interface {
 	StreamChat(ctx context.Context, request ChatRequest) (<-chan StreamEvent, error)
-}
-
-type OpenAICompatibleClient struct {
-	BaseURL    string
-	APIKey     string
-	HTTPClient *http.Client
-}
-
-func (c *OpenAICompatibleClient) StreamChat(ctx context.Context, request ChatRequest) (<-chan StreamEvent, error) {
-	if strings.TrimSpace(c.APIKey) == "" {
-		return nil, errors.New("AI_NOT_CONFIGURED")
-	}
-	body := map[string]any{
-		"model": request.Model, "messages": request.Messages, "stream": true,
-	}
-	metadata := requestMetadataFrom(ctx)
-	if metadata.RequestID != "" {
-		body["metadata"] = map[string]string{
-			"request_id": metadata.RequestID, "request_type": metadata.RequestType,
-			"tenant": metadata.Tenant, "environment": metadata.Environment,
-		}
-	}
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	httpClient := c.HTTPClient
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 60 * time.Second}
-	}
-	endpoint := strings.TrimRight(c.BaseURL, "/") + "/chat/completions"
-	response, err := requestWithRetry(ctx, httpClient, endpoint, c.APIKey, metadata.RequestID, payload)
-	if err != nil {
-		return nil, err
-	}
-	events := make(chan StreamEvent)
-	go func() {
-		defer close(events)
-		defer response.Body.Close()
-		scanner := bufio.NewScanner(response.Body)
-		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data:") {
-				continue
-			}
-			raw := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if raw == "[DONE]" {
-				return
-			}
-			var value struct {
-				Choices []struct {
-					Delta struct {
-						Content string `json:"content"`
-					} `json:"delta"`
-				} `json:"choices"`
-			}
-			if err := json.Unmarshal([]byte(raw), &value); err != nil {
-				events <- StreamEvent{Err: fmt.Errorf("decode AI stream: %w", err)}
-				return
-			}
-			if len(value.Choices) > 0 && value.Choices[0].Delta.Content != "" {
-				select {
-				case events <- StreamEvent{Content: value.Choices[0].Delta.Content}:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-		if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
-			events <- StreamEvent{Err: err}
-		}
-	}()
-	return events, nil
-}
-
-func requestWithRetry(
-	ctx context.Context,
-	client *http.Client,
-	endpoint string,
-	apiKey string,
-	requestID string,
-	payload []byte,
-) (*http.Response, error) {
-	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-		if err != nil {
-			return nil, err
-		}
-		request.Header.Set("Authorization", "Bearer "+apiKey)
-		request.Header.Set("Content-Type", "application/json")
-		if requestID != "" {
-			request.Header.Set("X-Request-ID", requestID)
-		}
-		response, err := client.Do(request)
-		if err != nil {
-			lastErr = err
-			if attempt == 0 {
-				select {
-				case <-time.After(250 * time.Millisecond):
-					continue
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				}
-			}
-			return nil, err
-		}
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-			response.Body.Close()
-			switch response.StatusCode {
-			case http.StatusUnauthorized, http.StatusForbidden:
-				return nil, apierror.New(
-					"AI_GATEWAY_AUTH_FAILED", "AI 网关认证失败，请联系管理员更新服务凭据", 503,
-				)
-			case http.StatusTooManyRequests:
-				return nil, apierror.New("AI_RATE_LIMITED", "AI 服务繁忙，请稍后重试", 503)
-			default:
-				return nil, apierror.New("AI_UPSTREAM_UNAVAILABLE", "AI 服务暂时不可用", 503)
-			}
-		}
-		return response, nil
-	}
-	return nil, lastErr
 }

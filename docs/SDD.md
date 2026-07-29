@@ -162,10 +162,12 @@ PostgreSQL，临时 Chromium Profile 和二维码只存在于运行时目录并�
 - `EmbeddingClient` 负责 OpenAI 兼容 embedding 调用、分批、超时、取消、有限重试、
   数量和维度校验。
 - `RerankClient` 负责可选内部 reranker；不可用时检索回退到 RRF。
-- `AIWorkflow` 编排现有整理、报告、回忆和生成流。
-- 生成模型运行时默认使用原有 OpenAI 兼容客户端；`AI_RUNTIME=eino` 可全量切换到
-  Eino 适配器，或通过 `AI_EINO_WORKFLOWS=organize,report,knowledge` 按工作流灰度。
-  两种客户端均保持同一 `AIClient` 流式契约并只访问 LiteLLM。
+- `AIWorkflow` 使用 Eino Prompt Template 与 Chain 编排整理、报告和回忆/知识问答；
+  Prompt、模型流与整理 JSON 输出解析均在 Eino 工作流层。
+- 生成模型统一使用 Eino OpenAI 兼容适配器并只访问 LiteLLM 逻辑模型，不再保留
+  `AI_RUNTIME` 或按工作流 legacy 回滚分支。
+- Principal/RLS 检索、配额、审计、revision、草稿确认写入、来源归属与引用校验仍位于
+  Eino 外部的可信业务层；Eino 不注册正文 callback 或 Prompt/响应缓存。
 - LiteLLM 提供生成逻辑模型 `diary-default` 和 embedding 逻辑模型
   `cortex-embedding`。
 - 后端只持有 LiteLLM 虚拟密钥；供应商 Key 和 master key 不进入前端或业务数据。
