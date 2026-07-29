@@ -34,9 +34,21 @@ type reportRequest struct {
 }
 
 func (s *Server) aiWorkflow() ai.Workflow {
+	legacyClient := &ai.OpenAICompatibleClient{
+		BaseURL: s.cfg.AIBaseURL, APIKey: s.cfg.AIAPIKey,
+	}
+	einoClient := &ai.EinoClient{BaseURL: s.cfg.AIBaseURL, APIKey: s.cfg.AIAPIKey}
+	if s.cfg.AIRuntime == "eino" {
+		return ai.Workflow{Client: einoClient, Model: s.cfg.AIModel}
+	}
+	operationClients := make(map[string]ai.AIClient, len(s.cfg.AIEinoWorkflows))
+	for _, workflow := range s.cfg.AIEinoWorkflows {
+		operationClients[workflow] = einoClient
+	}
 	return ai.Workflow{
-		Client: &ai.OpenAICompatibleClient{BaseURL: s.cfg.AIBaseURL, APIKey: s.cfg.AIAPIKey},
-		Model:  s.cfg.AIModel,
+		Client:           legacyClient,
+		OperationClients: operationClients,
+		Model:            s.cfg.AIModel,
 	}
 }
 

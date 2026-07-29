@@ -205,6 +205,8 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 | `RAG_EMBEDDING_*` | Embedding 地址、凭据、逻辑模型和维度 |
 | `RAG_RERANK_*` | Reranker 地址和模型 |
 | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 后端访问 LiteLLM 的生成配置 |
+| `AI_RUNTIME` | `legacy`（默认）或 `eino`；两者均只通过 LiteLLM，切换后可立即回滚 |
+| `AI_EINO_WORKFLOWS` | 逗号分隔的 `organize`、`report`、`knowledge`；在 `legacy` 模式下按工作流灰度启用 Eino，留空即全部使用旧实现 |
 | `LITELLM_MASTER_KEY` | LiteLLM 管理密钥，不注入业务前端 |
 | `LITELLM_VIRTUAL_KEY` | 后端使用的限模型、限预算虚拟密钥 |
 | `LOCAL_EMBEDDING_BASE_URL` | LiteLLM 访问宿主机 Ollama 的 OpenAI 兼容地址 |

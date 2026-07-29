@@ -93,6 +93,8 @@ services:
       - AI_API_KEY=${LITELLM_VIRTUAL_KEY:?set LITELLM_VIRTUAL_KEY}
       - AI_BASE_URL=http://llm-gateway:4000/v1
       - AI_MODEL=diary-default
+      - AI_RUNTIME=${AI_RUNTIME:-legacy}
+      - AI_EINO_WORKFLOWS=${AI_EINO_WORKFLOWS:-}
       - AI_SYSTEM_PROMPT=${AI_SYSTEM_PROMPT:-你是一个温暖、贴心的 AI 助手。}
       - APP_ENV=${APP_ENV:-development}
       - SCHEDULED_REPORTS_ENABLED=${SCHEDULED_REPORTS_ENABLED:-true}

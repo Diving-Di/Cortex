@@ -85,6 +85,46 @@ func TestExtractTXTRejectsCharacterLimit(t *testing.T) {
 	}
 }
 
+func TestExtractBilingualFixedFixtures(t *testing.T) {
+	fixtureDir := filepath.Join("..", "..", "testdata", "knowledge")
+	tests := []struct {
+		extension    string
+		minPageCount int
+		want         []string
+	}{
+		{extension: ".txt", minPageCount: 1, want: []string{"苍穹计划", "Project Sky", "当前租户"}},
+		{extension: ".pdf", minPageCount: 2, want: []string{"苍穹计划", "Project Sky", "2042"}},
+		{extension: ".docx", minPageCount: 1, want: []string{"苍穹计划", "Project Sky"}},
+	}
+	for _, test := range tests {
+		t.Run(test.extension, func(t *testing.T) {
+			path := filepath.Join(fixtureDir, "bilingual-sample"+test.extension)
+			document, err := Extract(context.Background(), path, test.extension, "bilingual fixture", ExtractLimits{
+				MaxPages: 20, MaxCharacters: 20_000, TimeoutSecs: 10,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if document.PageCount < test.minPageCount || document.Characters <= 0 || len(document.Blocks) == 0 {
+				t.Fatalf("incomplete extraction: pages=%d chars=%d blocks=%d", document.PageCount, document.Characters, len(document.Blocks))
+			}
+			var extracted strings.Builder
+			for _, block := range document.Blocks {
+				extracted.WriteString(block.Text)
+				extracted.WriteByte('\n')
+			}
+			for _, value := range test.want {
+				if !strings.Contains(extracted.String(), value) {
+					t.Fatalf("missing %q in extracted fixture", value)
+				}
+			}
+			if document.Characters > 20_000 {
+				t.Fatalf("character limit not enforced: %d", document.Characters)
+			}
+		})
+	}
+}
+
 func writeTestDOCX(t *testing.T, path, documentXML string) {
 	t.Helper()
 	file, err := os.Create(path)

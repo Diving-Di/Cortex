@@ -45,4 +45,36 @@ func TestLoadKnowledgeChunkDefaults(t *testing.T) {
 	if cfg.RerankModel != "Qwen/Qwen3-Reranker-0.6B" {
 		t.Fatalf("RerankModel = %q", cfg.RerankModel)
 	}
+	if cfg.AIRuntime != "legacy" {
+		t.Fatalf("AIRuntime = %q", cfg.AIRuntime)
+	}
+	if len(cfg.AIEinoWorkflows) != 0 {
+		t.Fatalf("AIEinoWorkflows = %#v", cfg.AIEinoWorkflows)
+	}
+}
+
+func TestLoadValidatesEinoWorkflows(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgresql://diary_app:test@localhost/diary")
+	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://diary_migrator:test@localhost/diary")
+	t.Setenv("AI_EINO_WORKFLOWS", "organize,report,knowledge")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.AIEinoWorkflows, ",") != "organize,report,knowledge" {
+		t.Fatalf("AIEinoWorkflows = %#v", cfg.AIEinoWorkflows)
+	}
+	t.Setenv("AI_EINO_WORKFLOWS", "organize,direct-vendor")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "AI_EINO_WORKFLOWS") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestLoadValidatesAIRuntime(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgresql://diary_app:test@localhost/diary")
+	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://diary_migrator:test@localhost/diary")
+	t.Setenv("AI_RUNTIME", "direct-vendor")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "AI_RUNTIME") {
+		t.Fatalf("Load() error = %v", err)
+	}
 }

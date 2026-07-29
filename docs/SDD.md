@@ -163,6 +163,9 @@ PostgreSQL，临时 Chromium Profile 和二维码只存在于运行时目录并�
   数量和维度校验。
 - `RerankClient` 负责可选内部 reranker；不可用时检索回退到 RRF。
 - `AIWorkflow` 编排现有整理、报告、回忆和生成流。
+- 生成模型运行时默认使用原有 OpenAI 兼容客户端；`AI_RUNTIME=eino` 可全量切换到
+  Eino 适配器，或通过 `AI_EINO_WORKFLOWS=organize,report,knowledge` 按工作流灰度。
+  两种客户端均保持同一 `AIClient` 流式契约并只访问 LiteLLM。
 - LiteLLM 提供生成逻辑模型 `diary-default` 和 embedding 逻辑模型
   `cortex-embedding`。
 - 后端只持有 LiteLLM 虚拟密钥；供应商 Key 和 master key 不进入前端或业务数据。
