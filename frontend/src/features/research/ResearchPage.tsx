@@ -23,20 +23,13 @@ import {
   Typography,
   message,
 } from 'antd';
-import {
-  CloseCircleOutlined,
-  EyeOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SaveOutlined,
-} from '@ant-design/icons';
+import { CloseCircleOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnsType } from 'antd/es/table';
 import type { FormInstance } from 'antd';
 import { listKnowledgeCollections } from '../../api/knowledge';
 import {
   batchIgnoreResearchSources,
-  batchSaveResearchSources,
   cancelResearchJob,
   createResearchJob,
   deleteResearchSource,
@@ -47,7 +40,6 @@ import {
   loadResearchAsset,
   retryResearchJob,
   recollectResearchSource,
-  saveResearchSource,
   updateResearchDraft,
   getXHSAuthorization,
   startXHSAuthorization,
@@ -277,24 +269,9 @@ export default function ResearchPage({ token }: Props) {
     mutationFn: (id: number) => retryResearchJob(token, id),
     onSuccess: refresh,
   });
-  const save = useMutation({
-    mutationFn: (id: number) => saveResearchSource(token, id),
-    onSuccess: async () => {
-      message.success('已保存到个人知识库');
-      await refresh();
-    },
-  });
   const ignore = useMutation({
     mutationFn: (id: number) => ignoreResearchSource(token, id),
     onSuccess: refresh,
-  });
-  const batchSave = useMutation({
-    mutationFn: (ids: number[]) => batchSaveResearchSources(token, ids),
-    onSuccess: async () => {
-      setSelectedIDs([]);
-      message.success('所选结果已保存');
-      await refresh();
-    },
   });
   const batchIgnore = useMutation({
     mutationFn: (ids: number[]) => batchIgnoreResearchSources(token, ids),
@@ -567,9 +544,7 @@ export default function ResearchPage({ token }: Props) {
       <div className="research-header">
         <div>
           <Typography.Title level={2}>小红书研究</Typography.Title>
-          <Typography.Text type="secondary">
-            收集公开内容，提炼观点并保存到个人知识库。
-          </Typography.Text>
+          <Typography.Text type="secondary">收集公开内容并提炼为研究草稿。</Typography.Text>
         </div>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
           新建研究
@@ -692,13 +667,6 @@ export default function ResearchPage({ token }: Props) {
                       { value: 'published_at', label: '按发布时间' },
                     ]}
                   />
-                  <Button
-                    icon={<SaveOutlined />}
-                    disabled={!actionableSelected.length}
-                    onClick={() => batchSave.mutate(actionableSelected)}
-                  >
-                    批量保存
-                  </Button>
                   <Button
                     disabled={!actionableSelected.length}
                     onClick={() => batchIgnore.mutate(actionableSelected)}
@@ -843,13 +811,6 @@ export default function ResearchPage({ token }: Props) {
                     onClick={() => ignore.mutate(selectedSource.data!.id)}
                   >
                     忽略
-                  </Button>
-                  <Button
-                    type="primary"
-                    icon={<SaveOutlined />}
-                    onClick={() => save.mutate(selectedSource.data!.id)}
-                  >
-                    保存到知识库
                   </Button>
                 </>
               ) : selectedSource.data.status === 'failed' ? (

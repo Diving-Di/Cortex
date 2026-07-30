@@ -13,7 +13,7 @@ import (
 func (s *Store) UpsertRecipeDocument(ctx context.Context, sourcePath, kind, category, title, summary string,
 	ingredients, dietaryTerms []string, difficulty, caloriesText *string, contentMarkdown, contentSHA256, sourceRevision string, isActive bool) (int64, error) {
 	var id int64
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+	err := s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `INSERT INTO recipe_documents
             (source_path,kind,category,title,summary,ingredients,dietary_terms,difficulty,calories_text,content_markdown,content_sha256,source_revision,is_active,created_at,updated_at)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),now())
@@ -43,7 +43,7 @@ type RecipeChildChunk struct {
 }
 
 func (s *Store) InsertRecipeChildChunks(ctx context.Context, documentID int64, indexVersion int, chunks []RecipeChildChunk) error {
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
+	return s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM recipe_parent_chunks WHERE document_id=$1`, documentID); err != nil {
 			return err
 		}
@@ -71,7 +71,7 @@ func (s *Store) InsertRecipeChildChunks(ctx context.Context, documentID int64, i
 
 func (s *Store) RecipeDocumentHash(ctx context.Context, sourcePath string) (string, bool, error) {
 	var hash string
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+	err := s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT content_sha256 FROM recipe_documents WHERE source_path=$1`, sourcePath).
 			Scan(&hash)
 	})
@@ -79,6 +79,20 @@ func (s *Store) RecipeDocumentHash(ctx context.Context, sourcePath string) (stri
 		return "", false, nil
 	}
 	return hash, err == nil, err
+}
+
+func (s *Store) DeactivateMissingRecipeDocuments(ctx context.Context, activePaths []string) (int, error) {
+	var count int64
+	err := s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE recipe_documents SET is_active=false,updated_at=now()
+			WHERE is_active=true AND NOT (source_path = ANY($1::text[]))`, activePaths)
+		if err != nil {
+			return err
+		}
+		count = tag.RowsAffected()
+		return nil
+	})
+	return int(count), err
 }
 
 // UserPreferences represents a user's recipe preferences.
@@ -147,7 +161,7 @@ func (s *Store) UpdateUserPreferences(ctx context.Context, principal domain.Prin
 // CreateRecipeSyncRun creates a new sync run record with status 'running'.
 func (s *Store) CreateRecipeSyncRun(ctx context.Context, sourceRevision string) (int64, error) {
 	var id int64
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+	err := s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `INSERT INTO recipe_sync_runs (source_revision,status,started_at)
             VALUES ($1,'running',now()) RETURNING id`, sourceRevision).Scan(&id)
 	})
@@ -156,7 +170,7 @@ func (s *Store) CreateRecipeSyncRun(ctx context.Context, sourceRevision string) 
 
 // UpdateRecipeSyncRun updates a run record with final counts and status.
 func (s *Store) UpdateRecipeSyncRun(ctx context.Context, runID int64, status string, scanned, created, updated, deactivated, failed int) error {
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
+	return s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE recipe_sync_runs SET status=$1, scanned_count=$2, created_count=$3, updated_count=$4, deactivated_count=$5, failed_count=$6, finished_at=now()
             WHERE id=$7`, status, scanned, created, updated, deactivated, failed, runID)
 		return err
@@ -166,7 +180,7 @@ func (s *Store) UpdateRecipeSyncRun(ctx context.Context, runID int64, status str
 // LatestRecipeCorpusRevision returns the most recent successful source_revision or empty string.
 func (s *Store) LatestRecipeCorpusRevision(ctx context.Context) (string, error) {
 	var rev *string
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+	err := s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT source_revision FROM recipe_sync_runs WHERE status='success' ORDER BY finished_at DESC LIMIT 1`).Scan(&rev)
 	})
 	if err != nil {
@@ -179,7 +193,7 @@ func (s *Store) LatestRecipeCorpusRevision(ctx context.Context) (string, error) 
 }
 
 func (s *Store) RecipeIndexReady(ctx context.Context, embeddingModel string) error {
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
+	return s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
 		var ready bool
 		err := tx.QueryRow(ctx, `SELECT
 			EXISTS (SELECT 1 FROM recipe_sync_runs WHERE status='success')
@@ -387,7 +401,7 @@ func (s *Store) SaveRecipeAnswer(
 
 // UpdateRecipeChildEmbeddingModel sets the embedding_model for child chunks matching document_id and content_hash.
 func (s *Store) UpdateRecipeChildEmbeddingModel(ctx context.Context, documentID int64, contentHash, model string) error {
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
+	return s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE recipe_child_chunks SET embedding_model=$1 WHERE document_id=$2 AND content_hash=$3 AND embedding_model IS NULL`, model, documentID, contentHash)
 		return err
 	})
@@ -395,9 +409,21 @@ func (s *Store) UpdateRecipeChildEmbeddingModel(ctx context.Context, documentID 
 
 // UpdateRecipeChildEmbedding writes the embedding vector and model for a child chunk.
 func (s *Store) UpdateRecipeChildEmbedding(ctx context.Context, documentID int64, contentHash string, vec []float32, model string) error {
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
+	return s.withRecipeAdminTx(ctx, func(tx pgx.Tx) error {
 		literal := vectorLiteral(vec)
 		_, err := tx.Exec(ctx, `UPDATE recipe_child_chunks SET embedding=$1::vector, embedding_model=$2 WHERE document_id=$3 AND content_hash=$4 AND embedding IS NULL`, literal, model, documentID, contentHash)
 		return err
 	})
+}
+
+func (s *Store) withRecipeAdminTx(ctx context.Context, fn func(pgx.Tx) error) error {
+	tx, err := s.AdminPool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

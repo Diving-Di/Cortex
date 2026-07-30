@@ -30,7 +30,7 @@ data: [DONE]
 | 方法 | 路径 | 认证 | 说明 |
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | 否 | 进程存活检查 |
-| `GET` | `/readyz` | 否 | 数据库就绪检查 |
+| `GET` | `/readyz` | 否 | 数据库、Embedding、Reranker 与菜谱索引就绪检查 |
 | `GET` | `/metrics` | 否 | Prometheus 文本指标，不包含正文或身份信息 |
 | `POST` | `/api/v1/auth/register` | 否 | 注册账号并创建个人空间 |
 | `POST` | `/api/v1/auth/login` | 否 | 登录并返回 Token |
@@ -89,8 +89,7 @@ data: [DONE]
 | `POST` | `/api/v1/reports/confirm` | 保存报告、来源及明确的覆盖选择 |
 | `GET` | `/api/v1/reports/{note_id}/sources` | 查询报告来源 |
 
-无报告来源时返回 `REPORT_NO_SOURCES`，不会无依据调用 AI。笔记问答统一使用成长助手的
-`/api/v1/knowledge/chat`，并传入 `source_scope: "growth"`。
+无报告来源时返回 `REPORT_NO_SOURCES`，不会无依据调用 AI。
 
 ## AI 配置与通用流式生成
 
@@ -110,16 +109,25 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` / `POST` | `/api/v1/knowledge/collections` | 查询或创建知识集合 |
-| `DELETE` | `/api/v1/knowledge/collections/{collection_id}` | 删除空集合；非空返回 `COLLECTION_NOT_EMPTY` |
-| `GET` / `POST` | `/api/v1/knowledge/documents` | 分页查询或上传知识文件 |
+| `GET` | `/api/v1/knowledge/collections` | 兼容读取历史知识集合 |
+| `GET` | `/api/v1/knowledge/documents` | 兼容读取历史知识文件 |
 | `GET` | `/api/v1/knowledge/documents/{document_id}` | 获取文件与索引状态 |
 | `GET` | `/api/v1/knowledge/documents/{document_id}/download` | 鉴权下载原文件 |
 | `GET` | `/api/v1/knowledge/documents/{document_id}/preview` | 获取受限的提取预览 |
-| `POST` | `/api/v1/knowledge/documents/{document_id}/reindex` | 重新加入索引队列 |
-| `DELETE` | `/api/v1/knowledge/documents/{document_id}` | 删除原文件并立即使索引失效 |
 | `POST` | `/api/v1/knowledge/chat` | 在指定集合/文件范围内检索并以 SSE 回答 |
 | `GET` | `/api/v1/knowledge/messages/{message_id}/sources` | 查询回答引用的知识来源 |
+
+历史知识库只保留兼容读取与旧会话读取；上传、删除、重建索引和集合写入接口不再公开。
+
+### 今日菜谱
+
+| 方法与路径 | 说明 |
+| --- | --- |
+| `GET /api/v1/recipes/today` | 返回按用户、当地日期、语料 revision 和忌口确定性选择的菜谱及 3 个问题 |
+| `POST /api/v1/recipes/chat` | 以 SSE 回答烹饪问题；可传 `featured_recipe_id` 锁定今日菜谱上下文 |
+| `GET /api/v1/recipes/messages/{message_id}/sources` | 返回只读系统菜谱引用 |
+| `GET /api/v1/settings/preferences` | 读取忌口、时区和版本 |
+| `PUT /api/v1/settings/preferences` | 以 `version` 乐观锁更新忌口与时区 |
 
 知识文件上传支持 UTF-8 TXT、Markdown（`.md`）、文本型 PDF 和 DOCX。
 
@@ -138,8 +146,7 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 `question`、幂等键 `request_id`、`source_scope`（`knowledge`、`growth` 或 `all`），
 可选 `conversation_id`、`collection_ids` 和 `document_ids`。省略 `request_id` 时沿用
 服务端生成的请求追踪 ID。重试相同键会重放已保存回答，不会产生重复消息。
-检索采用经 LiteLLM 调用本地 `qwen3-embedding:0.6b` 得到的向量召回与 PostgreSQL
-全文召回进行混合排序，再使用可选的 `Qwen/Qwen3-Reranker-0.6B` 重排；回答只能依据返回的
+历史知识检索采用向量召回与 PostgreSQL 全文召回进行混合排序；回答只能依据返回的
 父块上下文。无证据时返回 `KNOWLEDGE_NO_EVIDENCE`，不会调用生成模型。Embedding
 不可用时降级为 FTS，不绕过 LiteLLM 切换调用路径。
 
@@ -210,9 +217,7 @@ Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 
 | `POST` | `/api/v1/research/sources/{source_id}/retry` | 为失败来源创建重新采集任务 |
 | `POST` | `/api/v1/research/sources/{source_id}/recollect` | 为来源创建重新采集任务 |
 | `PATCH` | `/api/v1/research/sources/{source_id}/draft` | 使用版本号更新整理草稿 |
-| `POST` | `/api/v1/research/sources/{source_id}/save` | 确认并保存到个人知识库 |
 | `POST` | `/api/v1/research/sources/{source_id}/ignore` | 忽略待确认结果 |
-| `POST` | `/api/v1/research/sources/batch-save` | 批量保存待确认结果 |
 | `POST` | `/api/v1/research/sources/batch-ignore` | 批量忽略待确认结果 |
 | `GET` | `/api/v1/research/assets/{asset_id}` | 鉴权预览来源图片 |
 | `GET` | `/api/v1/research/xhs/authorization` | 查询当前租户授权状态（不返回会话凭据） |

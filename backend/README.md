@@ -70,17 +70,15 @@ RAG_PARENT_MAX_TOKENS=2500
 RAG_CHILD_TARGET_TOKENS=350
 RAG_CHILD_MAX_TOKENS=500
 RAG_CHILD_OVERLAP_TOKENS=50
-RAG_EMBEDDING_BASE_URL=http://llm-gateway:4000/v1
-RAG_EMBEDDING_MODEL=cortex-embedding
-RAG_EMBEDDING_DIMENSIONS=1024
+RAG_EMBEDDING_BASE_URL=http://embedding-service:4000/v1
+RAG_EMBEDDING_MODEL=iic/nlp_gte_sentence-embedding_chinese-small
+RAG_EMBEDDING_DIMENSIONS=512
 RAG_RERANK_BASE_URL=http://reranker-service:8080
-RAG_RERANK_MODEL=Qwen/Qwen3-Reranker-0.6B
+RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 ```
 
-`cortex-embedding` 默认由 LiteLLM 转发到宿主机 Ollama 的
-`qwen3-embedding:0.6b`。模型输出固定为 1024 维，本地接口不需要付费
-供应商 API Key。Reranker 使用同一 Qwen3 家族的
-`Qwen/Qwen3-Reranker-0.6B`，由本地服务从官方模型源构建并离线运行。
+菜谱模型由 Compose 内部服务从 ModelScope 固定 revision 构建并离线运行；
+Embedding 输出严格为 512 维，Reranker 使用 BGE CrossEncoder。
 
 知识文件上传、下载和删除不依赖生成模型。索引 worker 对 embedding 请求按 16 条分批，
 对 429/502/503/504 和网络瞬时错误最多重试 2 次；embedding 不可用时文档保持失败状态并可
@@ -100,3 +98,9 @@ overlap 必须小于 child target。PDF 提取受 45 秒 worker 超时、页数�
 上传 `testdata/knowledge` 中的 TXT/PDF/DOCX 合成资料，验证跨租户隔离、完整 RAG、
 引用、无答案和删除后不可召回，并对 `testdata/rag/evaluation.jsonl` 的质量与延迟
 门槛硬失败。实际 reranker 路径需先启动 Compose 的 `local-ai` profile。
+
+今日菜谱语料固定存放在 `resources/howtocook`，服务启动时会按 `SOURCE.json` revision
+幂等同步并排队生成 512 维向量。Compose 环境使用固定 revision 的
+`iic/nlp_gte_sentence-embedding_chinese-small` 和 `BAAI/bge-reranker-v2-m3`。
+完整环境就绪后运行 `scripts/recipe_sync_acceptance.ps1` 验证推荐稳定性、三个建议问题、
+偏好乐观锁和语料 revision。

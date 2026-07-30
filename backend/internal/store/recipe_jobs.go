@@ -71,10 +71,11 @@ func (s *Store) CompleteRecipeIndex(ctx context.Context, job RecipeIndexJob) err
 }
 
 func (s *Store) FailRecipeIndex(ctx context.Context, job RecipeIndexJob, code string, retry bool) error {
-	status := "failed"
-	if retry {
-		status = "queued"
-	}
-	_, err := s.AdminPool.Exec(ctx, `UPDATE recipe_index_jobs SET status=$2,lease_owner=NULL,lease_until=NULL,last_error_code=$3,next_attempt_at=now()+make_interval(secs => LEAST(3600, attempts*attempts*10)),updated_at=now() WHERE id=$1`, job.ID, status, code)
+	_, err := s.AdminPool.Exec(ctx, `UPDATE recipe_index_jobs SET
+		status=CASE WHEN $2 AND attempts < 3 THEN 'queued' ELSE 'failed' END,
+		lease_owner=NULL,lease_until=NULL,last_error_code=$3,
+		next_attempt_at=now()+make_interval(secs => LEAST(3600, attempts*attempts*10)),
+		updated_at=now()
+		WHERE id=$1`, job.ID, retry, code)
 	return err
 }

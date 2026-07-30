@@ -43,6 +43,8 @@ var backupTableSpecs = []backupTableSpec{
 	{name: "conversations", id: "id", userFields: []string{"user_id"}},
 	{name: "messages", id: "id", foreign: map[string]string{"conversation_id": "conversations"}},
 	{name: "message_sources", id: "id", foreign: map[string]string{"message_id": "messages", "note_id": "notes"}},
+	{name: "recipe_message_sources", id: "id", foreign: map[string]string{"message_id": "messages"}},
+	{name: "user_preferences", withoutID: true, userFields: []string{"user_id"}},
 	{name: "knowledge_collections", id: "id", userFields: []string{"created_by"}},
 	{name: "knowledge_documents", id: "id", userFields: []string{"uploaded_by"}, foreign: map[string]string{"collection_id": "knowledge_collections"}},
 	{name: "research_jobs", id: "id", userFields: []string{"created_by"}, foreign: map[string]string{"target_collection_id": "knowledge_collections"}},
@@ -120,6 +122,7 @@ func (s *Store) RestoreFullBackup(ctx context.Context, principal domain.Principa
 			UNION ALL SELECT 1 FROM tags WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM attachments WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM conversations WHERE tenant_id=$1
+			UNION ALL SELECT 1 FROM user_preferences WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM knowledge_collections WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM knowledge_documents WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM research_jobs WHERE tenant_id=$1

@@ -86,14 +86,14 @@ func StartRecipeIndexer(ctx context.Context, s *store.Store, embeddingURL, embed
 						b, _ := json.Marshal(reqBody)
 						req, err := http.NewRequestWithContext(ctx, "POST", embeddingURL, bytes.NewReader(b))
 						if err != nil {
-							slog.Error("indexer: build request failed", "err", err)
+							slog.Error("indexer: build request failed", "code", "EMBEDDING_REQUEST_INVALID")
 							success = false
 							continue
 						}
 						req.Header.Set("Content-Type", "application/json")
 						resp, err := client.Do(req)
 						if err != nil {
-							slog.Error("indexer: embedding call failed", "err", err)
+							slog.Error("indexer: embedding call failed", "code", "EMBEDDING_UNAVAILABLE")
 							success = false
 							continue
 						}

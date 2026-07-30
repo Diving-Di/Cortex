@@ -119,9 +119,7 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.POST("/api/v1/research/sources/:sourceID/retry", gin.WrapF(s.recollectResearchSource))
 			active.POST("/api/v1/research/sources/:sourceID/recollect", gin.WrapF(s.recollectResearchSource))
 			active.PATCH("/api/v1/research/sources/:sourceID/draft", gin.WrapF(s.updateResearchDraft))
-			active.POST("/api/v1/research/sources/:sourceID/save", gin.WrapF(s.saveResearchSource))
 			active.POST("/api/v1/research/sources/:sourceID/ignore", gin.WrapF(s.ignoreResearchSource))
-			active.POST("/api/v1/research/sources/batch-save", gin.WrapF(s.batchSaveResearchSources))
 			active.POST("/api/v1/research/sources/batch-ignore", gin.WrapF(s.batchIgnoreResearchSources))
 			active.GET("/api/v1/research/assets/:assetID", gin.WrapF(s.downloadResearchAsset))
 			active.GET("/api/v1/research/xhs/authorization", gin.WrapF(s.getXHSAuthorization))
@@ -183,9 +181,9 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	components := map[string]string{
-		"database":   "ready",
-		"embedding":  "ready",
-		"reranker":   "ready",
+		"database":     "ready",
+		"embedding":    "ready",
+		"reranker":     "ready",
 		"recipe_index": "ready",
 	}
 	if err := s.store.Ping(ctx); err != nil {
@@ -441,7 +439,7 @@ func (s *Server) recipesChat(w http.ResponseWriter, r *http.Request) {
 	}
 	candidates, err := retriever.Search(r.Context(), req.Question, 10)
 	if err != nil {
-		httpx.WriteError(w, s.logger, err)
+		httpx.WriteError(w, s.logger, apierror.New("RECIPE_EMBEDDING_UNAVAILABLE", "菜谱检索服务暂时不可用", 503))
 		return
 	}
 	if len(candidates) == 0 {

@@ -3,21 +3,21 @@ import unittest
 
 from pydantic import ValidationError
 
-from app import MAX_DOCUMENTS, RerankRequest
+from app import MAX_DOCUMENTS, MODEL_ID, RerankRequest
 
 
 class RequestValidationTest(unittest.TestCase):
     def test_rejects_too_many_documents(self) -> None:
         with self.assertRaises(ValidationError):
             RerankRequest(
-                model="Qwen/Qwen3-Reranker-0.6B",
+                model=MODEL_ID,
                 query="query",
                 documents=["document"] * (MAX_DOCUMENTS + 1),
             )
 
     def test_accepts_private_unicode_text_without_transforming_it(self) -> None:
         request = RerankRequest(
-            model="Qwen/Qwen3-Reranker-0.6B",
+            model=MODEL_ID,
             query="发布口令是什么？",
             documents=["发布口令是青竹七号。"],
         )
@@ -27,7 +27,7 @@ class RequestValidationTest(unittest.TestCase):
     def test_rejects_empty_document(self) -> None:
         with self.assertRaises(ValidationError):
             RerankRequest(
-                model="Qwen/Qwen3-Reranker-0.6B",
+                model=MODEL_ID,
                 query="query",
                 documents=[""],
             )

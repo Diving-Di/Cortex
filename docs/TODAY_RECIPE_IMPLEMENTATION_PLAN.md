@@ -967,8 +967,21 @@ docker compose config --quiet
 
 ### 15.2 待完成事项
 
-- 需在真实 Docker/Compose 环境中完成端到端验证：从语料同步、`recipe_index_jobs` 执行、embedding/reranker 调用，到 `/api/v1/recipes/today`、`/api/v1/recipes/chat` 的完整链路验证。
-- 需补齐真实 ModelScope/本地模型服务的部署与运行验证，确保 embedding 返回 512 维向量、reranker 正常排序，并且 `readyz` 能准确辨识组件健康状态。
-- 需补齐单元测试与集成测试：包括 parser/normalizer/sync/retriever/preferences、前端页面和 API 的测试，以及 `backend/scripts/recipe_sync_acceptance.ps1` 的验收脚本。
-- 需继续收敛旧的个人知识库入口与兼容逻辑：在不破坏历史数据的前提下，停止旧知识管理路由/页面对普通用户的可访问性，并完成迁移后的文档与运行说明更新。
-- 需完成生产可运维收敛：补齐指标、日志脱敏、备份恢复策略、向量索引调优（如 IVFFLAT 参数）以及对外部语料源变更的审计与回滚支持。
+- 已将 HowToCook `c05758fa661ac4efa0361a987b700a351a22159b` 的 387 个 Markdown
+  和必要资源复制到仓库，`SOURCE.json` 保存上游 revision 与目录 SHA-256；运行时不读取宿主机路径。
+- 已将占位 embedding/reranker 替换为固定 ModelScope revision 的 SentenceTransformer
+  服务：Embedding 强制 512 维，Reranker 使用 `BAAI/bge-reranker-v2-m3` CrossEncoder。
+- 已补齐偏好 RLS、版本冲突、忌口 SQL 过滤、确定性推荐、完整菜谱上下文、recipe 来源读取、
+  索引有限重试、启动同步和分组件 `readyz`。
+- 已撤下公开知识集合写入、知识文件上传/删除/重建索引路由；旧 URL 只重定向到
+  `/recipes`，停止启动个人知识索引 worker，历史读取与旧会话仍保留。
+- 已新增 parser/normalizer 与今日菜谱前端测试，以及
+  `backend/scripts/recipe_sync_acceptance.ps1`；后端、前端和 Compose 静态验证已纳入验收。
+
+### 15.3 当前验收说明
+
+- `go vet ./...`、`go test ./...`、`go build ./cmd/server`、前端格式检查、测试和生产构建均通过。
+- `docker compose config --quiet` 通过。
+- 当前工作站的 Docker Desktop Linux Engine `_ping` 返回 500，因而真实镜像构建、
+  Compose 拉起、非 AI smoke、AI acceptance 和菜谱同步验收仍需在 Docker Engine
+  恢复后执行；这属于环境阻塞，不得把静态验证误报为端到端通过。

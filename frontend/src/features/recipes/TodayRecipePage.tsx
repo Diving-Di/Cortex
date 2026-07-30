@@ -88,7 +88,7 @@ export default function TodayRecipePage({ token }: { token: string }) {
     [asking, result, token],
   );
 
-  if (loading) return <Spin tip="正在挑选今日菜谱" />;
+  if (loading) return <Spin aria-label="正在挑选今日菜谱" />;
   if (error || !result)
     return (
       <Card title="今日菜谱">

@@ -1,10 +1,12 @@
 # Cortex
 
-Cortex 是一个面向个人成长记录的 AI 知识工作台：用 Markdown 记录日常与周期笔记，沉淀自己的知识文件，并让 AI 在可追溯的个人资料范围内帮助整理、总结和回顾。
+Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录日常与周期笔记，并让 AI
+在可追溯的个人资料范围内帮助整理、总结、回顾和回答烹饪问题。
 
-> 当前状态：核心笔记功能与知识库/RAG MVP 已实现，但知识库链路尚未通过完整生产验收，**当前版本禁止直接发布到生产环境**。已知阻断项和复验要求见 [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)。
+> 当前版本正在进行“今日菜谱”生产验收；部署前仍须完成本文列出的 Compose 与验收脚本。
 
-AI 是可选能力。生成模型、Embedding 或 Reranker 不可用时，账号、笔记、标签、附件、搜索、版本历史、知识文件管理和 Markdown 导出仍应保持可用；依赖模型的整理、报告、回忆、索引或问答会返回明确错误。
+AI 是可选能力。生成模型、Embedding 或 Reranker 不可用时，账号、笔记、标签、附件、搜索、
+版本历史和 Markdown 导出仍保持可用；依赖模型的整理、报告、回忆、菜谱索引或问答返回明确错误。
 
 ## 能做什么
 
@@ -23,21 +25,19 @@ AI 是可选能力。生成模型、Embedding 或 Reranker 不可用时，账号
 - 配置按 IANA 时区运行的周期报告任务，并查看运行记录或手动重试。
 - 通过回忆问答检索自己的历史笔记，回答保留可追踪引用。
 
-### 个人知识库与成长助手
+### 今日菜谱
 
-- 创建知识集合，上传 UTF-8 TXT、Markdown、文本型 PDF 和 DOCX 文件。
-- 异步执行内容提取、父子切块、向量索引和全文索引，并展示处理状态。
-- 按集合、文件名和处理状态筛选文件，支持服务端分页、提取预览、鉴权下载和重新索引。
-- 在集合或指定文件范围内进行向量与 PostgreSQL 全文混合召回，再经 Reranker 重排。
-- 成长助手支持独立会话以及知识库、成长记录、全部来源三种范围，回答使用安全 Markdown
-  和可追踪引用；没有足够证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
-- 原文件只能通过鉴权接口下载；删除后文件与索引立即对当前用户失效。
+- 从仓库内固定 revision 的 HowToCook 语料为每位用户确定性挑选每日菜谱。
+- 保存跨设备忌口与时区，推荐不会命中规范化后的忌口词项。
+- 首页提供三个与当日菜品相关的问题，也可输入任意烹饪问题。
+- 菜谱问答使用 512 维中文 GTE Embedding 与 BGE CrossEncoder 精排，回答保存系统菜谱引用。
+- 历史个人知识数据只保留兼容读取；普通用户不再拥有上传、删除或重建索引入口。
 
 ### 小红书研究
 
 - 在 `/research` 通过关键词或公开笔记链接创建异步研究任务。
 - 对公开正文和图片执行受控采集，图片 OCR 可通过 `RESEARCH_OCR_URL` 接入内部服务。
-- 通过 LiteLLM 生成摘要、关键观点、分类和标签草稿，用户确认后才写入个人知识库。
+- 通过 LiteLLM 生成摘要、关键观点、分类和标签研究草稿。
 - 任务、来源和草稿使用 PostgreSQL 持久化并受 RLS 隔离，不依赖 Redis。
 - 支持按个人租户扫码授权；会话使用 AES-256-GCM 加密保存，二维码和 Chromium Profile 仅临时存在。
 - 采集授权、平台限流或 AI/OCR 不可用时按能力降级，不影响笔记和知识库管理。
@@ -150,17 +150,15 @@ docker compose ps
 
 `db` 和 `llm-gateway` 不暴露宿主机端口。后端只监听本机映射的 `8000`，前端监听 `5173`。
 
-可选的本地 `Qwen/Qwen3-Reranker-0.6B` 服务位于 `local-ai` Profile：
+菜谱 Embedding 与 Reranker 是 Compose 的必备内部服务：
 
 ```powershell
-docker compose --profile local-ai up -d --build
+docker compose up -d --build
 ```
 
-Backend 始终通过 LiteLLM 的 `cortex-embedding` 逻辑模型调用宿主机 Ollama
-中的 `qwen3-embedding:0.6b`，不直接访问 Ollama。该模型固定返回 1024
-维向量，与当前 pgvector Schema 一致。`local-ai` Profile 只启动可选
-Reranker；模型在镜像构建时从 Qwen 官方 Hugging Face 仓库的固定 revision
-下载，运行时离线加载，不使用 TEI；Embedding 模型不运行在 Docker 中。
+模型镜像在构建时从 ModelScope 固定 revision 下载
+`iic/nlp_gte_sentence-embedding_chinese-small` 与 `BAAI/bge-reranker-v2-m3`，
+运行时离线加载。`db`、`llm-gateway` 和两个模型服务都不暴露宿主机端口。
 
 > `.env` 只用于本地部署且已被 Git 忽略。修改数据库密码不会更新已有 `db_data` 卷中的角色密码；复用旧卷时应继续使用初始化该卷时的密码，或在确认数据已备份且不再需要后重新初始化。
 
@@ -216,7 +214,7 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 ## API 与安全约定
 
 - 主业务接口使用 `/api/v1`，认证头为 `Authorization: Token <token>`。
-- `/healthz` 只反映进程存活；`/readyz` 验证数据库可用，不依赖 AI。
+- `/healthz` 只反映进程存活；`/readyz` 验证数据库、菜谱 Embedding、Reranker 和菜谱索引。
 - 更新笔记使用乐观冲突保护；正文更新和 AI 覆盖前先创建 revision，删除默认软删除。
 - 跨租户资源统一表现为 404；软删除空间的普通业务请求返回 403。
 - 周报日期归一到周一，月报日期归一到月初。

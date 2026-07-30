@@ -22,6 +22,3 @@ CREATE INDEX ix_recipe_index_jobs_claim
     WHERE status IN ('queued', 'running');
 CREATE INDEX ix_recipe_index_jobs_document
     ON public.recipe_index_jobs (document_id, updated_at DESC);
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.recipe_index_jobs TO diary_app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO diary_app;

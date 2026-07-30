@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -27,6 +28,7 @@ type SyncResult struct {
 func SyncCorpus(ctx context.Context, s *store.Store, resourcesDir string) (*SyncResult, error) {
 	start := time.Now()
 	res := &SyncResult{}
+	activePaths := []string{}
 	var runID int64
 	sourceRevision := ""
 	if source, err := ReadSourceJSON(resourcesDir); err == nil {
@@ -82,6 +84,7 @@ func SyncCorpus(ctx context.Context, s *store.Store, resourcesDir string) (*Sync
 			sum := sha256.Sum256(data)
 			sha := hex.EncodeToString(sum[:])
 			doc.ContentSHA256 = sha
+			activePaths = append(activePaths, doc.SourcePath)
 			previousHash, exists, err := s.RecipeDocumentHash(ctx, doc.SourcePath)
 			if err != nil {
 				res.Failed++
@@ -99,7 +102,7 @@ func SyncCorpus(ctx context.Context, s *store.Store, resourcesDir string) (*Sync
 			)
 			if err != nil {
 				res.Failed++
-				fmt.Printf("[recipe sync] upsert failed %s: %v\n", path, err)
+				slog.Error("recipe sync upsert failed", "source_path", doc.SourcePath, "code", "RECIPE_UPSERT_FAILED")
 				return nil
 			}
 			if exists {
@@ -120,16 +123,16 @@ func SyncCorpus(ctx context.Context, s *store.Store, resourcesDir string) (*Sync
 			}
 			if err := s.InsertRecipeChildChunks(ctx, id, 1, []store.RecipeChildChunk{chunk}); err != nil {
 				res.Failed++
-				fmt.Printf("[recipe sync] insert chunks failed %s: %v\n", path, err)
+				slog.Error("recipe sync chunk failed", "source_path", doc.SourcePath, "code", "RECIPE_CHUNK_FAILED")
 				return nil
 			}
 			// enqueue index job for background indexing (avoid blocking on embedding)
 			if err := s.InsertRecipeIndexJob(ctx, id, 1); err != nil {
 				res.Failed++
-				fmt.Printf("[recipe sync] enqueue index job failed %s: %v\n", path, err)
+				slog.Error("recipe sync enqueue failed", "source_path", doc.SourcePath, "code", "RECIPE_ENQUEUE_FAILED")
 				return nil
 			}
-			fmt.Printf("[recipe sync] upserted %s -> id=%d\n", path, id)
+			slog.Info("recipe sync document updated", "document_id", id)
 
 			return nil
 		})
@@ -145,10 +148,17 @@ func SyncCorpus(ctx context.Context, s *store.Store, resourcesDir string) (*Sync
 			return res, err
 		}
 	}
+	if len(activePaths) > 0 {
+		deactivated, err := s.DeactivateMissingRecipeDocuments(ctx, activePaths)
+		if err != nil {
+			return res, err
+		}
+		res.Deactivated = deactivated
+	}
 
 	elapsed := time.Since(start)
-	fmt.Printf("[recipe sync] completed in %s: scanned=%d created=%d updated=%d failed=%d\n",
-		elapsed.String(), res.Scanned, res.Created, res.Updated, res.Failed)
+	slog.Info("recipe sync completed", "duration_ms", elapsed.Milliseconds(), "scanned", res.Scanned,
+		"created", res.Created, "updated", res.Updated, "deactivated", res.Deactivated, "failed", res.Failed)
 	if runID != 0 {
 		status := "success"
 		if res.Failed > 0 {

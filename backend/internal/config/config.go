@@ -123,7 +123,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	embeddingDimensions, err := positiveInt("RAG_EMBEDDING_DIMENSIONS", 1024)
+	embeddingDimensions, err := positiveInt("RAG_EMBEDDING_DIMENSIONS", 512)
 	if err != nil {
 		return Config{}, err
 	}
@@ -215,6 +215,18 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	recipeIndexWorkers, err := positiveInt("RECIPE_INDEX_WORKERS", 1)
+	if err != nil {
+		return Config{}, err
+	}
+	recipeIndexBatchSize, err := positiveInt("RECIPE_INDEX_BATCH_SIZE", 16)
+	if err != nil {
+		return Config{}, err
+	}
+	recipeIndexPollSeconds, err := positiveInt("RECIPE_INDEX_POLL_SECONDS", 5)
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{
 		DatabaseURL:             databaseURL,
 		MigrationDatabaseURL:    migrationDatabaseURL,
@@ -238,11 +250,11 @@ func Load() (Config, error) {
 		DocumentParserURL:       strings.TrimSpace(os.Getenv("DOCUMENT_PARSER_URL")),
 		EmbeddingBaseURL:        valueOrDefault("RAG_EMBEDDING_BASE_URL", "http://llm-gateway:4000/v1"),
 		EmbeddingAPIKey:         strings.TrimSpace(os.Getenv("RAG_EMBEDDING_API_KEY")),
-		EmbeddingModel:          valueOrDefault("RAG_EMBEDDING_MODEL", "cortex-embedding"),
+		EmbeddingModel:          valueOrDefault("RAG_EMBEDDING_MODEL", "iic/nlp_gte_sentence-embedding_chinese-small"),
 		EmbeddingDimensions:     embeddingDimensions,
 		EmbeddingSendDimensions: parseBool(valueOrDefault("RAG_EMBEDDING_SEND_DIMENSIONS", "false")),
 		RerankBaseURL:           valueOrDefault("RAG_RERANK_BASE_URL", "http://reranker-service:8080"),
-		RerankModel:             valueOrDefault("RAG_RERANK_MODEL", "Qwen/Qwen3-Reranker-0.6B"),
+		RerankModel:             valueOrDefault("RAG_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
 		AIAPIKey:                strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIBaseURL:               valueOrDefault("AI_BASE_URL", "https://api.openai.com/v1"),
 		AIModel:                 valueOrDefault("AI_MODEL", "gpt-5.6"),
@@ -269,20 +281,10 @@ func Load() (Config, error) {
 		XHSAuthorizationEnabled: parseBool(valueOrDefault("XHS_AUTHORIZATION_ENABLED", "false")),
 		XHSChromePath:           valueOrDefault("XHS_CHROME_PATH", "/usr/bin/chromium"),
 		RecipeDefaultTimezone:   valueOrDefault("RECIPE_DEFAULT_TIMEZONE", "Asia/Shanghai"),
-		RecipeIndexWorkers:      valueOrDefaultInt("RECIPE_INDEX_WORKERS", 1),
-		RecipeIndexBatchSize:    valueOrDefaultInt("RECIPE_INDEX_BATCH_SIZE", 16),
-		RecipeIndexPollSeconds:  valueOrDefaultInt("RECIPE_INDEX_POLL_SECONDS", 5),
+		RecipeIndexWorkers:      recipeIndexWorkers,
+		RecipeIndexBatchSize:    recipeIndexBatchSize,
+		RecipeIndexPollSeconds:  recipeIndexPollSeconds,
 	}, nil
-}
-
-// helper to read int env with fallback without failing
-func valueOrDefaultInt(key string, fallback int) int {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return fallback
 }
 
 func parseBool(value string) bool {

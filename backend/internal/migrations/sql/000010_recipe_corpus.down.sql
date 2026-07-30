@@ -12,6 +12,7 @@ REVOKE SELECT ON public.recipe_documents FROM diary_app;
 
 REVOKE SELECT, INSERT ON public.recipe_message_sources FROM diary_app;
 
+DROP TABLE IF EXISTS public.recipe_message_sources;
 DROP TABLE IF EXISTS public.user_preferences;
 DROP TABLE IF EXISTS public.recipe_sync_runs;
 DROP TABLE IF EXISTS public.recipe_child_chunks;
@@ -19,4 +20,3 @@ DROP TABLE IF EXISTS public.recipe_parent_chunks;
 DROP TABLE IF EXISTS public.recipe_documents;
 DROP INDEX IF EXISTS ix_recipe_child_chunks_embedding;
 DROP INDEX IF EXISTS ix_recipe_child_chunks_search;
-DROP TABLE IF EXISTS public.recipe_message_sources;
