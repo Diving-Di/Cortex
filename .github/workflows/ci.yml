@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build ./cmd/server
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+
+  compose:
+    name: Docker Compose
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_MIGRATOR_PASSWORD: ci-migrator-password
+      POSTGRES_APP_PASSWORD: ci-app-password
+      LITELLM_DB_PASSWORD: ci-litellm-db-password
+      LITELLM_MASTER_KEY: sk-ci-master-key
+      LITELLM_VIRTUAL_KEY: sk-ci-virtual-key
+      OPENAI_API_KEY: sk-ci-openai-key
+      KIMI_API_KEY: sk-ci-kimi-key
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet

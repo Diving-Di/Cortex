@@ -1,5 +1,8 @@
 # Cortex
 
+[GitHub Actions](.github/workflows/ci.yml) 会在每次 push 和 pull request 时运行后端
+`go vet`、测试与构建，前端格式检查、测试与构建，以及 Docker Compose 配置校验。
+
 Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录日常与周期笔记，并让 AI
 在可追溯的个人资料范围内帮助整理、总结、回顾和回答烹饪问题。
 
