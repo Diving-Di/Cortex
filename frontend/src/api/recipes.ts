@@ -37,10 +37,7 @@ export async function getRecipePreferences(token: string) {
   return response.data;
 }
 
-export async function updateRecipePreferences(
-  token: string,
-  value: RecipePreferences,
-) {
+export async function updateRecipePreferences(token: string, value: RecipePreferences) {
   const response = await http.put<RecipePreferences>('/api/v1/settings/preferences', value, {
     headers: authHeaders(token),
   });

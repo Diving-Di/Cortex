@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Card, Input, List, Space, Spin, Typography, message } from 'antd';
-import { getTodayRecipe, type TodayRecipe } from '../../api/recipes';
+import {
+  getRecipePreferences,
+  getTodayRecipe,
+  updateRecipePreferences,
+  type RecipePreferences,
+  type TodayRecipe,
+} from '../../api/recipes';
 
 export default function TodayRecipePage({ token }: { token: string }) {
   const [loading, setLoading] = useState(true);
@@ -9,9 +15,11 @@ export default function TodayRecipePage({ token }: { token: string }) {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [asking, setAsking] = useState(false);
+  const [preferences, setPreferences] = useState<RecipePreferences | null>(null);
+  const [savingPreferences, setSavingPreferences] = useState(false);
 
   const load = useCallback(() => {
-    setLoading(true)
+    setLoading(true);
     setError('');
     void getTodayRecipe(token)
       .then(setResult)
@@ -20,6 +28,11 @@ export default function TodayRecipePage({ token }: { token: string }) {
   }, [token]);
 
   useEffect(load, [load]);
+  useEffect(() => {
+    void getRecipePreferences(token)
+      .then(setPreferences)
+      .catch(() => undefined);
+  }, [token]);
 
   const ask = useCallback(
     async (value: string) => {
@@ -131,6 +144,46 @@ export default function TodayRecipePage({ token }: { token: string }) {
             {answer}
           </Typography.Paragraph>
         ) : null}
+      </Card>
+      <Card title="忌口设置" style={{ marginTop: 16 }}>
+        <Typography.Paragraph type="secondary">
+          多个词项请用逗号分隔，保存后会重新挑选今日菜谱。
+        </Typography.Paragraph>
+        <Space.Compact style={{ width: '100%' }}>
+          <Input
+            aria-label="忌口词项"
+            value={(preferences?.dietary_restrictions || []).join('，')}
+            onChange={(event) =>
+              setPreferences((current) => ({
+                dietary_restrictions: event.target.value
+                  .split(/[，,]/)
+                  .map((item) => item.trim())
+                  .filter(Boolean),
+                timezone: current?.timezone || 'Asia/Shanghai',
+                version: current?.version || 0,
+              }))
+            }
+            placeholder="例如：花生，香菜"
+          />
+          <Button
+            loading={savingPreferences}
+            disabled={!preferences}
+            onClick={() => {
+              if (!preferences) return;
+              setSavingPreferences(true);
+              void updateRecipePreferences(token, preferences)
+                .then((saved) => {
+                  setPreferences(saved);
+                  message.success('忌口设置已保存');
+                  load();
+                })
+                .catch(() => message.error('保存失败，设置可能已在其他设备更新'))
+                .finally(() => setSavingPreferences(false));
+            }}
+          >
+            保存
+          </Button>
+        </Space.Compact>
       </Card>
     </div>
   );
