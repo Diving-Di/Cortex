@@ -27,6 +27,17 @@ func TestValidateKnowledgeTXT(t *testing.T) {
 	}
 }
 
+func TestValidateKnowledgeMarkdown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "valid.md")
+	if err := os.WriteFile(path, []byte("# 标题\n\nMarkdown 正文"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	mimeType, err := validateKnowledgeFile(path, ".md", 1<<20)
+	if err != nil || mimeType != "text/markdown" {
+		t.Fatalf("valid markdown rejected: mime=%q err=%v", mimeType, err)
+	}
+}
+
 func TestValidateKnowledgeTXTDoesNotSplitMultibyteRune(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "multibyte.txt")
 	content := strings.Repeat("中文混合 English ", 4097)

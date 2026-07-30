@@ -73,6 +73,8 @@
 - 补充图片 MIME/签名/尺寸、重定向 SSRF、目录穿越和敏感错误脱敏测试。
 - 使用脱敏固定 fixture 或 mock server 覆盖页面结构变化、限流、部分来源失败和采集恢复；
   常规测试不得依赖真实账号或实时页面。
+  已增加搜索卡片、详情弹层和安全验证三类脱敏页面状态 fixture，仍需继续补充平台真实
+  页面发生变化时的脱敏 DOM 样本。
 - 补充 AI 不可用、OCR 不可用、采集器不可用、进程重启和数据库重启的降级/恢复测试。
 - 补充双租户任务、来源、草稿、资产和授权资源隔离测试；客户端伪造 `tenant_id` 必须
   无效，跨租户访问统一为 404，软删除租户普通请求为 403。
@@ -90,6 +92,23 @@
 
 ### 3.3 OCR、采集器和授权（待验证）
 
+- 已参考 `xhs_research_and_classify` 增加 Go/Chromedp 动态搜索与详情采集器：授权任务
+  优先使用浏览器等待、有限滚动、去重和详情 DOM 解析；受控 HTTP Collector 保留为公开
+  URL 降级路径。仍需持续维护真实页面选择器 fixture。
+- 已统一识别 `ready`、`login_required`、`verification_required`、`rate_limited`、
+  `not_found` 和 `layout_changed`，并用于授权验证、扫码 worker 和动态采集。
+- 已在详情轮播容器内过滤头像、装饰图、小缩略图和重复 URL，并持久化
+  `published_at`、点赞、收藏和评论数量；仍需真实页面多版式验收，不采集评论正文。
+- 搜索已增加有限滚动、无增长停止、URL 去重，以及综合、最新、最多互动三个受控排序；
+  普通请求使用稳定的 ±20% 有界抖动，限流使用 `available_at` 持久化指数退避。
+- 已将确定性正文/OCR 清理、可选 AI Markdown 格式化和摘要分类拆分，持久化解析策略、
+  内容完整度、OCR 贡献、格式化正文和格式化状态。LLM 缓存保持默认关闭，若以后启用
+  必须按租户、模型、Prompt 版本和内容哈希隔离。
+- 已通过真实搜索页和详情页验明确认平台只恢复 Cookie 时不下发内容，因此扫码完成时同时
+  保存经过数量、单项大小和总大小限制的小红书 localStorage，并与 Cookie 一起按租户加密；
+  禁止照搬参考项目的
+  永久明文 Profile、共享 `storage_state.json`、同账号并发浏览器、Python Web 后端、
+  直连模型供应商、本地明文 LLM 缓存和 Markdown 权威存储。
 - 在受限内部 OCR 服务上完成真实图片验收，确认字符上限、失败隔离及服务不可用时的
   人工审核降级；OCR 服务不得持有 LiteLLM Key、数据库业务凭证或跨租户文件权限。
 - 验证采集器的域名白名单、DNS/重定向 SSRF 防护、大小/数量/超时限制、平台退避和
@@ -127,8 +146,9 @@
 - 在全新 PostgreSQL 16 空库验证表、索引、外键、RLS、低权限授权和全部迁移；更新空库
   表数量及 RLS Policy 数量断言。
 - 在目标环境运行 `non_ai_smoke.ps1`、`ai_acceptance.ps1`、
-  `knowledge_acceptance.ps1` 和 `research_acceptance.ps1`；研究专项脚本仍需扩展到
-  完整采集、整理、确认、隔离、授权和降级链路。
+  `knowledge_acceptance.ps1`、`research_acceptance.ps1` 和需扫码授权的
+  `research_live_acceptance.ps1`。真实脚本覆盖采集、内容诊断、整理和可选确认保存；
+  跨租户隔离、授权异常和降级链路继续由自动化测试覆盖。
 - 用固定数据集记录 Recall@8、MRR/nDCG、citation precision、无答案准确率、检索和
   端到端 P95，并覆盖冷启动与热启动。
 

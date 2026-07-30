@@ -121,6 +121,8 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 | `POST` | `/api/v1/knowledge/chat` | 在指定集合/文件范围内检索并以 SSE 回答 |
 | `GET` | `/api/v1/knowledge/messages/{message_id}/sources` | 查询回答引用的知识来源 |
 
+知识文件上传支持 UTF-8 TXT、Markdown（`.md`）、文本型 PDF 和 DOCX。
+
 文件列表支持 `collection_id`、`search`、`status`、`limit` 和 `offset` 查询参数。
 `status` 可为 `uploaded`、`extracting`、`indexing`、`ready` 或 `failed`；进入删除流程的
 文件立即从普通列表消失。
@@ -221,6 +223,9 @@ Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 
 | `POST` | `/api/v1/research/xhs/authorization/verify` | 联网验证当前租户授权 |
 | `DELETE` | `/api/v1/research/xhs/authorization` | 撤销授权并取消运行中的研究任务 |
 
+授权状态响应中的 `requires_reauthorization=true` 表示现有加密会话是旧格式，必须重新扫码以
+采集当前租户所需的受限浏览器状态；仅调用验证接口或重试旧任务不会升级会话格式。
+
 授权接口只返回状态元数据，不返回 Cookie、密文、nonce 或服务器文件路径。创建授权返回
 `202` 和扫码任务对象；同一租户已有未结束的扫码任务时幂等返回该任务，便于页面刷新后恢复。
 二维码尚未生成时返回 `XHS_QR_PENDING`，任务结束或超时后返回
@@ -268,8 +273,21 @@ Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 
 
 创建任务时 `mode` 为 `keyword` 或 `urls`。关键词模式提交 `keywords`，链接模式提交
 `urls`；两种模式均提交 `target_count` 和幂等键 `idempotency_key`，可选
-`target_collection_id`。客户端提交的 `tenant_id` 不参与租户选择。
+`target_collection_id`。关键词模式可选 `search_sort`，仅接受 `general`、
+`time_descending` 或 `popularity_descending`，未知值按 `general` 处理。客户端提交的
+`tenant_id` 不参与租户选择。
 
 研究任务状态为 `queued`、`collecting`、`extracting`、`organizing`、`reviewing`、
 `completed`、`failed` 或 `cancelled`。研究结果在用户确认前保持草稿状态。AI、OCR
 或采集授权不可用时返回稳定错误码，不返回第三方响应正文、页面 HTML 或内部地址。
+
+研究来源还返回 `published_at`、`like_count`、`collect_count` 和 `comment_count`。
+互动字段只包含公开计数，不采集评论正文。浏览器采集会区分
+`XHS_AUTH_REQUIRED`、`XHS_VERIFICATION_REQUIRED`、`XHS_RATE_LIMITED`、
+`XHS_SOURCE_NOT_FOUND` 和 `XHS_LAYOUT_CHANGED`；限流任务通过数据库
+`available_at` 延迟重试。
+
+来源诊断字段包括 `parse_strategy`、`content_completeness`（0–100）、
+`ocr_contribution_chars`、`formatted_content` 和 `format_status`。`format_status` 为
+`deterministic`、`ai_formatted`、`ai_unavailable` 或 `ai_failed`。AI 不可用或格式化
+失败时保留确定性清理后的正文，采集结果仍可人工审核。

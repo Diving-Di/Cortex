@@ -43,3 +43,16 @@ func TestSessionStateAuthorizedRejectsUntrustedOrAnonymousCookies(t *testing.T) 
 		}
 	}
 }
+
+func TestSanitizeLocalStorageLimitsAndDeduplicates(t *testing.T) {
+	entries := []SessionStorageEntry{
+		{Name: " device-id ", Value: "first"},
+		{Name: "device-id", Value: "duplicate"},
+		{Name: "", Value: "ignored"},
+		{Name: "oversized", Value: strings.Repeat("x", (16<<10)+1)},
+	}
+	got := SanitizeLocalStorage(entries)
+	if len(got) != 1 || got[0].Name != "device-id" || got[0].Value != "first" {
+		t.Fatalf("SanitizeLocalStorage()=%v", got)
+	}
+}

@@ -10,6 +10,7 @@ import (
 
 	"diary-listener/backend/internal/apierror"
 	"diary-listener/backend/internal/domain"
+	"diary-listener/backend/internal/research"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -41,26 +42,34 @@ type ResearchJob struct {
 }
 
 type ResearchSource struct {
-	ID                 int64           `json:"id"`
-	JobID              int64           `json:"job_id"`
-	SourceURL          string          `json:"source_url"`
-	NormalizedURL      string          `json:"normalized_url"`
-	Title              string          `json:"title"`
-	AuthorDisplayName  string          `json:"author_display_name"`
-	PublishedAt        *time.Time      `json:"published_at"`
-	RawContent         string          `json:"raw_content"`
-	PublicTags         json.RawMessage `json:"public_tags"`
-	ContentHash        *string         `json:"content_hash"`
-	Status             string          `json:"status"`
-	FailureCode        *string         `json:"failure_code"`
-	FailureSummary     *string         `json:"failure_summary"`
-	CollectedAt        *time.Time      `json:"collected_at"`
-	Version            int             `json:"version"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	Draft              *ResearchDraft  `json:"draft,omitempty"`
-	Assets             []ResearchAsset `json:"assets,omitempty"`
-	TargetCollectionID *int64          `json:"target_collection_id,omitempty"`
+	ID                   int64           `json:"id"`
+	JobID                int64           `json:"job_id"`
+	SourceURL            string          `json:"source_url"`
+	NormalizedURL        string          `json:"normalized_url"`
+	Title                string          `json:"title"`
+	AuthorDisplayName    string          `json:"author_display_name"`
+	PublishedAt          *time.Time      `json:"published_at"`
+	LikeCount            int64           `json:"like_count"`
+	CollectCount         int64           `json:"collect_count"`
+	CommentCount         int64           `json:"comment_count"`
+	RawContent           string          `json:"raw_content"`
+	FormattedContent     string          `json:"formatted_content"`
+	ParseStrategy        string          `json:"parse_strategy"`
+	ContentCompleteness  int             `json:"content_completeness"`
+	OCRContributionChars int             `json:"ocr_contribution_chars"`
+	FormatStatus         string          `json:"format_status"`
+	PublicTags           json.RawMessage `json:"public_tags"`
+	ContentHash          *string         `json:"content_hash"`
+	Status               string          `json:"status"`
+	FailureCode          *string         `json:"failure_code"`
+	FailureSummary       *string         `json:"failure_summary"`
+	CollectedAt          *time.Time      `json:"collected_at"`
+	Version              int             `json:"version"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	Draft                *ResearchDraft  `json:"draft,omitempty"`
+	Assets               []ResearchAsset `json:"assets,omitempty"`
+	TargetCollectionID   *int64          `json:"target_collection_id,omitempty"`
 }
 
 type ResearchDraft struct {
@@ -251,8 +260,11 @@ func (s *Store) AddResearchSource(ctx context.Context, principal domain.Principa
 			ON CONFLICT(tenant_id,normalized_url) DO UPDATE SET job_id=EXCLUDED.job_id,
 				source_url=EXCLUDED.source_url,status=CASE WHEN research_sources.status='saved' THEN 'saved' ELSE 'collecting' END,
 				failure_code=NULL,failure_summary=NULL,updated_at=now()
-			RETURNING id,job_id,source_url,normalized_url,title,author_display_name,published_at,raw_content,
-			public_tags,content_hash,status,failure_code,failure_summary,collected_at,version,created_at,updated_at`,
+			RETURNING id,job_id,source_url,normalized_url,title,author_display_name,published_at,
+			COALESCE(like_count,0),COALESCE(collect_count,0),COALESCE(comment_count,0),
+			raw_content,formatted_content,parse_strategy,
+			content_completeness,ocr_contribution_chars,format_status,public_tags,content_hash,status,
+			failure_code,failure_summary,collected_at,version,created_at,updated_at`,
 			principal.TenantID, jobID, sourceURL, normalizedURL), &result)
 		return err
 	})
@@ -260,8 +272,10 @@ func (s *Store) AddResearchSource(ctx context.Context, principal domain.Principa
 }
 
 func (s *Store) CompleteResearchSource(
-	ctx context.Context, principal domain.Principal, sourceID int64, title, author, content, contentHash string,
-	tags []string, summary string, keyPoints []string, category string, suggestedTags []string, model string,
+	ctx context.Context, principal domain.Principal, sourceID int64, title, author, content, formattedContent, contentHash string,
+	tags []string, publishedAt *time.Time, likeCount, collectCount, commentCount int64,
+	summary string, keyPoints []string, category string, suggestedTags []string, model string,
+	diagnostics research.ContentDiagnostics,
 ) error {
 	return s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
@@ -269,9 +283,15 @@ func (s *Store) CompleteResearchSource(
 		}
 		tagJSON, _ := json.Marshal(tags)
 		if _, err := tx.Exec(ctx, `UPDATE research_sources SET title=$3,author_display_name=$4,raw_content=$5,
-			public_tags=$6,content_hash=$7,status='pending_review',failure_code=NULL,failure_summary=NULL,
+			public_tags=$6,content_hash=$7,published_at=$8,like_count=$9,collect_count=$10,comment_count=$11,
+			formatted_content=$12,parse_strategy=$13,content_completeness=$14,
+			ocr_contribution_chars=$15,format_status=$16,
+			status='pending_review',failure_code=NULL,failure_summary=NULL,
 			collected_at=now(),version=version+1,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
-			principal.TenantID, sourceID, title, author, content, tagJSON, contentHash); err != nil {
+			principal.TenantID, sourceID, title, author, content, tagJSON, contentHash,
+			publishedAt, likeCount, collectCount, commentCount, formattedContent,
+			diagnostics.ParseStrategy, diagnostics.ContentCompleteness,
+			diagnostics.OCRContributionChars, diagnostics.FormatStatus); err != nil {
 			return err
 		}
 		var existing *ResearchDraft
@@ -330,6 +350,8 @@ func (s *Store) CompleteResearchJob(ctx context.Context, principal domain.Princi
 		status := "reviewing"
 		if failed {
 			status = "failed"
+		} else {
+			code = ""
 		}
 		_, err := tx.Exec(ctx, `UPDATE research_jobs j SET status=$3,lease_owner=NULL,lease_until=NULL,
 			found_count=(SELECT count(*) FROM research_sources s WHERE s.tenant_id=$1 AND s.job_id=$2 AND s.deleted_at IS NULL),
@@ -384,6 +406,23 @@ func (s *Store) RequeueResearchJob(
 	})
 }
 
+func (s *Store) DeferResearchJob(
+	ctx context.Context, principal domain.Principal, jobID int64, delay time.Duration, code string,
+) error {
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE research_jobs SET status='queued',available_at=now()+$3::interval,
+			lease_owner=NULL,lease_until=NULL,last_error_code=$4,last_error_summary='平台访问频率受限',
+			version=version+1,updated_at=now()
+			WHERE tenant_id=$1 AND id=$2 AND cancel_requested_at IS NULL
+			AND status IN ('collecting','extracting','organizing')`,
+			principal.TenantID, jobID, delay.String(), code)
+		return err
+	})
+}
+
 type ResearchSourceFilter struct {
 	JobID  *int64
 	Status string
@@ -423,7 +462,10 @@ func (s *Store) ListResearchSources(ctx context.Context, principal domain.Princi
 		}
 		args = append(args, filter.Limit, filter.Offset)
 		rows, err := tx.Query(ctx, `SELECT s.id,s.job_id,s.source_url,s.normalized_url,s.title,s.author_display_name,
-			s.published_at,s.raw_content,s.public_tags,s.content_hash,s.status,s.failure_code,s.failure_summary,
+			s.published_at,COALESCE(s.like_count,0),COALESCE(s.collect_count,0),
+			COALESCE(s.comment_count,0),s.raw_content,
+			s.formatted_content,s.parse_strategy,s.content_completeness,s.ocr_contribution_chars,
+			s.format_status,s.public_tags,s.content_hash,s.status,s.failure_code,s.failure_summary,
 			s.collected_at,s.version,s.created_at,s.updated_at
 			FROM research_sources s WHERE `+where+fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", order, len(args)-1, len(args)), args...)
 		if err != nil {
@@ -465,7 +507,10 @@ func (s *Store) GetResearchSource(ctx context.Context, principal domain.Principa
 			return err
 		}
 		if err := scanResearchSource(tx.QueryRow(ctx, `SELECT id,job_id,source_url,normalized_url,title,
-			author_display_name,published_at,raw_content,public_tags,content_hash,status,failure_code,
+			author_display_name,published_at,COALESCE(like_count,0),COALESCE(collect_count,0),
+			COALESCE(comment_count,0),
+			raw_content,formatted_content,parse_strategy,content_completeness,ocr_contribution_chars,
+			format_status,public_tags,content_hash,status,failure_code,
 			failure_summary,collected_at,version,created_at,updated_at
 			FROM research_sources WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`,
 			principal.TenantID, id), &result); err != nil {
@@ -688,7 +733,9 @@ func scanResearchJob(scanner knowledgeDocumentScanner, item *ResearchJob) error 
 
 func scanResearchSource(scanner knowledgeDocumentScanner, item *ResearchSource) error {
 	err := scanner.Scan(&item.ID, &item.JobID, &item.SourceURL, &item.NormalizedURL, &item.Title,
-		&item.AuthorDisplayName, &item.PublishedAt, &item.RawContent, &item.PublicTags,
+		&item.AuthorDisplayName, &item.PublishedAt, &item.LikeCount, &item.CollectCount,
+		&item.CommentCount, &item.RawContent, &item.FormattedContent, &item.ParseStrategy,
+		&item.ContentCompleteness, &item.OCRContributionChars, &item.FormatStatus, &item.PublicTags,
 		&item.ContentHash, &item.Status, &item.FailureCode, &item.FailureSummary,
 		&item.CollectedAt, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -720,7 +767,11 @@ func ResearchTextFile(source ResearchSource) string {
 			builder.WriteString("\n")
 		}
 	}
-	builder.WriteString("## 来源原文\n\n" + source.RawContent + "\n\n")
+	content := source.FormattedContent
+	if strings.TrimSpace(content) == "" {
+		content = source.RawContent
+	}
+	builder.WriteString("## 来源内容\n\n" + content + "\n\n")
 	builder.WriteString("来源：" + source.SourceURL + "\n")
 	return builder.String()
 }

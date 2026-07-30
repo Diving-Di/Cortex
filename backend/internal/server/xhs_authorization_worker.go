@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"diary-listener/backend/internal/config"
@@ -138,7 +137,10 @@ func processXHSAuthorization(
 				cookieReadFailureLogged = true
 			}
 			if err == nil {
-				state := research.SessionState{Cookies: make([]research.SessionCookie, 0, len(cookies))}
+				state := research.SessionState{
+					FormatVersion: 2,
+					Cookies:       make([]research.SessionCookie, 0, len(cookies)),
+				}
 				for _, cookie := range cookies {
 					state.Cookies = append(state.Cookies, research.SessionCookie{
 						Name: cookie.Name, Value: cookie.Value, Domain: cookie.Domain,
@@ -146,7 +148,14 @@ func processXHSAuthorization(
 						HTTPOnly: cookie.HTTPOnly, SameSite: cookie.SameSite.String(),
 					})
 				}
-				if state.Authorized() {
+				if state.Authorized() && xhsPageShowsAuthenticated(browserContext) {
+					var localStorage []research.SessionStorageEntry
+					if storageErr := chromedp.Run(browserContext, chromedp.Evaluate(
+						`Object.entries(window.localStorage).map(([name,value])=>({name,value}))`,
+						&localStorage,
+					)); storageErr == nil {
+						state.LocalStorage = research.SanitizeLocalStorage(localStorage)
+					}
 					raw, marshalErr := json.Marshal(state)
 					if marshalErr != nil || len(raw) > 1<<20 {
 						_ = database.FailXHSAuthAttempt(parent, principal, attempt.ID, "XHS_SESSION_INVALID")
@@ -165,9 +174,16 @@ func processXHSAuthorization(
 					return
 				}
 			}
-			var pageText string
-			_ = chromedp.Run(browserContext, chromedp.Text("body", &pageText, chromedp.ByQuery))
-			if strings.Contains(pageText, "安全验证") || strings.Contains(pageText, "滑块") {
+			var snapshot struct {
+				URL   string `json:"url"`
+				Title string `json:"title"`
+				Text  string `json:"text"`
+			}
+			_ = chromedp.Run(browserContext, chromedp.Evaluate(`({
+				url:location.href,title:document.title,text:(document.body?.innerText||"").slice(0,20000)
+			})`, &snapshot))
+			if research.DetectPageState(snapshot.URL, snapshot.Title, snapshot.Text, false) ==
+				research.PageVerificationRequired {
 				_ = database.UpdateXHSAuthAttempt(parent, principal, attempt.ID, "verification_required", &qrStored, "")
 			}
 			if time.Since(lastScreenshot) >= 15*time.Second {
@@ -176,6 +192,26 @@ func processXHSAuthorization(
 			}
 		}
 	}
+}
+
+func xhsPageShowsAuthenticated(ctx context.Context) bool {
+	var authenticated bool
+	const expression = `(()=>{
+		const visible=element=>{
+			if(!element)return false;
+			const rect=element.getBoundingClientRect(),style=getComputedStyle(element);
+			return rect.width>0&&rect.height>0&&style.display!=="none"&&
+				style.visibility!=="hidden"&&Number(style.opacity)!==0;
+		};
+		const loginElements=Array.from(document.querySelectorAll(
+			".login-modal,.login-container,.side-bar-component.login-btn"
+		));
+		return !loginElements.some(visible);
+	})()`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(expression, &authenticated)); err != nil {
+		return false
+	}
+	return authenticated
 }
 
 func captureAuthorizationQRCode(ctx context.Context, path string) error {

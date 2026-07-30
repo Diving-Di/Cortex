@@ -9,6 +9,7 @@ export interface XHSAuthorization {
   last_verified_at?: string | null;
   expires_at?: string | null;
   failure_code?: string | null;
+  requires_reauthorization?: boolean;
   version: number;
 }
 
@@ -151,7 +152,15 @@ export interface ResearchSource {
   title: string;
   author_display_name: string;
   published_at?: string | null;
+  like_count: number;
+  collect_count: number;
+  comment_count: number;
   raw_content: string;
+  formatted_content: string;
+  parse_strategy: string;
+  content_completeness: number;
+  ocr_contribution_chars: number;
+  format_status: 'deterministic' | 'ai_formatted' | 'ai_unavailable' | 'ai_failed';
   public_tags: string[];
   status:
     | 'pending'
@@ -179,6 +188,7 @@ export async function createResearchJob(
     urls?: string[];
     target_count: number;
     target_collection_id?: number;
+    search_sort?: 'general' | 'time_descending' | 'popularity_descending';
     idempotency_key: string;
   },
 ) {
@@ -196,7 +206,7 @@ export async function listResearchJobs(token: string, page = 1) {
       params: { limit: 20, offset: (page - 1) * 20 },
     },
   );
-  return response.data;
+  return { ...response.data, items: response.data.items || [] };
 }
 
 export async function cancelResearchJob(token: string, id: number) {
@@ -225,7 +235,7 @@ export async function listResearchSources(
       },
     },
   );
-  return response.data;
+  return { ...response.data, items: response.data.items || [] };
 }
 
 export async function getResearchSource(token: string, id: number) {

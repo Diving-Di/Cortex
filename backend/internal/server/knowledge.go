@@ -90,8 +90,8 @@ func (s *Server) uploadKnowledgeDocument(w http.ResponseWriter, r *http.Request)
 
 	originalName := truncateRunes(filepath.Base(header.Filename), 255)
 	extension := strings.ToLower(filepath.Ext(originalName))
-	if extension != ".txt" && extension != ".pdf" && extension != ".docx" {
-		httpx.WriteError(w, s.logger, apierror.New("DOCUMENT_UNSUPPORTED_TYPE", "仅支持 TXT、PDF 和 DOCX", 422))
+	if extension != ".txt" && extension != ".md" && extension != ".pdf" && extension != ".docx" {
+		httpx.WriteError(w, s.logger, apierror.New("DOCUMENT_UNSUPPORTED_TYPE", "仅支持 TXT、Markdown、PDF 和 DOCX", 422))
 		return
 	}
 
@@ -348,7 +348,7 @@ func knowledgePathID(r *http.Request, name string) (int64, error) {
 
 func validateKnowledgeFile(path, extension string, maxBytes int64) (string, error) {
 	switch extension {
-	case ".txt":
+	case ".txt", ".md":
 		file, err := os.Open(path)
 		if err != nil {
 			return "", err
@@ -364,7 +364,7 @@ func validateKnowledgeFile(path, extension string, maxBytes int64) (string, erro
 				if len(pending) > 4 {
 					validateTo := validUTF8PrefixLength(pending)
 					if validateTo < 0 || containsNUL(pending[:validateTo]) {
-						return "", apierror.New("DOCUMENT_INVALID_SIGNATURE", "TXT 必须是 UTF-8 文本", 422)
+						return "", apierror.New("DOCUMENT_INVALID_SIGNATURE", "TXT 和 Markdown 必须是 UTF-8 文本", 422)
 					}
 					pending = append([]byte(nil), pending[validateTo:]...)
 				}
@@ -377,7 +377,10 @@ func validateKnowledgeFile(path, extension string, maxBytes int64) (string, erro
 			}
 		}
 		if !utf8.Valid(pending) || containsNUL(pending) {
-			return "", apierror.New("DOCUMENT_INVALID_SIGNATURE", "TXT 必须是 UTF-8 文本", 422)
+			return "", apierror.New("DOCUMENT_INVALID_SIGNATURE", "TXT 和 Markdown 必须是 UTF-8 文本", 422)
+		}
+		if extension == ".md" {
+			return "text/markdown", nil
 		}
 		return "text/plain", nil
 	case ".pdf":

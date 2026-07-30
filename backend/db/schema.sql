@@ -403,7 +403,7 @@ CREATE TABLE public.knowledge_documents (
     deleted_at timestamp with time zone,
     CONSTRAINT knowledge_documents_character_count_check CHECK ((character_count >= 0)),
     CONSTRAINT knowledge_documents_child_chunk_count_check CHECK ((child_chunk_count >= 0)),
-    CONSTRAINT knowledge_documents_extension_check CHECK (((extension)::text = ANY ((ARRAY['.txt'::character varying, '.pdf'::character varying, '.docx'::character varying])::text[]))),
+    CONSTRAINT knowledge_documents_extension_check CHECK (((extension)::text = ANY ((ARRAY['.txt'::character varying, '.md'::character varying, '.pdf'::character varying, '.docx'::character varying])::text[]))),
     CONSTRAINT knowledge_documents_index_version_check CHECK ((index_version > 0)),
     CONSTRAINT knowledge_documents_page_count_check CHECK (((page_count IS NULL) OR (page_count >= 0))),
     CONSTRAINT knowledge_documents_parent_chunk_count_check CHECK ((parent_chunk_count >= 0)),
@@ -944,6 +944,11 @@ CREATE TABLE public.research_sources (
     author_display_name text DEFAULT ''::text NOT NULL,
     published_at timestamp with time zone,
     raw_content text DEFAULT ''::text NOT NULL,
+    formatted_content text DEFAULT ''::text NOT NULL,
+    parse_strategy text DEFAULT 'metadata'::text NOT NULL,
+    content_completeness smallint DEFAULT 0 NOT NULL,
+    ocr_contribution_chars integer DEFAULT 0 NOT NULL,
+    format_status text DEFAULT 'deterministic'::text NOT NULL,
     public_tags jsonb DEFAULT '[]'::jsonb NOT NULL,
     like_count bigint,
     collect_count bigint,
@@ -958,6 +963,9 @@ CREATE TABLE public.research_sources (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     deleted_at timestamp with time zone,
     CONSTRAINT research_sources_platform_check CHECK ((platform = 'xiaohongshu'::text)),
+    CONSTRAINT research_sources_content_completeness_check CHECK (((content_completeness >= 0) AND (content_completeness <= 100))),
+    CONSTRAINT research_sources_ocr_contribution_chars_check CHECK ((ocr_contribution_chars >= 0)),
+    CONSTRAINT research_sources_format_status_check CHECK ((format_status = ANY (ARRAY['deterministic'::text, 'ai_formatted'::text, 'ai_unavailable'::text, 'ai_failed'::text]))),
     CONSTRAINT research_sources_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'collecting'::text, 'organizing'::text, 'pending_review'::text, 'saved'::text, 'ignored'::text, 'failed'::text])))
 );
 
@@ -3419,7 +3427,10 @@ INSERT INTO public.schema_migrations (version, name, checksum) VALUES
     (2, 'knowledge_base', 'a5c81fb92e1b2fd9ae2fe8c0163110cd25b6c65ada1183c3c851fcc3606d0044'),
     (3, 'xhs_research', '6e53845476383025faf8c7b2781046333a9424f041e7f161a8aaa6dc387cb015'),
     (4, 'openknowledge_features', '643d5ca9a92b3bd9d01ac16955ce951d22108747ecf481fb9b7e02896c2bbd45'),
-    (5, 'xhs_authorization', 'c1245455ed7889aef2f1f731b21fa1d4656f618221673d496210bd81c00a4c5f')
+    (5, 'xhs_authorization', 'c1245455ed7889aef2f1f731b21fa1d4656f618221673d496210bd81c00a4c5f'),
+    (6, 'memory_drafts_and_usage', 'a8b7d36a589370c56bce65c037ccc01905336e63f63186166e50d0c5f65b192e'),
+    (7, 'remove_growth_memories', '9ff4011dc62718fcfd73ec526db7c813f543e4091abe40d8b2930d126623734d'),
+    (8, 'research_diagnostics', 'c91426800cee8963d38eab6f94ef92c09141325c40386222f587de7d4916f2cbd')
 ON CONFLICT (version) DO NOTHING;
 
 \unrestrict JT8zRKgtfXngAo77gHsqwjIS99mGIfzaIXWZk8Ez0SadVtpPbyhE0SWXuvjiQte

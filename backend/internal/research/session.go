@@ -6,7 +6,14 @@ import (
 )
 
 type SessionState struct {
-	Cookies []SessionCookie `json:"cookies"`
+	FormatVersion int                   `json:"format_version,omitempty"`
+	Cookies       []SessionCookie       `json:"cookies"`
+	LocalStorage  []SessionStorageEntry `json:"local_storage,omitempty"`
+}
+
+type SessionStorageEntry struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type SessionCookie struct {
@@ -52,4 +59,31 @@ func (s SessionState) Authorized() bool {
 		}
 	}
 	return false
+}
+
+func SanitizeLocalStorage(entries []SessionStorageEntry) []SessionStorageEntry {
+	const maxEntries = 64
+	const maxNameBytes = 256
+	const maxValueBytes = 16 << 10
+	const maxTotalBytes = 256 << 10
+	result := make([]SessionStorageEntry, 0, min(len(entries), maxEntries))
+	total := 0
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		name := strings.TrimSpace(entry.Name)
+		if name == "" || len(name) > maxNameBytes || len(entry.Value) > maxValueBytes || seen[name] {
+			continue
+		}
+		size := len(name) + len(entry.Value)
+		if total+size > maxTotalBytes {
+			break
+		}
+		seen[name] = true
+		total += size
+		result = append(result, SessionStorageEntry{Name: name, Value: entry.Value})
+		if len(result) >= maxEntries {
+			break
+		}
+	}
+	return result
 }

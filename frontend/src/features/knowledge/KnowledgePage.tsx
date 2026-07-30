@@ -123,7 +123,7 @@ export default function KnowledgePage({ token }: Props) {
     onError: () => message.warning('集合中仍有文件，请先删除文件后再删除集合'),
   });
   const uploadProps: UploadProps = {
-    accept: '.txt,.pdf,.docx',
+    accept: '.txt,.md,.pdf,.docx',
     multiple: true,
     showUploadList: false,
     customRequest: async ({ file, onSuccess, onError }) => {
@@ -149,7 +149,7 @@ export default function KnowledgePage({ token }: Props) {
         <div>
           <Typography.Title level={2}>个人知识库</Typography.Title>
           <Typography.Text type="secondary">
-            上传中英文 TXT、文本型 PDF 或 DOCX，Cortex 会在本地建立父子索引。
+            上传中英文 TXT、Markdown、文本型 PDF 或 DOCX，Cortex 会在本地建立父子索引。
           </Typography.Text>
         </div>
         <Button icon={<FolderAddOutlined />} onClick={() => setCollectionOpen(true)}>
@@ -213,7 +213,7 @@ export default function KnowledgePage({ token }: Props) {
             <InboxOutlined />
           </p>
           <p className="ant-upload-text">拖入资料，或点击选择文件</p>
-          <p className="ant-upload-hint">支持 .txt、.pdf、.docx；扫描 PDF 暂不支持 OCR</p>
+          <p className="ant-upload-hint">支持 .txt、.md、.pdf、.docx；扫描 PDF 暂不支持 OCR</p>
         </Upload.Dragger>
       </Card>
 

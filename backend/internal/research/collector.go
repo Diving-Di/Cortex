@@ -30,13 +30,22 @@ var (
 )
 
 type Collected struct {
-	URL         string
-	Title       string
-	Author      string
-	Content     string
-	Tags        []string
-	ImageURLs   []string
-	PublishedAt *time.Time
+	URL           string
+	Title         string
+	Author        string
+	Content       string
+	Tags          []string
+	ImageURLs     []string
+	PublishedAt   *time.Time
+	LikeCount     int64
+	CollectCount  int64
+	CommentCount  int64
+	ParseStrategy string
+}
+
+type SourceCollector interface {
+	Search(context.Context, string, int, string) ([]string, error)
+	Collect(context.Context, string) (Collected, error)
 }
 
 type Collector struct {
@@ -176,8 +185,9 @@ func NewHTTPClient(timeout time.Duration) *http.Client {
 	return client
 }
 
-func (c Collector) Search(ctx context.Context, keyword string, count int) ([]string, error) {
-	searchURL := "https://www.xiaohongshu.com/search_result?keyword=" + url.QueryEscape(keyword) + "&source=web_search_result_notes"
+func (c Collector) Search(ctx context.Context, keyword string, count int, sortMode string) ([]string, error) {
+	searchURL := "https://www.xiaohongshu.com/search_result?keyword=" + url.QueryEscape(keyword) +
+		"&source=web_search_result_notes&sort=" + url.QueryEscape(NormalizeSearchSort(sortMode))
 	body, finalURL, err := c.fetch(ctx, searchURL)
 	if err != nil {
 		return nil, err
@@ -203,6 +213,17 @@ func (c Collector) Search(ctx context.Context, keyword string, count int) ([]str
 		return nil, errors.New("XHS_LAYOUT_CHANGED")
 	}
 	return result, nil
+}
+
+func NormalizeSearchSort(value string) string {
+	switch strings.TrimSpace(value) {
+	case "time_descending":
+		return "time_descending"
+	case "popularity_descending":
+		return "popularity_descending"
+	default:
+		return "general"
+	}
 }
 
 func (c Collector) Collect(ctx context.Context, rawURL string) (Collected, error) {
@@ -366,9 +387,16 @@ func ErrorCode(err error) string {
 		return ""
 	}
 	code := strings.TrimSpace(err.Error())
+	if strings.HasPrefix(code, "XHS_BROWSER_UNAVAILABLE:") {
+		return "XHS_BROWSER_UNAVAILABLE"
+	}
+	if strings.HasPrefix(code, "XHS_LAYOUT_CHANGED:") {
+		return "XHS_LAYOUT_CHANGED"
+	}
 	switch code {
 	case "RESEARCH_INVALID_URL", "XHS_AUTH_REQUIRED", "XHS_RATE_LIMITED",
-		"XHS_SOURCE_UNAVAILABLE", "XHS_LAYOUT_CHANGED":
+		"XHS_SOURCE_UNAVAILABLE", "XHS_LAYOUT_CHANGED", "XHS_VERIFICATION_REQUIRED",
+		"XHS_SOURCE_NOT_FOUND", "XHS_BROWSER_UNAVAILABLE":
 		return code
 	default:
 		return "XHS_COLLECTOR_UNAVAILABLE"
@@ -379,10 +407,18 @@ func PublicError(code string) string {
 	switch code {
 	case "XHS_AUTH_REQUIRED":
 		return "小红书访问授权已过期"
+	case "XHS_REAUTH_REQUIRED":
+		return "小红书授权格式已升级，请重新扫码"
 	case "XHS_RATE_LIMITED":
 		return "平台访问频率受限，请稍后重试"
 	case "XHS_LAYOUT_CHANGED":
 		return "平台页面结构已变化，暂时无法解析"
+	case "XHS_VERIFICATION_REQUIRED":
+		return "平台要求安全验证，请重新授权后再试"
+	case "XHS_SOURCE_NOT_FOUND":
+		return "来源已删除或不存在"
+	case "XHS_BROWSER_UNAVAILABLE":
+		return "浏览器采集器暂时不可用"
 	case "RESEARCH_INVALID_URL":
 		return "来源链接无效"
 	default:

@@ -33,6 +33,7 @@ test('renders accessible knowledge filters and empty state', async () => {
     </QueryClientProvider>,
   );
   expect(screen.getByRole('heading', { name: '个人知识库' })).toBeInTheDocument();
+  expect(screen.getByText(/支持 \.txt、\.md、\.pdf、\.docx/)).toBeInTheDocument();
   expect(screen.getByLabelText('搜索文件名')).toBeInTheDocument();
   expect(screen.getAllByLabelText('筛选处理状态').length).toBeGreaterThan(0);
   expect(await screen.findByText('尚未上传知识文件')).toBeInTheDocument();

@@ -1,0 +1,8 @@
+{
+  "name": "search-card-layout",
+  "url": "https://www.xiaohongshu.com/search_result?keyword=agent",
+  "title": "agent - 小红书搜索",
+  "text": "搜索结果\nAgent 面试复盘\n公开作者",
+  "ready": true,
+  "expected_state": "ready"
+}

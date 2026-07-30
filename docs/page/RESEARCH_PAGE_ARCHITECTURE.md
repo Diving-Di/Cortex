@@ -218,6 +218,26 @@ knowledge-collections
 
 单条来源失败不会丢失同任务中已成功的结果。Worker 崩溃或租约过期后，任务可以重新 claim。
 
+授权任务优先使用 `backend/internal/research/browser_collector.go`：将当前租户解密后的
+Cookie 和受限 localStorage 注入一次性 Chromium Context，搜索页等待多套结果节点并有限滚动，详情页从
+详情/轮播容器提取正文与图片，排除头像、小缩略图和重复资源。采集器统一识别登录失效、
+安全验证、平台限流、来源不存在和布局变化，并提取发布时间、点赞、收藏及评论数量；
+评论正文不进入系统。关键词搜索支持综合、最新和最多互动三个受控排序，普通访问使用
+有界抖动；限流通过任务 `available_at` 持久化退避，不长期占用 Worker。
+
+没有授权浏览器的公开 URL 仍使用具备域名白名单、DNS/重定向 SSRF 防护和响应大小限制的
+HTTP Collector。
+
+正文处理拆为三个边界清晰的步骤：
+
+1. 确定性清理换行、控制字符和空白，并合并 OCR 分区。
+2. AI 可用且内容足够长时，仅执行不改变事实的 Markdown 格式化；失败时使用清理结果。
+3. 使用格式化结果生成摘要、关键点、分类和标签草稿。
+
+来源同时保存原始清理正文与格式化正文，并记录 `parse_strategy`、
+`content_completeness`、`ocr_contribution_chars` 和 `format_status`。保存到知识库时
+优先使用格式化正文。Prompt/响应缓存保持默认关闭。
+
 ### 5.3 授权 Worker
 
 `backend/internal/server/xhs_authorization_worker.go`：
@@ -226,7 +246,10 @@ knowledge-collections
 2. 创建租户与 attempt 独立的 `0700` Chromium 临时目录。
 3. 打开小红书登录页并生成 `0600` 页面截图。
 4. 从 Chromium 浏览器级 Cookie 存储轮询登录 Cookie，以小红书域的 `web_session`
-   及其版本化名称判断授权完成；不把 `a1` 等匿名 Cookie 视为登录会话。
+   及其版本化名称判断授权完成；不把 `a1` 等匿名 Cookie 视为登录会话。同时读取当前
+   小红书 origin 的 localStorage，经过数量、单项大小和总大小限制后纳入加密会话状态。
+5. 加密状态携带格式版本；旧版仅 Cookie 会话通过
+   `requires_reauthorization=true` 明确要求重新扫码，验证 Cookie 或重试任务不会冒充升级。
 5. 将会话序列化后使用 AES-256-GCM 加密保存。
 6. 完成、失败、取消或超时后清理临时目录。
 
@@ -345,7 +368,7 @@ XHS_AUTHORIZATION_ENABLED=false
 XHS_AUTHORIZATION_TTL_SECONDS=180
 XHS_SESSION_ENCRYPTION_KEY=
 XHS_SESSION_KEY_VERSION=1
-XHS_CHROME_PATH=/usr/bin/chromium-browser
+XHS_CHROME_PATH=/usr/bin/chromium
 ```
 
 研究任务数量、来源正文、图片数量、单图大小、请求间隔、HTTP 超时、Worker 数量、租约和重试
@@ -411,6 +434,19 @@ Set-Location ..
 docker compose config --quiet
 .\backend\scripts\research_acceptance.ps1
 ```
+
+`research_acceptance.ps1` 覆盖无需外部平台授权的任务创建、幂等、列表和取消链路。真实小红书
+联网验收必须先在 `/research` 完成当前租户扫码授权，再使用一条确认仍可访问的公开笔记执行：
+
+```powershell
+.\backend\scripts\research_live_acceptance.ps1 `
+  -Username "<当前账号>" `
+  -Password "<当前密码>" `
+  -SourceUrl "https://www.xiaohongshu.com/explore/<笔记 ID>"
+```
+
+脚本验证授权、真实采集、内容诊断、AI 草稿和待审核状态。需要同时验收确认保存及知识文档关联时，
+增加 `-SaveToKnowledge`；该参数会产生一条真实知识库数据。
 
 ### 11.2 页面验收
 

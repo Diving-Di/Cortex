@@ -114,7 +114,7 @@ services:
       - XHS_AUTHORIZATION_TTL_SECONDS=${XHS_AUTHORIZATION_TTL_SECONDS:-180}
       - XHS_SESSION_ENCRYPTION_KEY=${XHS_SESSION_ENCRYPTION_KEY:-}
       - XHS_SESSION_KEY_VERSION=${XHS_SESSION_KEY_VERSION:-1}
-      - XHS_CHROME_PATH=${XHS_CHROME_PATH:-/usr/bin/chromium-browser}
+      - XHS_CHROME_PATH=${XHS_CHROME_PATH:-/usr/bin/chromium}
     depends_on:
       db:
         condition: service_healthy

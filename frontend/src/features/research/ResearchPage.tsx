@@ -92,6 +92,7 @@ type CreateValues = {
   input: string;
   target_count: number;
   target_collection_id?: number;
+  search_sort?: 'general' | 'time_descending' | 'popularity_descending';
 };
 
 export default function ResearchPage({ token }: Props) {
@@ -116,7 +117,8 @@ export default function ResearchPage({ token }: Props) {
     queryFn: () => getXHSAuthorization(token),
     retry: false,
   });
-  const coreEnabled = authorization.data?.status === 'authorized';
+  const coreEnabled =
+    authorization.data?.status === 'authorized' && !authorization.data.requires_reauthorization;
   const authAttempt = useQuery({
     queryKey: ['xhs-auth-attempt', authAttemptID],
     queryFn: () => getXHSAuthAttempt(token, authAttemptID!),
@@ -198,7 +200,7 @@ export default function ResearchPage({ token }: Props) {
     queryFn: () => listResearchJobs(token, jobPage),
     enabled: coreEnabled,
     refetchInterval: (query) =>
-      query.state.data?.items.some((item) =>
+      query.state.data?.items?.some((item) =>
         ['queued', 'collecting', 'extracting', 'organizing'].includes(item.status),
       )
         ? 3000
@@ -256,6 +258,7 @@ export default function ResearchPage({ token }: Props) {
         ...(values.mode === 'keyword' ? { keywords: lines } : { urls: lines }),
         target_count: values.target_count,
         target_collection_id: values.target_collection_id,
+        ...(values.mode === 'keyword' ? { search_sort: values.search_sort || 'general' } : {}),
         idempotency_key: crypto.randomUUID(),
       });
     },
@@ -466,16 +469,28 @@ export default function ResearchPage({ token }: Props) {
     return (
       <div className="research-auth-gate">
         <div>
-          <Typography.Title level={2}>授权小红书账号</Typography.Title>
+          <Typography.Title level={2}>
+            {authorization.data?.requires_reauthorization
+              ? '需要重新授权小红书账号'
+              : '授权小红书账号'}
+          </Typography.Title>
           <Typography.Text type="secondary">
             完成当前个人空间的扫码授权后，才能进入小红书研究页面。
           </Typography.Text>
         </div>
         <Alert
           showIcon
-          type="info"
-          message="授权凭据按个人租户隔离加密保存"
-          description="凭据仅用于你主动发起的研究任务，不会展示给其他账号。"
+          type={authorization.data?.requires_reauthorization ? 'warning' : 'info'}
+          message={
+            authorization.data?.requires_reauthorization
+              ? '现有授权缺少采集所需的新版浏览器状态'
+              : '授权凭据按个人租户隔离加密保存'
+          }
+          description={
+            authorization.data?.requires_reauthorization
+              ? '请重新扫码。旧任务重试不会自动升级授权状态。'
+              : '凭据仅用于你主动发起的研究任务，不会展示给其他账号。'
+          }
         />
         <Card className="research-auth-gate-card">
           <Space direction="vertical" size="large">
@@ -755,7 +770,7 @@ export default function ResearchPage({ token }: Props) {
         <Form<CreateValues>
           form={form}
           layout="vertical"
-          initialValues={{ mode: 'keyword', target_count: 10 }}
+          initialValues={{ mode: 'keyword', target_count: 10, search_sort: 'general' }}
           onFinish={(values) => create.mutate(values)}
         >
           <Form.Item name="mode" label="研究方式">
@@ -782,6 +797,17 @@ export default function ResearchPage({ token }: Props) {
           <Form.Item name="target_count" label="目标结果数" rules={[{ required: true }]}>
             <InputNumber min={1} max={50} />
           </Form.Item>
+          {mode === 'keyword' && (
+            <Form.Item name="search_sort" label="搜索排序">
+              <Select
+                options={[
+                  { value: 'general', label: '综合排序' },
+                  { value: 'time_descending', label: '最新发布' },
+                  { value: 'popularity_descending', label: '最多互动' },
+                ]}
+              />
+            </Form.Item>
+          )}
           <Form.Item name="target_collection_id" label="目标知识集合（可选）">
             <Select
               allowClear
@@ -875,6 +901,28 @@ function ResearchDetail({
       <Descriptions column={1} size="small">
         <Descriptions.Item label="标题">{source.title}</Descriptions.Item>
         <Descriptions.Item label="作者">{source.author_display_name || '—'}</Descriptions.Item>
+        <Descriptions.Item label="发布时间">
+          {source.published_at ? new Date(source.published_at).toLocaleString() : '—'}
+        </Descriptions.Item>
+        <Descriptions.Item label="互动">
+          {`点赞 ${source.like_count || 0} · 收藏 ${source.collect_count || 0} · 评论 ${
+            source.comment_count || 0
+          }`}
+        </Descriptions.Item>
+        <Descriptions.Item label="解析质量">
+          {`${source.content_completeness || 0}% · ${
+            source.parse_strategy === 'browser_detail' ? '浏览器详情' : '页面元数据'
+          }`}
+        </Descriptions.Item>
+        <Descriptions.Item label="内容处理">
+          {source.format_status === 'ai_formatted'
+            ? 'AI 格式化'
+            : source.format_status === 'ai_failed'
+              ? 'AI 格式化失败，已使用确定性清理'
+              : source.format_status === 'ai_unavailable'
+                ? 'AI 不可用，已使用确定性清理'
+                : '确定性清理'}
+        </Descriptions.Item>
         <Descriptions.Item label="来源">
           <a href={source.source_url} target="_blank" rel="noreferrer">
             打开公开来源
@@ -886,7 +934,9 @@ function ResearchDetail({
       ) : null}
       <section>
         <Typography.Title level={4}>来源原文</Typography.Title>
-        <div className="research-content">{source.raw_content || '暂无正文'}</div>
+        <div className="research-content">
+          {source.formatted_content || source.raw_content || '暂无正文'}
+        </div>
       </section>
       {source.assets?.length ? (
         <section>

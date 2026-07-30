@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,7 +32,15 @@ func (s *Server) getXHSAuthorization(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, item)
+	requiresReauthorization := false
+	if item.Status == "authorized" {
+		_, state, loadErr := s.loadXHSSession(r.Context(), principalFrom(r.Context()))
+		requiresReauthorization = loadErr != nil || state.FormatVersion < 2
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		store.XHSAuthorization
+		RequiresReauthorization bool `json:"requires_reauthorization"`
+	}{XHSAuthorization: item, RequiresReauthorization: requiresReauthorization})
 }
 
 func (s *Server) startXHSAuthorization(w http.ResponseWriter, r *http.Request) {
@@ -135,6 +144,13 @@ func (s *Server) verifyXHSAuthorization(w http.ResponseWriter, r *http.Request) 
 	response, err := research.NewHTTPClient(s.cfg.ResearchHTTPTimeout).Do(request)
 	valid := err == nil && response.StatusCode >= 200 && response.StatusCode < 400
 	if response != nil {
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		if readErr != nil {
+			valid = false
+		} else {
+			state := research.DetectPageState(response.Request.URL.String(), "", string(body), valid)
+			valid = state == research.PageReady
+		}
 		_ = response.Body.Close()
 	}
 	_ = s.store.MarkXHSAuthorizationVerified(r.Context(), principalFrom(r.Context()), valid)

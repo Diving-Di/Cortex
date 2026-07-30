@@ -263,7 +263,7 @@ func Load() (Config, error) {
 		XHSSessionKeyVersion:    xhsKeyVersion,
 		XHSAuthorizationTTL:     time.Duration(xhsAuthorizationTTLSeconds) * time.Second,
 		XHSAuthorizationEnabled: parseBool(valueOrDefault("XHS_AUTHORIZATION_ENABLED", "false")),
-		XHSChromePath:           valueOrDefault("XHS_CHROME_PATH", "/usr/bin/chromium-browser"),
+		XHSChromePath:           valueOrDefault("XHS_CHROME_PATH", "/usr/bin/chromium"),
 	}, nil
 }
 

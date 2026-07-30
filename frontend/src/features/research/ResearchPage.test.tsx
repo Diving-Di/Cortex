@@ -62,6 +62,21 @@ test('renders research navigation content and empty jobs', async () => {
   expect(await screen.findByText('尚未创建研究任务')).toBeInTheDocument();
 });
 
+test('keeps rendering for an authorized tenant when legacy empty lists are null', async () => {
+  researchMocks.listResearchJobs.mockResolvedValue({ items: null, total: 0 });
+  researchMocks.listResearchSources.mockResolvedValue({ items: null, total: 0 });
+
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ResearchPage token="test-token" />
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByRole('heading', { name: '小红书研究' })).toBeInTheDocument();
+  expect(await screen.findByText('尚未创建研究任务')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /新建研究/ })).toBeInTheDocument();
+});
+
 test('keeps rendering when the server returns an unfamiliar status', async () => {
   researchMocks.listResearchJobs.mockResolvedValue({
     items: [
@@ -108,6 +123,27 @@ test('shows the authorization gate before loading the research workspace', async
   expect(screen.queryByRole('button', { name: /新建研究/ })).not.toBeInTheDocument();
   expect(researchMocks.listResearchJobs).not.toHaveBeenCalled();
   expect(researchMocks.listResearchSources).not.toHaveBeenCalled();
+});
+
+test('requires a new scan for a legacy authorized session', async () => {
+  researchMocks.getXHSAuthorization.mockResolvedValue({
+    id: 1,
+    status: 'authorized',
+    requires_reauthorization: true,
+    version: 2,
+  });
+
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ResearchPage token="test-token" />
+    </QueryClientProvider>,
+  );
+
+  expect(
+    await screen.findByRole('heading', { name: '需要重新授权小红书账号' }),
+  ).toBeInTheDocument();
+  expect(screen.getByText('现有授权缺少采集所需的新版浏览器状态')).toBeInTheDocument();
+  expect(researchMocks.listResearchJobs).not.toHaveBeenCalled();
 });
 
 test('creates a keyword research job from the modal', async () => {

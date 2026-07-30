@@ -85,6 +85,26 @@ func TestExtractTXTRejectsCharacterLimit(t *testing.T) {
 	}
 }
 
+func TestExtractMarkdownPreservesHeadingPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sample.md")
+	content := "\ufeff# 项目\n\n## 目标\n\n- 完成 Markdown 导入\n\n正文"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	document, err := Extract(context.Background(), path, ".md", "sample", ExtractLimits{
+		MaxPages: 1, MaxCharacters: 1000, TimeoutSecs: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Blocks) != 4 || document.Blocks[2].Kind != BlockList {
+		t.Fatalf("unexpected markdown blocks: %#v", document.Blocks)
+	}
+	if got := document.Blocks[3].HeadingPath; len(got) != 2 || got[0] != "项目" || got[1] != "目标" {
+		t.Fatalf("heading path lost: %#v", got)
+	}
+}
+
 func TestExtractBilingualFixedFixtures(t *testing.T) {
 	fixtureDir := filepath.Join("..", "..", "testdata", "knowledge")
 	tests := []struct {

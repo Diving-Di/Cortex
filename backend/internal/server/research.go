@@ -29,6 +29,7 @@ type createResearchJobRequest struct {
 	TargetCount        int      `json:"target_count"`
 	TargetCollectionID *int64   `json:"target_collection_id"`
 	IdempotencyKey     string   `json:"idempotency_key"`
+	SearchSort         string   `json:"search_sort"`
 }
 
 func (s *Server) createResearchJob(w http.ResponseWriter, r *http.Request) {
@@ -49,8 +50,13 @@ func (s *Server) createResearchJob(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, s.logger, apierror.New("XHS_AUTH_NOT_CONFIGURED", "小红书授权功能未配置", 503))
 			return
 		}
-		if _, _, err := s.loadXHSSession(r.Context(), principalFrom(r.Context())); err != nil {
+		if _, state, err := s.loadXHSSession(r.Context(), principalFrom(r.Context())); err != nil {
 			httpx.WriteError(w, s.logger, err)
+			return
+		} else if state.FormatVersion < 2 {
+			httpx.WriteError(w, s.logger, apierror.New(
+				"XHS_REAUTH_REQUIRED", "小红书授权需要重新扫码升级", 409,
+			))
 			return
 		}
 		values, err := research.ValidateKeywords(request.Keywords, s.cfg.ResearchMaxKeywords)
@@ -58,7 +64,8 @@ func (s *Server) createResearchJob(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, s.logger, apierror.New("RESEARCH_INVALID_KEYWORD", "研究关键词无效", 422))
 			return
 		}
-		payload = map[string]any{"keywords": values}
+		request.SearchSort = research.NormalizeSearchSort(request.SearchSort)
+		payload = map[string]any{"keywords": values, "search_sort": request.SearchSort}
 	case "urls":
 		if len(request.URLs) == 0 || len(request.URLs) > s.cfg.ResearchMaxURLs {
 			httpx.WriteError(w, s.logger, apierror.New("RESEARCH_LIMIT_EXCEEDED", "研究链接数量超过限制", 422))
@@ -118,6 +125,9 @@ func (s *Server) listResearchJobs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
+	}
+	if items == nil {
+		items = []store.ResearchJob{}
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
 }
@@ -184,6 +194,9 @@ func (s *Server) listResearchSources(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
+	}
+	if items == nil {
+		items = []store.ResearchSource{}
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
 }

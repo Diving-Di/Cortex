@@ -1,0 +1,8 @@
+{
+  "name": "verification-layout",
+  "url": "https://www.xiaohongshu.com/website-login/captcha",
+  "title": "安全验证",
+  "text": "请拖动滑块完成验证",
+  "ready": false,
+  "expected_state": "verification_required"
+}

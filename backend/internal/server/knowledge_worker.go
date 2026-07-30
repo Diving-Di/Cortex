@@ -141,14 +141,7 @@ func processKnowledgeIndexJob(
 	limits := knowledge.ExtractLimits{
 		MaxPages: cfg.MaxKnowledgePDFPages, MaxCharacters: cfg.MaxKnowledgeChars, TimeoutSecs: 45,
 	}
-	var document knowledge.Document
-	if cfg.DocumentParserURL != "" {
-		document, err = (knowledge.ParserClient{BaseURL: cfg.DocumentParserURL}).Parse(
-			ctx, path, documentRow.Extension, documentRow.OriginalName, limits,
-		)
-	} else {
-		document, err = knowledge.Extract(ctx, path, documentRow.Extension, documentRow.OriginalName, limits)
-	}
+	document, err := extractKnowledgeDocument(ctx, cfg, path, documentRow, limits)
 	if err != nil {
 		code := "DOCUMENT_PARSE_FAILED"
 		switch {
@@ -193,6 +186,21 @@ func processKnowledgeIndexJob(
 		logger.Error("complete knowledge index", "document_id", job.DocumentID, "error", err)
 		failKnowledgeJob(ctx, database, logger, principal, job, "DOCUMENT_INDEX_FAILED", true)
 	}
+}
+
+func extractKnowledgeDocument(
+	ctx context.Context,
+	cfg config.Config,
+	path string,
+	document store.KnowledgeDocument,
+	limits knowledge.ExtractLimits,
+) (knowledge.Document, error) {
+	if cfg.DocumentParserURL != "" && !strings.EqualFold(document.Extension, ".md") {
+		return (knowledge.ParserClient{BaseURL: cfg.DocumentParserURL}).Parse(
+			ctx, path, document.Extension, document.OriginalName, limits,
+		)
+	}
+	return knowledge.Extract(ctx, path, document.Extension, document.OriginalName, limits)
 }
 
 func embedBatches(

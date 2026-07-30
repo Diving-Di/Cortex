@@ -27,6 +27,8 @@ func Extract(ctx context.Context, path, extension, title string, limits ExtractL
 	switch strings.ToLower(extension) {
 	case ".txt":
 		return extractTXT(path, title, limits)
+	case ".md":
+		return extractMarkdown(path, title, limits)
 	case ".docx":
 		return extractDOCX(path, title, limits)
 	case ".pdf":
@@ -34,6 +36,65 @@ func Extract(ctx context.Context, path, extension, title string, limits ExtractL
 	default:
 		return Document{}, fmt.Errorf("unsupported extension %q", extension)
 	}
+}
+
+func extractMarkdown(path, title string, limits ExtractLimits) (Document, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return Document{}, err
+	}
+	text := strings.TrimPrefix(string(content), "\ufeff")
+	if len([]rune(text)) > limits.MaxCharacters {
+		return Document{}, ErrParseLimit
+	}
+
+	var (
+		blocks      []Block
+		headingPath []string
+		order       int
+	)
+	for _, raw := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		kind := BlockParagraph
+		value := line
+		if level, heading := markdownHeading(line); level > 0 {
+			kind = BlockHeading
+			value = heading
+			for len(headingPath) >= level {
+				headingPath = headingPath[:len(headingPath)-1]
+			}
+			headingPath = append(headingPath, value)
+		} else if isListLine(line) {
+			kind = BlockList
+		}
+		blocks = append(blocks, Block{
+			Kind: kind, Text: value, HeadingPath: append([]string(nil), headingPath...),
+			PageFrom: 1, PageTo: 1, Order: order,
+		})
+		order++
+	}
+	return Document{
+		Title: title, PageCount: 1, Language: detectLanguage(text),
+		Blocks: blocks, Characters: len([]rune(text)),
+	}, nil
+}
+
+func markdownHeading(line string) (int, string) {
+	level := 0
+	for level < len(line) && level < 6 && line[level] == '#' {
+		level++
+	}
+	if level == 0 || level >= len(line) || line[level] != ' ' {
+		return 0, ""
+	}
+	value := strings.TrimSpace(line[level:])
+	if value == "" {
+		return 0, ""
+	}
+	return level, value
 }
 
 func extractTXT(path, title string, limits ExtractLimits) (Document, error) {
