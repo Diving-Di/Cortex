@@ -123,20 +123,6 @@ $report = Invoke-RestMethod "$BaseURL/api/v1/reports/confirm" `
 $reportSources = Invoke-RestMethod "$BaseURL/api/v1/reports/$($report.id)/sources" `
     -Headers $headers
 
-$notebookText = Invoke-AIStream "/api/v1/knowledge/chat" `
-    @{ question = "Go 后端验收完成了什么？"; source_scope = "growth" } $login.token
-$conversations = Invoke-RestMethod "$BaseURL/api/v1/conversations" -Headers $headers
-$notebookConversation = @($conversations.items | Sort-Object id -Descending)[0]
-$conversation = Invoke-RestMethod `
-    "$BaseURL/api/v1/conversations/$($notebookConversation.id)" -Headers $headers
-$assistantMessage = @($conversation.messages | Where-Object { $_.role -eq "assistant" })[-1]
-$notebookSources = Invoke-RestMethod `
-    "$BaseURL/api/v1/knowledge/messages/$($assistantMessage.id)/sources" -Headers $headers
-if (@($notebookSources).Count -lt 1 -or
-    @($notebookSources | Where-Object { $_.source_type -eq "growth_note" }).Count -lt 1) {
-    throw "Growth answer did not persist a unified growth_note source."
-}
-
 [pscustomobject]@{
     Configured = $settings.configured
     Model = $settings.model
@@ -146,6 +132,4 @@ if (@($notebookSources).Count -lt 1 -or
     ReportCharacters = $reportText.Length
     ReportNoteID = $report.id
     ReportSourceCount = @($reportSources).Count
-    NotebookCharacters = $notebookText.Length
-    NotebookSourceCount = @($notebookSources).Count
 } | ConvertTo-Json -Compress

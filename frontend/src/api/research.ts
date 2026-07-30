@@ -102,7 +102,6 @@ export interface ResearchJob {
   mode: 'keyword' | 'urls';
   query_payload: { keywords?: string[]; urls?: string[] };
   target_count: number;
-  target_collection_id?: number | null;
   status: ResearchJobStatus;
   found_count: number;
   collected_count: number;
@@ -126,7 +125,6 @@ export interface ResearchDraft {
   suggested_tags: string[];
   edited_by_user: boolean;
   status: 'pending' | 'saved' | 'ignored';
-  knowledge_document_id?: number | null;
   source_snapshot_hash: string;
   version: number;
   created_at: string;
@@ -187,7 +185,6 @@ export async function createResearchJob(
     keywords?: string[];
     urls?: string[];
     target_count: number;
-    target_collection_id?: number;
     search_sort?: 'general' | 'time_descending' | 'popularity_descending';
     idempotency_key: string;
   },
@@ -256,12 +253,6 @@ export async function updateResearchDraft(
     { headers: authHeaders(token) },
   );
   return response.data;
-}
-
-export async function saveResearchSource(token: string, id: number) {
-  await http.post(`/api/v1/research/sources/${id}/save`, undefined, {
-    headers: authHeaders(token),
-  });
 }
 
 export async function ignoreResearchSource(token: string, id: number) {

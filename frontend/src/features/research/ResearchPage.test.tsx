@@ -35,10 +35,6 @@ vi.mock('../../api/research', () => ({
   revokeXHSAuthorization: vi.fn(),
 }));
 
-vi.mock('../../api/knowledge', () => ({
-  listKnowledgeCollections: vi.fn().mockResolvedValue([]),
-}));
-
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -166,7 +162,6 @@ test('creates a keyword research job from the modal', async () => {
         mode: 'keyword',
         keywords: ['Agent 面试', 'RAG 实践'],
         target_count: 10,
-        target_collection_id: undefined,
         idempotency_key: expect.any(String),
       }),
     ),

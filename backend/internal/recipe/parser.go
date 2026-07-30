@@ -2,7 +2,7 @@ package recipe
 
 import (
 	"errors"
-	"path/filepath"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -27,12 +27,12 @@ func ParseMarkdown(sourcePath string, md []byte) (*RecipeDocument, error) {
 	}
 
 	kind := "dish"
-	normalizedPath := filepath.ToSlash(sourcePath)
+	normalizedPath := strings.ReplaceAll(sourcePath, `\`, "/")
 	if strings.Contains(normalizedPath, "/tips/") || strings.HasPrefix(normalizedPath, "tips/") {
 		kind = "tip"
 	}
-	category := filepath.Base(filepath.Dir(sourcePath))
-	if category == "." || category == string(filepath.Separator) {
+	category := path.Base(path.Dir(normalizedPath))
+	if category == "." || category == "/" {
 		category = "uncategorized"
 	}
 

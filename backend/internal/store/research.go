@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"diary-listener/backend/internal/apierror"
@@ -16,29 +15,28 @@ import (
 )
 
 type ResearchJob struct {
-	ID                 int64           `json:"id"`
-	TenantID           uuid.UUID       `json:"-"`
-	UserID             int32           `json:"-"`
-	Mode               string          `json:"mode"`
-	QueryPayload       json.RawMessage `json:"query_payload"`
-	TargetCount        int             `json:"target_count"`
-	TargetCollectionID *int64          `json:"target_collection_id"`
-	Status             string          `json:"status"`
-	FoundCount         int             `json:"found_count"`
-	CollectedCount     int             `json:"collected_count"`
-	OrganizedCount     int             `json:"organized_count"`
-	FailedCount        int             `json:"failed_count"`
-	SavedCount         int             `json:"saved_count"`
-	AttemptCount       int             `json:"attempt_count"`
-	MaxAttempts        int             `json:"max_attempts"`
-	LastErrorCode      *string         `json:"last_error_code"`
-	LastErrorSummary   *string         `json:"last_error_summary"`
-	CancelRequestedAt  *time.Time      `json:"cancel_requested_at"`
-	StartedAt          *time.Time      `json:"started_at"`
-	CompletedAt        *time.Time      `json:"completed_at"`
-	Version            int             `json:"version"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
+	ID                int64           `json:"id"`
+	TenantID          uuid.UUID       `json:"-"`
+	UserID            int32           `json:"-"`
+	Mode              string          `json:"mode"`
+	QueryPayload      json.RawMessage `json:"query_payload"`
+	TargetCount       int             `json:"target_count"`
+	Status            string          `json:"status"`
+	FoundCount        int             `json:"found_count"`
+	CollectedCount    int             `json:"collected_count"`
+	OrganizedCount    int             `json:"organized_count"`
+	FailedCount       int             `json:"failed_count"`
+	SavedCount        int             `json:"saved_count"`
+	AttemptCount      int             `json:"attempt_count"`
+	MaxAttempts       int             `json:"max_attempts"`
+	LastErrorCode     *string         `json:"last_error_code"`
+	LastErrorSummary  *string         `json:"last_error_summary"`
+	CancelRequestedAt *time.Time      `json:"cancel_requested_at"`
+	StartedAt         *time.Time      `json:"started_at"`
+	CompletedAt       *time.Time      `json:"completed_at"`
+	Version           int             `json:"version"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
 }
 
 type ResearchSource struct {
@@ -69,22 +67,20 @@ type ResearchSource struct {
 	UpdatedAt            time.Time       `json:"updated_at"`
 	Draft                *ResearchDraft  `json:"draft,omitempty"`
 	Assets               []ResearchAsset `json:"assets,omitempty"`
-	TargetCollectionID   *int64          `json:"target_collection_id,omitempty"`
 }
 
 type ResearchDraft struct {
-	ID                  int64           `json:"id"`
-	Summary             string          `json:"summary"`
-	KeyPoints           json.RawMessage `json:"key_points"`
-	Category            string          `json:"category"`
-	SuggestedTags       json.RawMessage `json:"suggested_tags"`
-	EditedByUser        bool            `json:"edited_by_user"`
-	Status              string          `json:"status"`
-	KnowledgeDocumentID *int64          `json:"knowledge_document_id"`
-	SourceSnapshotHash  string          `json:"source_snapshot_hash"`
-	Version             int             `json:"version"`
-	CreatedAt           time.Time       `json:"created_at"`
-	UpdatedAt           time.Time       `json:"updated_at"`
+	ID                 int64           `json:"id"`
+	Summary            string          `json:"summary"`
+	KeyPoints          json.RawMessage `json:"key_points"`
+	Category           string          `json:"category"`
+	SuggestedTags      json.RawMessage `json:"suggested_tags"`
+	EditedByUser       bool            `json:"edited_by_user"`
+	Status             string          `json:"status"`
+	SourceSnapshotHash string          `json:"source_snapshot_hash"`
+	Version            int             `json:"version"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 type ResearchAsset struct {
@@ -101,7 +97,7 @@ type ResearchAsset struct {
 
 func (s *Store) CreateResearchJob(
 	ctx context.Context, principal domain.Principal, mode string, payload json.RawMessage,
-	targetCount int, collectionID *int64, idempotencyKey string, maxAttempts int,
+	targetCount int, idempotencyKey string, maxAttempts int,
 ) (ResearchJob, error) {
 	var result ResearchJob
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
@@ -109,13 +105,13 @@ func (s *Store) CreateResearchJob(
 			return err
 		}
 		err := scanResearchJob(tx.QueryRow(ctx, `INSERT INTO research_jobs
-			(tenant_id,created_by,mode,query_payload,target_count,target_collection_id,idempotency_key,max_attempts)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+			(tenant_id,created_by,mode,query_payload,target_count,idempotency_key,max_attempts)
+			VALUES($1,$2,$3,$4,$5,$6,$7)
 			ON CONFLICT(tenant_id,idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key
-			RETURNING id,tenant_id,created_by,mode,query_payload,target_count,target_collection_id,status,
+			RETURNING id,tenant_id,created_by,mode,query_payload,target_count,status,
 			found_count,collected_count,organized_count,failed_count,saved_count,attempt_count,max_attempts,
 			last_error_code,last_error_summary,cancel_requested_at,started_at,completed_at,version,created_at,updated_at`,
-			principal.TenantID, principal.UserID, mode, payload, targetCount, collectionID, idempotencyKey, maxAttempts), &result)
+			principal.TenantID, principal.UserID, mode, payload, targetCount, idempotencyKey, maxAttempts), &result)
 		return err
 	})
 	return result, err
@@ -131,7 +127,7 @@ func (s *Store) ListResearchJobs(ctx context.Context, principal domain.Principal
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM research_jobs WHERE tenant_id=$1`, principal.TenantID).Scan(&total); err != nil {
 			return err
 		}
-		rows, err := tx.Query(ctx, `SELECT id,tenant_id,created_by,mode,query_payload,target_count,target_collection_id,status,
+		rows, err := tx.Query(ctx, `SELECT id,tenant_id,created_by,mode,query_payload,target_count,status,
 			found_count,collected_count,organized_count,failed_count,saved_count,attempt_count,max_attempts,
 			last_error_code,last_error_summary,cancel_requested_at,started_at,completed_at,version,created_at,updated_at
 			FROM research_jobs WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`,
@@ -158,7 +154,7 @@ func (s *Store) GetResearchJob(ctx context.Context, principal domain.Principal, 
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
 		}
-		return scanResearchJob(tx.QueryRow(ctx, `SELECT id,tenant_id,created_by,mode,query_payload,target_count,target_collection_id,status,
+		return scanResearchJob(tx.QueryRow(ctx, `SELECT id,tenant_id,created_by,mode,query_payload,target_count,status,
 			found_count,collected_count,organized_count,failed_count,saved_count,attempt_count,max_attempts,
 			last_error_code,last_error_summary,cancel_requested_at,started_at,completed_at,version,created_at,updated_at
 			FROM research_jobs WHERE tenant_id=$1 AND id=$2`, principal.TenantID, id), &result)
@@ -224,7 +220,7 @@ func (s *Store) ClaimResearchJobs(ctx context.Context, owner string, limit int, 
 			lease_until=now()+$3::interval,attempt_count=attempt_count+1,
 			started_at=COALESCE(started_at,now()),updated_at=now()
 		FROM candidates c WHERE j.id=c.id
-		RETURNING j.id,j.tenant_id,j.created_by,j.mode,j.query_payload,j.target_count,j.target_collection_id,j.status,
+		RETURNING j.id,j.tenant_id,j.created_by,j.mode,j.query_payload,j.target_count,j.status,
 			j.found_count,j.collected_count,j.organized_count,j.failed_count,j.saved_count,j.attempt_count,j.max_attempts,
 			j.last_error_code,j.last_error_summary,j.cancel_requested_at,j.started_at,j.completed_at,j.version,j.created_at,j.updated_at`,
 		limit, owner, lease.String())
@@ -296,7 +292,7 @@ func (s *Store) CompleteResearchSource(
 		}
 		var existing *ResearchDraft
 		row := tx.QueryRow(ctx, `SELECT id,summary,key_points,category,suggested_tags,edited_by_user,status,
-			knowledge_document_id,source_snapshot_hash,version,created_at,updated_at
+			source_snapshot_hash,version,created_at,updated_at
 			FROM research_drafts WHERE tenant_id=$1 AND source_id=$2 FOR UPDATE`, principal.TenantID, sourceID)
 		var draft ResearchDraft
 		if err := scanResearchDraft(row, &draft); err == nil {
@@ -486,7 +482,7 @@ func (s *Store) ListResearchSources(ctx context.Context, principal domain.Princi
 		for index := range result {
 			var draft ResearchDraft
 			err := scanResearchDraft(tx.QueryRow(ctx, `SELECT id,summary,key_points,category,suggested_tags,
-				edited_by_user,status,knowledge_document_id,source_snapshot_hash,version,created_at,updated_at
+				edited_by_user,status,source_snapshot_hash,version,created_at,updated_at
 				FROM research_drafts WHERE tenant_id=$1 AND source_id=$2`,
 				principal.TenantID, result[index].ID), &draft)
 			if err == nil {
@@ -516,13 +512,9 @@ func (s *Store) GetResearchSource(ctx context.Context, principal domain.Principa
 			principal.TenantID, id), &result); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `SELECT target_collection_id FROM research_jobs
-			WHERE tenant_id=$1 AND id=$2`, principal.TenantID, result.JobID).Scan(&result.TargetCollectionID); err != nil {
-			return err
-		}
 		var draft ResearchDraft
 		err := scanResearchDraft(tx.QueryRow(ctx, `SELECT id,summary,key_points,category,suggested_tags,
-			edited_by_user,status,knowledge_document_id,source_snapshot_hash,version,created_at,updated_at
+			edited_by_user,status,source_snapshot_hash,version,created_at,updated_at
 			FROM research_drafts WHERE tenant_id=$1 AND source_id=$2`, principal.TenantID, id), &draft)
 		if err == nil {
 			result.Draft = &draft
@@ -560,7 +552,7 @@ func (s *Store) UpdateResearchDraft(
 		}
 		var current ResearchDraft
 		if err := scanResearchDraft(tx.QueryRow(ctx, `SELECT id,summary,key_points,category,suggested_tags,
-			edited_by_user,status,knowledge_document_id,source_snapshot_hash,version,created_at,updated_at
+			edited_by_user,status,source_snapshot_hash,version,created_at,updated_at
 			FROM research_drafts WHERE tenant_id=$1 AND source_id=$2 FOR UPDATE`,
 			principal.TenantID, sourceID), &current); err != nil {
 			return err
@@ -583,7 +575,7 @@ func (s *Store) UpdateResearchDraft(
 			category=$5,suggested_tags=$6,edited_by_user=true,version=version+1,updated_at=now()
 			WHERE tenant_id=$1 AND source_id=$2
 			RETURNING id,summary,key_points,category,suggested_tags,edited_by_user,status,
-			knowledge_document_id,source_snapshot_hash,version,created_at,updated_at`,
+			source_snapshot_hash,version,created_at,updated_at`,
 			principal.TenantID, sourceID, summary, pointsJSON, category, tagsJSON), &result)
 	})
 	return result, err
@@ -665,39 +657,6 @@ func (s *Store) GetResearchAsset(
 	return result, err
 }
 
-func (s *Store) MarkResearchSourceSaved(
-	ctx context.Context, principal domain.Principal, sourceID, documentID int64,
-) error {
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
-		var jobID int64
-		err := tx.QueryRow(ctx, `UPDATE research_sources SET status='saved',version=version+1,updated_at=now()
-			WHERE tenant_id=$1 AND id=$2 AND status IN ('pending_review','saved') RETURNING job_id`,
-			principal.TenantID, sourceID).Scan(&jobID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return apierror.New("RESEARCH_VERSION_CONFLICT", "研究结果当前无法保存", 409)
-		}
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE research_drafts SET status='saved',
-			knowledge_document_id=COALESCE(knowledge_document_id,$3),version=version+1,updated_at=now()
-			WHERE tenant_id=$1 AND source_id=$2`, principal.TenantID, sourceID, documentID); err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `UPDATE research_jobs SET saved_count=(
-			SELECT count(*) FROM research_sources WHERE tenant_id=$1 AND job_id=$2 AND status='saved'
-			),status=CASE WHEN NOT EXISTS(
-				SELECT 1 FROM research_sources WHERE tenant_id=$1 AND job_id=$2
-				AND status IN ('pending','collecting','organizing','pending_review')
-			) THEN 'completed' ELSE status END,version=version+1,updated_at=now()
-			WHERE tenant_id=$1 AND id=$2`, principal.TenantID, jobID)
-		return err
-	})
-}
-
 func (s *Store) SoftDeleteResearchSource(
 	ctx context.Context, principal domain.Principal, sourceID int64,
 ) error {
@@ -720,7 +679,7 @@ func (s *Store) SoftDeleteResearchSource(
 
 func scanResearchJob(scanner knowledgeDocumentScanner, item *ResearchJob) error {
 	err := scanner.Scan(&item.ID, &item.TenantID, &item.UserID, &item.Mode, &item.QueryPayload,
-		&item.TargetCount, &item.TargetCollectionID, &item.Status, &item.FoundCount,
+		&item.TargetCount, &item.Status, &item.FoundCount,
 		&item.CollectedCount, &item.OrganizedCount, &item.FailedCount, &item.SavedCount,
 		&item.AttemptCount, &item.MaxAttempts, &item.LastErrorCode, &item.LastErrorSummary,
 		&item.CancelRequestedAt, &item.StartedAt, &item.CompletedAt, &item.Version,
@@ -731,7 +690,11 @@ func scanResearchJob(scanner knowledgeDocumentScanner, item *ResearchJob) error 
 	return err
 }
 
-func scanResearchSource(scanner knowledgeDocumentScanner, item *ResearchSource) error {
+type researchScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanResearchSource(scanner researchScanner, item *ResearchSource) error {
 	err := scanner.Scan(&item.ID, &item.JobID, &item.SourceURL, &item.NormalizedURL, &item.Title,
 		&item.AuthorDisplayName, &item.PublishedAt, &item.LikeCount, &item.CollectCount,
 		&item.CommentCount, &item.RawContent, &item.FormattedContent, &item.ParseStrategy,
@@ -744,34 +707,8 @@ func scanResearchSource(scanner knowledgeDocumentScanner, item *ResearchSource) 
 	return err
 }
 
-func scanResearchDraft(scanner knowledgeDocumentScanner, item *ResearchDraft) error {
+func scanResearchDraft(scanner researchScanner, item *ResearchDraft) error {
 	return scanner.Scan(&item.ID, &item.Summary, &item.KeyPoints, &item.Category,
-		&item.SuggestedTags, &item.EditedByUser, &item.Status, &item.KnowledgeDocumentID,
+		&item.SuggestedTags, &item.EditedByUser, &item.Status,
 		&item.SourceSnapshotHash, &item.Version, &item.CreatedAt, &item.UpdatedAt)
-}
-
-func ResearchTextFile(source ResearchSource) string {
-	var points []string
-	if source.Draft != nil {
-		_ = json.Unmarshal(source.Draft.KeyPoints, &points)
-	}
-	var builder strings.Builder
-	builder.WriteString("# " + source.Title + "\n\n")
-	if source.Draft != nil {
-		builder.WriteString("## 摘要\n\n" + source.Draft.Summary + "\n\n")
-		if len(points) > 0 {
-			builder.WriteString("## 关键观点\n\n")
-			for _, point := range points {
-				builder.WriteString("- " + point + "\n")
-			}
-			builder.WriteString("\n")
-		}
-	}
-	content := source.FormattedContent
-	if strings.TrimSpace(content) == "" {
-		content = source.RawContent
-	}
-	builder.WriteString("## 来源内容\n\n" + content + "\n\n")
-	builder.WriteString("来源：" + source.SourceURL + "\n")
-	return builder.String()
 }

@@ -6,8 +6,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^https://www\.xiaohongshu\.com/(explore|discovery/item)/")]
     [string]$SourceUrl,
-    [int]$TimeoutSeconds = 240,
-    [switch]$SaveToKnowledge
+    [int]$TimeoutSeconds = 240
 )
 
 $ErrorActionPreference = "Stop"
@@ -99,22 +98,6 @@ if ($null -eq $source.draft -or [string]::IsNullOrWhiteSpace($source.draft.summa
     throw "Research draft or summary is missing"
 }
 
-$knowledgeDocumentId = $null
-if ($SaveToKnowledge) {
-    Invoke-Json -Method Post `
-        -Uri "$BaseUrl/api/v1/research/sources/$($source.id)/save" `
-        -Headers $headers `
-        -Body $null | Out-Null
-    $source = Invoke-Json -Method Get `
-        -Uri "$BaseUrl/api/v1/research/sources/$($source.id)" `
-        -Headers $headers `
-        -Body $null
-    if ($source.status -ne "saved" -or $null -eq $source.draft.knowledge_document_id) {
-        throw "Source was not linked to a knowledge document after save"
-    }
-    $knowledgeDocumentId = $source.draft.knowledge_document_id
-}
-
 [pscustomobject]@{
     Result = "passed"
     JobId = $job.id
@@ -125,5 +108,4 @@ if ($SaveToKnowledge) {
     ContentCompleteness = $source.content_completeness
     FormatStatus = $source.format_status
     AssetCount = @($source.assets).Count
-    KnowledgeDocumentId = $knowledgeDocumentId
 } | Format-List

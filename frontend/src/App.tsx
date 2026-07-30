@@ -68,7 +68,6 @@ function AppLayout() {
             <Route index element={<DashboardPage token={token} />} />
             <Route path="notes/*" element={<NotesPage token={token} />} />
             <Route path="recipes" element={<TodayRecipePage token={token} />} />
-            <Route path="knowledge" element={<Navigate to="/recipes" replace />} />
             <Route path="assistant" element={<Navigate to="/recipes" replace />} />
             <Route path="research" element={<ResearchPage token={token} />} />
             <Route path="reports" element={<ReportsPage token={token} />} />

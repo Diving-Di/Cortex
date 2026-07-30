@@ -25,7 +25,7 @@ try {
         throw "services are not healthy: $($unhealthy -join ', ')"
     }
 
-    foreach ($service in @("backend", "document-parser", "reranker-service")) {
+    foreach ($service in @("backend", "reranker-service")) {
         $containerID = docker compose ps -q $service
         if (-not $containerID) {
             continue
@@ -36,7 +36,7 @@ try {
         }
     }
 
-    foreach ($service in @("db", "llm-gateway", "document-parser", "reranker-service")) {
+    foreach ($service in @("db", "llm-gateway", "reranker-service")) {
         $row = $rows | Where-Object Service -eq $service | Select-Object -First 1
         if ($row.Publishers | Where-Object { $_.PublishedPort -gt 0 }) {
             throw "$service exposes a host port"

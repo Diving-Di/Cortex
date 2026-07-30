@@ -26,6 +26,9 @@ func TestParseMarkdownDish(t *testing.T) {
 	if doc.Title != "红烧鱼" || doc.Kind != "dish" || doc.Category != "aquatic" {
 		t.Fatalf("unexpected metadata: %#v", doc)
 	}
+	if doc.SourcePath != "dishes/aquatic/红烧鱼.md" {
+		t.Fatalf("source path was not normalized: %q", doc.SourcePath)
+	}
 	if len(doc.Ingredients) != 2 || doc.Difficulty == nil || doc.CaloriesText == nil {
 		t.Fatalf("missing extracted fields: %#v", doc)
 	}

@@ -45,11 +45,9 @@ var backupTableSpecs = []backupTableSpec{
 	{name: "message_sources", id: "id", foreign: map[string]string{"message_id": "messages", "note_id": "notes"}},
 	{name: "recipe_message_sources", id: "id", foreign: map[string]string{"message_id": "messages"}},
 	{name: "user_preferences", withoutID: true, userFields: []string{"user_id"}},
-	{name: "knowledge_collections", id: "id", userFields: []string{"created_by"}},
-	{name: "knowledge_documents", id: "id", userFields: []string{"uploaded_by"}, foreign: map[string]string{"collection_id": "knowledge_collections"}},
-	{name: "research_jobs", id: "id", userFields: []string{"created_by"}, foreign: map[string]string{"target_collection_id": "knowledge_collections"}},
+	{name: "research_jobs", id: "id", userFields: []string{"created_by"}},
 	{name: "research_sources", id: "id", foreign: map[string]string{"job_id": "research_jobs"}},
-	{name: "research_drafts", id: "id", foreign: map[string]string{"source_id": "research_sources", "knowledge_document_id": "knowledge_documents"}},
+	{name: "research_drafts", id: "id", foreign: map[string]string{"source_id": "research_sources"}},
 	{name: "research_draft_revisions", id: "id", userFields: []string{"created_by"}, foreign: map[string]string{"draft_id": "research_drafts"}},
 	{name: "research_assets", id: "id", foreign: map[string]string{"source_id": "research_sources"}},
 	{name: "scheduled_report_tasks", id: "id", userFields: []string{"created_by"}},
@@ -72,7 +70,7 @@ func (s *Store) ExportFullBackup(ctx context.Context, principal domain.Principal
 			}
 			filter := "t.tenant_id=$1"
 			switch spec.name {
-			case "knowledge_documents", "research_sources":
+			case "research_sources":
 				filter += " AND t.deleted_at IS NULL"
 			case "research_drafts":
 				filter += " AND EXISTS(SELECT 1 FROM research_sources s WHERE s.tenant_id=t.tenant_id AND s.id=t.source_id AND s.deleted_at IS NULL)"
@@ -123,8 +121,6 @@ func (s *Store) RestoreFullBackup(ctx context.Context, principal domain.Principa
 			UNION ALL SELECT 1 FROM attachments WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM conversations WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM user_preferences WHERE tenant_id=$1
-			UNION ALL SELECT 1 FROM knowledge_collections WHERE tenant_id=$1
-			UNION ALL SELECT 1 FROM knowledge_documents WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM research_jobs WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM research_sources WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM scheduled_report_tasks WHERE tenant_id=$1
@@ -135,15 +131,14 @@ func (s *Store) RestoreFullBackup(ctx context.Context, principal domain.Principa
 			return apierror.New("BACKUP_RESTORE_TENANT_NOT_EMPTY", "仅允许恢复到空的个人空间", 409)
 		}
 		var noteQuota int
-		var attachmentQuota, knowledgeQuota int64
-		if err := tx.QueryRow(ctx, `SELECT note_quota,attachment_quota_bytes,knowledge_quota_bytes
+		var attachmentQuota int64
+		if err := tx.QueryRow(ctx, `SELECT note_quota,attachment_quota_bytes
 			FROM tenants WHERE id=$1`, principal.TenantID).
-			Scan(&noteQuota, &attachmentQuota, &knowledgeQuota); err != nil {
+			Scan(&noteQuota, &attachmentQuota); err != nil {
 			return err
 		}
 		if len(backup.Tables["notes"]) > noteQuota ||
-			backupTableBytes(backup.Tables["attachments"], "size") > attachmentQuota ||
-			backupTableBytes(backup.Tables["knowledge_documents"], "size") > knowledgeQuota {
+			backupTableBytes(backup.Tables["attachments"], "size") > attachmentQuota {
 			return apierror.New("BACKUP_RESTORE_QUOTA_EXCEEDED", "备份内容超过目标空间配额", 409)
 		}
 
@@ -158,6 +153,12 @@ func (s *Store) RestoreFullBackup(ctx context.Context, principal domain.Principa
 				for _, field := range spec.userFields {
 					row[field] = principal.UserID
 				}
+				if spec.name == "research_jobs" {
+					delete(row, "target_collection_id")
+				}
+				if spec.name == "research_drafts" {
+					delete(row, "knowledge_document_id")
+				}
 				for field, targetTable := range spec.foreign {
 					if row[field] == nil {
 						continue
@@ -167,16 +168,6 @@ func (s *Store) RestoreFullBackup(ctx context.Context, principal domain.Principa
 						return apierror.New("BACKUP_REFERENCE_INVALID", "备份包含无效的资源关联", 422)
 					}
 					row[field] = mapped
-				}
-				if spec.name == "knowledge_documents" {
-					row["status"] = "uploaded"
-					row["page_count"] = nil
-					row["character_count"] = 0
-					row["parent_chunk_count"] = 0
-					row["child_chunk_count"] = 0
-					row["language"] = nil
-					row["error_code"] = nil
-					row["error_message"] = nil
 				}
 				if !spec.withoutID {
 					delete(row, spec.id)
@@ -208,13 +199,6 @@ func (s *Store) RestoreFullBackup(ctx context.Context, principal domain.Principa
 					return fmt.Errorf("restore %s: %w", spec.name, err)
 				}
 				idMaps[spec.name][oldID] = newID
-				if spec.name == "knowledge_documents" && row["deleted_at"] == nil {
-					if _, err := tx.Exec(ctx, `INSERT INTO knowledge_index_jobs
-						(tenant_id,document_id,target_index_version) VALUES($1,$2,$3)`,
-						principal.TenantID, newID, row["index_version"]); err != nil {
-						return fmt.Errorf("queue restored knowledge document: %w", err)
-					}
-				}
 			}
 		}
 		return audit(ctx, tx, principal, "backup.restore", 0)

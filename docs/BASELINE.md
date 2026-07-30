@@ -67,4 +67,4 @@ docker compose up -d --build
 - 所有 Go 源码必须通过 `gofmt`；允许使用 Go 惯例中的 Tab 缩进。
 - `db`、`llm-gateway` 和 `backend` 必须为 healthy。
 - 本地 Qwen embedding 必须通过经 LiteLLM 的单条、批量、中英文、维度异常和不可用降级验收。
-- 新 PostgreSQL 空库必须完成 18 张表、RLS、注册和登录验收。
+- 新 PostgreSQL 空库必须完成 32 张表、RLS、注册和登录验收。

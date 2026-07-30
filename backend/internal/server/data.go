@@ -81,7 +81,6 @@ type backupFileSpec struct {
 
 var backupFileSpecs = []backupFileSpec{
 	{table: "attachments", pathField: "stored_path", archiveRoot: "attachments"},
-	{table: "knowledge_documents", pathField: "stored_path", archiveRoot: "knowledge"},
 	{table: "research_assets", pathField: "storage_path", archiveRoot: "research"},
 }
 

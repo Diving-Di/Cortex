@@ -25,7 +25,6 @@ func TestFullBackupTableWhitelistExcludesSensitiveState(t *testing.T) {
 	}
 	for _, required := range []string{
 		"notes", "note_revisions", "tags", "attachments",
-		"knowledge_collections", "knowledge_documents",
 		"research_sources", "research_drafts", "research_assets",
 	} {
 		if !seen[required] {

@@ -1,5 +1,0 @@
-# Cortex 在线向量验收
-
-苍穹计划的发布口令是“青竹七号”。这个虚构信息只用于知识库租户隔离和在线 embedding 验收。
-
-The fictional Project Sky release code is Bamboo Seven. This sentence verifies bilingual retrieval.

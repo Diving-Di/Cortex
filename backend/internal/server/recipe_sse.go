@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,7 +12,7 @@ import (
 	"diary-listener/backend/internal/store"
 )
 
-func (s *Server) writeKnowledgeSSE(
+func (s *Server) writeRecipeSSE(
 	w http.ResponseWriter,
 	r *http.Request,
 	prompt string,
@@ -88,4 +90,13 @@ func (s *Server) writeKnowledgeSSE(
 	}); err != nil {
 		s.logger.Error("record AI usage", "error", err)
 	}
+}
+
+func writeNamedSSE(w http.ResponseWriter, event string, value any) error {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload)
+	return err
 }

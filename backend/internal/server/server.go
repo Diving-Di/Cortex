@@ -96,13 +96,6 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.POST("/api/v1/exports/markdown", gin.WrapF(s.exportMarkdown))
 			active.GET("/api/v1/backups/full", gin.WrapF(s.exportFullBackup))
 			active.POST("/api/v1/backups/full/restore", gin.WrapF(s.restoreFullBackup))
-			active.GET("/api/v1/knowledge/collections", gin.WrapF(s.listKnowledgeCollections))
-			active.GET("/api/v1/knowledge/documents", gin.WrapF(s.listKnowledgeDocuments))
-			active.GET("/api/v1/knowledge/documents/:documentID", gin.WrapF(s.getKnowledgeDocument))
-			active.GET("/api/v1/knowledge/documents/:documentID/download", gin.WrapF(s.downloadKnowledgeDocument))
-			active.GET("/api/v1/knowledge/documents/:documentID/preview", gin.WrapF(s.previewKnowledgeDocument))
-			active.POST("/api/v1/knowledge/chat", gin.WrapF(s.knowledgeChat))
-			active.GET("/api/v1/knowledge/messages/:messageID/sources", gin.WrapF(s.knowledgeSourceList))
 			active.GET("/api/v1/recipes/today", gin.WrapF(s.getTodayRecipe))
 			active.POST("/api/v1/recipes/chat", gin.WrapF(s.recipesChat))
 			active.GET("/api/v1/recipes/messages/:messageID/sources", gin.WrapF(s.recipeSourceList))
@@ -478,7 +471,7 @@ func (s *Server) recipesChat(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	conversationContext := s.knowledgeConversationContext(r, principal, req.ConversationID)
+	conversationContext := s.recipeConversationContext(r, principal, req.ConversationID)
 	events, err := s.aiWorkflow().AnswerKnowledge(s.aiContext(r.Context(), "recipe_chat", principal), ai.KnowledgeInput{
 		Question: req.Question, ConversationContext: conversationContext, Evidence: evidence,
 	})
@@ -493,7 +486,7 @@ func (s *Server) recipesChat(w http.ResponseWriter, r *http.Request) {
 		apiSources = append(apiSources, domain.Source{Type: "recipe_document", ID: c.DocumentID, Title: c.Title, Snippet: &snippet, Rank: i + 1})
 	}
 
-	s.writeKnowledgeSSE(w, r, req.Question, events, apiSources, func(ctx context.Context, answer string) (int32, int32, error) {
+	s.writeRecipeSSE(w, r, req.Question, events, apiSources, func(ctx context.Context, answer string) (int32, int32, error) {
 		// save using recipe-specific store API
 		messageID, conversationID, err := s.store.SaveRecipeAnswer(ctx, principal, req.ConversationID, req.RequestID, req.Question, answer, candidates)
 		return messageID, conversationID, err

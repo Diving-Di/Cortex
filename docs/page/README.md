@@ -7,9 +7,7 @@
 
 | 路由 | 页面组件 | 说明文档 | 状态 |
 | --- | --- | --- | --- |
-| `/knowledge` | `features/knowledge/KnowledgePage.tsx` | [个人知识库文档页](KNOWLEDGE_PAGE_ARCHITECTURE.md) | 已覆盖 |
 | `/research` | `features/research/ResearchPage.tsx` | [小红书研究页](RESEARCH_PAGE_ARCHITECTURE.md) | 已覆盖 |
-| `/assistant` | `features/assistant/GrowthAssistantPage.tsx` | [成长助手页](ASSISTANT_PAGE_ARCHITECTURE.md) | 已覆盖 |
 
 ## 尚未建立独立页面说明
 

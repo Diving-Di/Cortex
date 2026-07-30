@@ -34,7 +34,8 @@ AI 是可选能力。生成模型、Embedding 或 Reranker 不可用时，账号
 - 保存跨设备忌口与时区，推荐不会命中规范化后的忌口词项。
 - 首页提供三个与当日菜品相关的问题，也可输入任意烹饪问题。
 - 菜谱问答使用 512 维中文 GTE Embedding 与 BGE CrossEncoder 精排，回答保存系统菜谱引用。
-- 历史个人知识数据只保留兼容读取；普通用户不再拥有上传、删除或重建索引入口。
+- 知识库仅由仓库内 `resources/howtocook` 静态语料构成，不接收用户、研究、日报、
+  周报或个人笔记内容。
 
 ### 小红书研究
 
@@ -43,14 +44,14 @@ AI 是可选能力。生成模型、Embedding 或 Reranker 不可用时，账号
 - 通过 LiteLLM 生成摘要、关键观点、分类和标签研究草稿。
 - 任务、来源和草稿使用 PostgreSQL 持久化并受 RLS 隔离，不依赖 Redis。
 - 支持按个人租户扫码授权；会话使用 AES-256-GCM 加密保存，二维码和 Chromium Profile 仅临时存在。
-- 采集授权、平台限流或 AI/OCR 不可用时按能力降级，不影响笔记和知识库管理。
+- 采集授权、平台限流或 AI/OCR 不可用时按能力降级，不影响笔记和静态菜谱知识库。
 
 ### 数据自主与隔离
 
 - 将有效笔记导出为 Markdown ZIP，或导出包含私有文件和资源关系的完整备份 ZIP。
 - 每个账号自动对应一个个人空间，租户身份只由服务端根据 Token 解析。
 - PostgreSQL RLS 与显式 `tenant_id` 条件共同约束业务查询。
-- 附件和知识原文件保存在受控数据目录中，不作为公开静态资源暴露。
+- 附件保存在受控数据目录中，不作为公开静态资源暴露。
 
 Markdown ZIP 只用于内容交换。版本化完整备份可恢复到空的个人空间并重映射资源 ID，且排除
 Token、密钥、小红书授权会话和敏感审计；生产灾备仍应覆盖 PostgreSQL 数据库与应用数据卷。
@@ -92,13 +93,13 @@ Browser
 │   ├── db/schema.sql            # 新实例初始化基线
 │   ├── internal/
 │   │   ├── ai/                  # 生成、Embedding 与 Rerank 客户端
-│   │   ├── knowledge/           # 文档提取、切块与索引
+│   │   ├── recipe/              # HowToCook 同步、索引与检索
 │   │   ├── server/              # HTTP 契约和后台 worker
 │   │   └── store/               # SQL、事务与 RLS 数据访问
 │   └── scripts/                 # 数据库初始化与验收脚本
 ├── frontend/src/
 │   ├── api/                     # API 请求封装
-│   ├── features/                # 工作台、笔记、知识库、助手、报告等
+│   ├── features/                # 工作台、笔记、菜谱、研究、报告等
 │   └── routes/                  # 路由保护
 ├── docs/                        # API、设计、网关与验收文档
 ├── docker-compose.yml
@@ -197,12 +198,8 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 | --- | --- |
 | `DATABASE_URL` | 业务连接，必须使用低权限 `diary_app` |
 | `MIGRATION_DATABASE_URL` | 迁移与 scheduler claim 使用的管理连接 |
-| `DIARY_DATA_DIR` | 附件、知识原文件、导出和日志的数据根目录 |
+| `DIARY_DATA_DIR` | 附件、导出和日志的数据根目录 |
 | `MAX_ATTACHMENT_BYTES` | 单附件上限，默认 20 MiB |
-| `KNOWLEDGE_MAX_FILE_BYTES` | 单知识文件上限，默认 50 MiB |
-| `KNOWLEDGE_MAX_PDF_PAGES` | PDF 页数上限，默认 500 |
-| `KNOWLEDGE_MAX_EXTRACTED_CHARS` | 单文件提取字符上限，默认 5,000,000 |
-| `RAG_INDEX_WORKERS` | 知识索引 worker 数，默认 2 |
 | `RAG_EMBEDDING_*` | Embedding 地址、凭据、逻辑模型和维度 |
 | `RAG_RERANK_*` | Reranker 地址和模型 |
 | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 后端访问 LiteLLM 的生成配置 |
@@ -266,12 +263,10 @@ docker compose config --quiet
 .\backend\scripts\non_ai_smoke.ps1
 .\backend\scripts\ai_acceptance.ps1
 docker compose --profile local-ai up -d --build reranker-service
-.\backend\scripts\knowledge_acceptance.ps1
+.\backend\scripts\recipe_sync_acceptance.ps1
 ```
 
-知识验收脚本使用固定合成 TXT/PDF/DOCX 与双租户数据，对跨租户 404、删除后不召回、
-答案事实和租户泄漏进行断言，并硬性检查 Recall@8、MRR、nDCG、citation precision、
-无答案准确率以及检索/端到端 P95 门槛。
+菜谱验收脚本验证 HowToCook 静态语料 revision、推荐稳定性、建议问题和问答来源。
 
 ## 文档
 

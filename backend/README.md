@@ -8,9 +8,9 @@ Cortex 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。Go module、
 
 - 认证、个人租户与 PostgreSQL RLS；
 - 笔记、版本、标签、搜索和 dashboard；
-- 附件、知识原文件和 Markdown 导出；
-- LiteLLM Proxy 上的 SSE、AI 整理、报告、回忆与统一来源知识问答；
-- `/api/v1` 会话、知识文件预览/下载/重新索引和 Prometheus 文本指标；
+- 附件和 Markdown 导出；
+- LiteLLM Proxy 上的 SSE、AI 整理、报告、回忆与 HowToCook 菜谱问答；
+- `/api/v1` 菜谱推荐、问答、来源和 Prometheus 文本指标；
 - 并发安全的定时报表 scheduler。
 
 ## 本地验证
@@ -61,15 +61,6 @@ LISTEN_ADDRESS=0.0.0.0:8000
 AI_BASE_URL=http://llm-gateway:4000/v1
 AI_API_KEY=<gateway-key>
 AI_MODEL=diary-default
-KNOWLEDGE_MAX_FILE_BYTES=52428800
-KNOWLEDGE_MAX_PDF_PAGES=500
-KNOWLEDGE_MAX_EXTRACTED_CHARS=5000000
-RAG_INDEX_WORKERS=2
-RAG_PARENT_TARGET_TOKENS=1800
-RAG_PARENT_MAX_TOKENS=2500
-RAG_CHILD_TARGET_TOKENS=350
-RAG_CHILD_MAX_TOKENS=500
-RAG_CHILD_OVERLAP_TOKENS=50
 RAG_EMBEDDING_BASE_URL=http://embedding-service:4000/v1
 RAG_EMBEDDING_MODEL=iic/nlp_gte_sentence-embedding_chinese-small
 RAG_EMBEDDING_DIMENSIONS=512
@@ -80,24 +71,8 @@ RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 菜谱模型由 Compose 内部服务从 ModelScope 固定 revision 构建并离线运行；
 Embedding 输出严格为 512 维，Reranker 使用 BGE CrossEncoder。
 
-知识文件上传、下载和删除不依赖生成模型。索引 worker 对 embedding 请求按 16 条分批，
-对 429/502/503/504 和网络瞬时错误最多重试 2 次；embedding 不可用时文档保持失败状态并可
-后续重建索引。知识问答的 embedding 不可用时退化为 FTS，reranker 不可用时退化为 RRF；
-生成模型未配置时返回 `AI_NOT_CONFIGURED`，不影响知识文件管理。
-
-父子块配置在启动时做强校验：target 不得大于 max，child max 必须小于 parent max，
-overlap 必须小于 child target。PDF 提取受 45 秒 worker 超时、页数和字符数限制，
-并处理重复页眉页脚与可判定的跨页续接；DOCX 还受 ZIP 条目、解压规模和压缩比限制。
-表格过长时按行组切分并重复表头，检索命中父块边界时在统一预算内加入相邻 parent。
-
-`GET /metrics` 输出知识索引队列、失败数、累计处理时间以及检索请求数和累计延迟。
-指标不包含问题、正文、文件名或租户身份。知识文件删除失败留下的受控
-`.deleting` tombstone 会由后台清理器持续重试。
-
-可重复的知识库验收使用 `scripts/knowledge_acceptance.ps1`。它会创建两个临时租户，
-上传 `testdata/knowledge` 中的 TXT/PDF/DOCX 合成资料，验证跨租户隔离、完整 RAG、
-引用、无答案和删除后不可召回，并对 `testdata/rag/evaluation.jsonl` 的质量与延迟
-门槛硬失败。实际 reranker 路径需先启动 Compose 的 `local-ai` profile。
+知识库唯一来源是仓库内 `resources/howtocook`。用户、研究任务和个人笔记没有写入入口，
+后端也不提供 `/api/v1/knowledge/*` 文档管理接口。
 
 今日菜谱语料固定存放在 `resources/howtocook`，服务启动时会按 `SOURCE.json` revision
 幂等同步并排队生成 512 维向量。Compose 环境使用固定 revision 的

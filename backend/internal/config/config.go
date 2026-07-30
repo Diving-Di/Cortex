@@ -21,16 +21,6 @@ type Config struct {
 	LogLevel                slog.Level
 	DataDir                 string
 	MaxAttachmentBytes      int64
-	MaxKnowledgeFileBytes   int64
-	MaxKnowledgePDFPages    int
-	MaxKnowledgeChars       int
-	KnowledgeIndexWorkers   int
-	KnowledgeParentTarget   int
-	KnowledgeParentMax      int
-	KnowledgeChildTarget    int
-	KnowledgeChildMax       int
-	KnowledgeChildOverlap   int
-	DocumentParserURL       string
 	EmbeddingBaseURL        string
 	EmbeddingAPIKey         string
 	EmbeddingModel          string
@@ -107,57 +97,9 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	maxKnowledgeFileBytes, err := positiveInt("KNOWLEDGE_MAX_FILE_BYTES", 50*1024*1024)
-	if err != nil {
-		return Config{}, err
-	}
-	maxKnowledgePDFPages, err := positiveInt("KNOWLEDGE_MAX_PDF_PAGES", 500)
-	if err != nil {
-		return Config{}, err
-	}
-	maxKnowledgeChars, err := positiveInt("KNOWLEDGE_MAX_EXTRACTED_CHARS", 5_000_000)
-	if err != nil {
-		return Config{}, err
-	}
-	knowledgeIndexWorkers, err := positiveInt("RAG_INDEX_WORKERS", 2)
-	if err != nil {
-		return Config{}, err
-	}
 	embeddingDimensions, err := positiveInt("RAG_EMBEDDING_DIMENSIONS", 512)
 	if err != nil {
 		return Config{}, err
-	}
-	parentTarget, err := positiveInt("RAG_PARENT_TARGET_TOKENS", 1800)
-	if err != nil {
-		return Config{}, err
-	}
-	parentMax, err := positiveInt("RAG_PARENT_MAX_TOKENS", 2500)
-	if err != nil {
-		return Config{}, err
-	}
-	childTarget, err := positiveInt("RAG_CHILD_TARGET_TOKENS", 350)
-	if err != nil {
-		return Config{}, err
-	}
-	childMax, err := positiveInt("RAG_CHILD_MAX_TOKENS", 500)
-	if err != nil {
-		return Config{}, err
-	}
-	childOverlap, err := nonNegativeInt("RAG_CHILD_OVERLAP_TOKENS", 50)
-	if err != nil {
-		return Config{}, err
-	}
-	if parentTarget > parentMax {
-		return Config{}, fmt.Errorf("RAG_PARENT_TARGET_TOKENS must not exceed RAG_PARENT_MAX_TOKENS")
-	}
-	if childTarget > childMax {
-		return Config{}, fmt.Errorf("RAG_CHILD_TARGET_TOKENS must not exceed RAG_CHILD_MAX_TOKENS")
-	}
-	if childMax >= parentMax {
-		return Config{}, fmt.Errorf("RAG_CHILD_MAX_TOKENS must be smaller than RAG_PARENT_MAX_TOKENS")
-	}
-	if childOverlap >= childTarget {
-		return Config{}, fmt.Errorf("RAG_CHILD_OVERLAP_TOKENS must be smaller than RAG_CHILD_TARGET_TOKENS")
 	}
 	dataDir, err := filepath.Abs(valueOrDefault("DIARY_DATA_DIR", "./data"))
 	if err != nil {
@@ -238,16 +180,6 @@ func Load() (Config, error) {
 		LogLevel:                parseLogLevel(valueOrDefault("LOG_LEVEL", "INFO")),
 		DataDir:                 dataDir,
 		MaxAttachmentBytes:      int64(maxAttachmentBytes),
-		MaxKnowledgeFileBytes:   int64(maxKnowledgeFileBytes),
-		MaxKnowledgePDFPages:    maxKnowledgePDFPages,
-		MaxKnowledgeChars:       maxKnowledgeChars,
-		KnowledgeIndexWorkers:   knowledgeIndexWorkers,
-		KnowledgeParentTarget:   parentTarget,
-		KnowledgeParentMax:      parentMax,
-		KnowledgeChildTarget:    childTarget,
-		KnowledgeChildMax:       childMax,
-		KnowledgeChildOverlap:   childOverlap,
-		DocumentParserURL:       strings.TrimSpace(os.Getenv("DOCUMENT_PARSER_URL")),
 		EmbeddingBaseURL:        valueOrDefault("RAG_EMBEDDING_BASE_URL", "http://llm-gateway:4000/v1"),
 		EmbeddingAPIKey:         strings.TrimSpace(os.Getenv("RAG_EMBEDDING_API_KEY")),
 		EmbeddingModel:          valueOrDefault("RAG_EMBEDDING_MODEL", "iic/nlp_gte_sentence-embedding_chinese-small"),

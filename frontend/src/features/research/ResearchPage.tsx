@@ -27,7 +27,6 @@ import { CloseCircleOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnsType } from 'antd/es/table';
 import type { FormInstance } from 'antd';
-import { listKnowledgeCollections } from '../../api/knowledge';
 import {
   batchIgnoreResearchSources,
   cancelResearchJob,
@@ -83,7 +82,6 @@ type CreateValues = {
   mode: 'keyword' | 'urls';
   input: string;
   target_count: number;
-  target_collection_id?: number;
   search_sort?: 'general' | 'time_descending' | 'popularity_descending';
 };
 
@@ -214,12 +212,6 @@ export default function ResearchPage({ token }: Props) {
     queryFn: () => getResearchSource(token, selectedSourceID!),
     enabled: coreEnabled && Boolean(selectedSourceID),
   });
-  const collections = useQuery({
-    queryKey: ['knowledge-collections'],
-    queryFn: () => listKnowledgeCollections(token),
-    enabled: coreEnabled,
-  });
-
   useEffect(() => {
     if (selectedSource.data?.draft) {
       draftForm.setFieldsValue({
@@ -249,7 +241,6 @@ export default function ResearchPage({ token }: Props) {
         mode: values.mode,
         ...(values.mode === 'keyword' ? { keywords: lines } : { urls: lines }),
         target_count: values.target_count,
-        target_collection_id: values.target_collection_id,
         ...(values.mode === 'keyword' ? { search_sort: values.search_sort || 'general' } : {}),
         idempotency_key: crypto.randomUUID(),
       });
@@ -414,7 +405,7 @@ export default function ResearchPage({ token }: Props) {
         .map((item) => item.id),
     [selectedIDs, sources.data],
   );
-  const pageError = authorization.error || jobs.error || sources.error || collections.error;
+  const pageError = authorization.error || jobs.error || sources.error;
 
   if (authorization.isLoading) {
     return (
@@ -776,15 +767,6 @@ export default function ResearchPage({ token }: Props) {
               />
             </Form.Item>
           )}
-          <Form.Item name="target_collection_id" label="目标知识集合（可选）">
-            <Select
-              allowClear
-              options={(collections.data || []).map((item) => ({
-                value: item.id,
-                label: item.name,
-              }))}
-            />
-          </Form.Item>
         </Form>
       </Modal>
 

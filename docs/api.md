@@ -103,23 +103,11 @@ data: [DONE]
 Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 master key
 不会进入业务后端或前端。未配置虚拟密钥时返回 `AI_NOT_CONFIGURED`。
 
-## 个人知识库与 RAG Chat
+## 静态 HowToCook 知识库
 
-所有知识资源均从服务端认证主体解析租户，客户端不能提交 `tenant_id` 选择空间。上传使用 `multipart/form-data`，字段为 `file`，可选 `collection_id`；支持 `.txt`、文本型 `.pdf` 和 `.docx`，默认上限 50 MiB。文件进入异步索引流程，状态依次为 `uploaded`、`extracting`、`indexing`、`ready` 或 `failed`。
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/api/v1/knowledge/collections` | 兼容读取历史知识集合 |
-| `GET` | `/api/v1/knowledge/documents` | 兼容读取历史知识文件 |
-| `GET` | `/api/v1/knowledge/documents/{document_id}` | 获取文件与索引状态 |
-| `GET` | `/api/v1/knowledge/documents/{document_id}/download` | 鉴权下载原文件 |
-| `GET` | `/api/v1/knowledge/documents/{document_id}/preview` | 获取受限的提取预览 |
-| `POST` | `/api/v1/knowledge/chat` | 在指定集合/文件范围内检索并以 SSE 回答 |
-| `GET` | `/api/v1/knowledge/messages/{message_id}/sources` | 查询回答引用的知识来源 |
-
-历史知识库只保留兼容读取与旧会话读取；上传、删除、重建索引和集合写入接口不再公开。
-
-### 今日菜谱
+知识库只由仓库中的 `backend/resources/howtocook` 构成。服务启动时按固定 revision
+同步到系统菜谱表并建立索引；用户、研究任务、日报、周报和个人笔记均不能写入知识库。
+系统不提供 `/api/v1/knowledge/*` 上传、集合、文档管理或通用知识 Chat 接口。
 
 | 方法与路径 | 说明 |
 | --- | --- |
@@ -129,28 +117,7 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 | `GET /api/v1/settings/preferences` | 读取忌口、时区和版本 |
 | `PUT /api/v1/settings/preferences` | 以 `version` 乐观锁更新忌口与时区 |
 
-知识文件上传支持 UTF-8 TXT、Markdown（`.md`）、文本型 PDF 和 DOCX。
-
-文件列表支持 `collection_id`、`search`、`status`、`limit` 和 `offset` 查询参数。
-`status` 可为 `uploaded`、`extracting`、`indexing`、`ready` 或 `failed`；进入删除流程的
-文件立即从普通列表消失。
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/api/v1/conversations` | 查询知识、成长与全部来源会话 |
-| `POST` | `/api/v1/conversations` | 使用 `title` 和 `source_scope` 新建会话 |
-| `GET` | `/api/v1/conversations/{conversation_id}` | 读取会话及消息 |
-| `DELETE` | `/api/v1/conversations/{conversation_id}` | 删除会话及其消息和引用 |
-
-会话使用 `/api/v1/conversations` 的列表、新建、读取和删除接口。Chat 请求包含
-`question`、幂等键 `request_id`、`source_scope`（`knowledge`、`growth` 或 `all`），
-可选 `conversation_id`、`collection_ids` 和 `document_ids`。省略 `request_id` 时沿用
-服务端生成的请求追踪 ID。重试相同键会重放已保存回答，不会产生重复消息。
-历史知识检索采用向量召回与 PostgreSQL 全文召回进行混合排序；回答只能依据返回的
-父块上下文。无证据时返回 `KNOWLEDGE_NO_EVIDENCE`，不会调用生成模型。Embedding
-不可用时降级为 FTS，不绕过 LiteLLM 切换调用路径。
-
-知识 Chat 的 SSE 事件顺序如下：
+菜谱 Chat 的 SSE 事件顺序如下：
 
 ```text
 event: retrieval
@@ -171,9 +138,8 @@ data: {"conversation_id":12,"message_id":34}
 重命名；版本冲突返回 `CONVERSATION_VERSION_CONFLICT`。超过 20 条消息的会话会保存压缩摘要，
 回答上下文使用摘要与最近 10 条消息，但事实来源仍在每轮重新检索。
 
-失败使用 `event: error`，`data` 只包含稳定 `code` 和脱敏 `message`。来源统一包含
-`source_type`、`source_id`、`title`、`rank` 和 `source_deleted`，知识文件还可包含
-`heading`、`page_from`、`page_to` 与最小 `snippet`。
+失败使用 `event: error`，`data` 只包含稳定 `code` 和脱敏 `message`。菜谱来源包含
+`source_type`、`source_id`、`title`、`rank`、`source_deleted` 与最小 `snippet`。
 
 ## 定时报告
 
@@ -197,10 +163,11 @@ claim 保证同一到期任务只生成一条运行记录。
 | `POST` | `/api/v1/backups/full/restore` | 将完整备份 ZIP 恢复到空租户 |
 
 Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 格式，包含笔记、标签、
-版本、附件、定时报告、知识原文件以及研究来源、草稿和资产；不包含 Token、AI Provider、
+版本、附件、定时报告以及研究来源、草稿和资产；恢复旧备份时会忽略其中的个人知识数据及
+研究知识关联字段；不包含 Token、AI Provider、
 用量、敏感审计、小红书 Cookie 或授权尝试。恢复会重新分配并映射资源 ID，校验 ZIP 路径和
 文件 SHA-256，且只允许目标租户为空时执行。数据库与文件卷的基础设施灾备仍由部署者负责。
-备份超过目标租户的笔记、附件或知识文件配额时返回 `BACKUP_RESTORE_QUOTA_EXCEEDED`。
+备份超过目标租户的笔记或附件配额时返回 `BACKUP_RESTORE_QUOTA_EXCEEDED`。
 
 ## 小红书研究
 
@@ -278,7 +245,7 @@ Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 
 
 创建任务时 `mode` 为 `keyword` 或 `urls`。关键词模式提交 `keywords`，链接模式提交
 `urls`；两种模式均提交 `target_count` 和幂等键 `idempotency_key`，可选
-`target_collection_id`。关键词模式可选 `search_sort`，仅接受 `general`、
+研究任务不接受目标知识集合。关键词模式可选 `search_sort`，仅接受 `general`、
 `time_descending` 或 `popularity_descending`，未知值按 `general` 处理。客户端提交的
 `tenant_id` 不参与租户选择。
 

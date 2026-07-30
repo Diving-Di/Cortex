@@ -1,18 +1,14 @@
 package server
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"diary-listener/backend/internal/apierror"
@@ -23,13 +19,12 @@ import (
 )
 
 type createResearchJobRequest struct {
-	Mode               string   `json:"mode"`
-	Keywords           []string `json:"keywords"`
-	URLs               []string `json:"urls"`
-	TargetCount        int      `json:"target_count"`
-	TargetCollectionID *int64   `json:"target_collection_id"`
-	IdempotencyKey     string   `json:"idempotency_key"`
-	SearchSort         string   `json:"search_sort"`
+	Mode           string   `json:"mode"`
+	Keywords       []string `json:"keywords"`
+	URLs           []string `json:"urls"`
+	TargetCount    int      `json:"target_count"`
+	IdempotencyKey string   `json:"idempotency_key"`
+	SearchSort     string   `json:"search_sort"`
 }
 
 func (s *Server) createResearchJob(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +101,7 @@ func (s *Server) createResearchJob(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, _ := json.Marshal(payload)
 	job, err := s.store.CreateResearchJob(r.Context(), principalFrom(r.Context()), request.Mode,
-		raw, request.TargetCount, request.TargetCollectionID, idempotencyKey, s.cfg.ResearchMaxAttempts)
+		raw, request.TargetCount, idempotencyKey, s.cfg.ResearchMaxAttempts)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -133,7 +128,7 @@ func (s *Server) listResearchJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getResearchJob(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "jobID")
+	id, err := researchPathID(r, "jobID")
 	if err == nil {
 		var job store.ResearchJob
 		job, err = s.store.GetResearchJob(r.Context(), principalFrom(r.Context()), id)
@@ -146,7 +141,7 @@ func (s *Server) getResearchJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cancelResearchJob(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "jobID")
+	id, err := researchPathID(r, "jobID")
 	if err == nil {
 		err = s.store.CancelResearchJob(r.Context(), principalFrom(r.Context()), id)
 	}
@@ -159,7 +154,7 @@ func (s *Server) cancelResearchJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) retryResearchJob(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "jobID")
+	id, err := researchPathID(r, "jobID")
 	if err == nil {
 		err = s.store.RetryResearchJob(r.Context(), principalFrom(r.Context()), id)
 	}
@@ -202,7 +197,7 @@ func (s *Server) listResearchSources(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getResearchSource(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "sourceID")
+	id, err := researchPathID(r, "sourceID")
 	if err == nil {
 		var item store.ResearchSource
 		item, err = s.store.GetResearchSource(r.Context(), principalFrom(r.Context()), id)
@@ -215,7 +210,7 @@ func (s *Server) getResearchSource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) recollectResearchSource(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "sourceID")
+	id, err := researchPathID(r, "sourceID")
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -232,7 +227,7 @@ func (s *Server) recollectResearchSource(w http.ResponseWriter, r *http.Request)
 	}
 	raw, _ := json.Marshal(map[string]any{"urls": []string{source.NormalizedURL}})
 	job, err := s.store.CreateResearchJob(r.Context(), principal, "urls", raw, 1,
-		source.TargetCollectionID, uuid.NewString(), s.cfg.ResearchMaxAttempts)
+		uuid.NewString(), s.cfg.ResearchMaxAttempts)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -249,7 +244,7 @@ type updateResearchDraftRequest struct {
 }
 
 func (s *Server) updateResearchDraft(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "sourceID")
+	id, err := researchPathID(r, "sourceID")
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -282,7 +277,7 @@ type researchIDsRequest struct {
 }
 
 func (s *Server) ignoreResearchSource(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "sourceID")
+	id, err := researchPathID(r, "sourceID")
 	if err == nil {
 		err = s.store.IgnoreResearchSources(r.Context(), principalFrom(r.Context()), []int64{id})
 	}
@@ -310,92 +305,8 @@ func (s *Server) batchIgnoreResearchSources(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) saveResearchSource(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "sourceID")
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	document, err := s.saveResearchSourceToKnowledge(r, id)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	researchSourcesSaved.Add(1)
-	httpx.JSON(w, http.StatusAccepted, document.Response())
-}
-
-func (s *Server) batchSaveResearchSources(w http.ResponseWriter, r *http.Request) {
-	var request researchIDsRequest
-	if err := httpx.DecodeJSON(r, &request); err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if !validResearchIDs(request.IDs) {
-		httpx.WriteError(w, s.logger, apierror.Validation(nil))
-		return
-	}
-	result := make([]store.KnowledgeDocumentResponse, 0, len(request.IDs))
-	for _, id := range request.IDs {
-		document, err := s.saveResearchSourceToKnowledge(r, id)
-		if err != nil {
-			httpx.WriteError(w, s.logger, err)
-			return
-		}
-		result = append(result, document.Response())
-	}
-	researchSourcesSaved.Add(uint64(len(result)))
-	httpx.JSON(w, http.StatusAccepted, result)
-}
-
-func (s *Server) saveResearchSourceToKnowledge(r *http.Request, id int64) (store.KnowledgeDocument, error) {
-	principal := principalFrom(r.Context())
-	source, err := s.store.GetResearchSource(r.Context(), principal, id)
-	if err != nil {
-		return store.KnowledgeDocument{}, err
-	}
-	if source.Draft == nil {
-		return store.KnowledgeDocument{}, apierror.New("RESEARCH_VERSION_CONFLICT", "研究草稿尚未生成", 409)
-	}
-	if source.Draft.KnowledgeDocumentID != nil {
-		return s.store.GetKnowledgeDocument(r.Context(), principal, *source.Draft.KnowledgeDocumentID)
-	}
-	content := store.ResearchTextFile(source)
-	digest := sha256.Sum256([]byte(content))
-	now := time.Now().UTC()
-	relative := filepath.Join("knowledge", principal.TenantID.String(), now.Format("2006"), now.Format("01"), uuid.NewString()+".txt")
-	target, err := s.safeDataPath(relative, "knowledge")
-	if err != nil {
-		return store.KnowledgeDocument{}, err
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0750); err != nil {
-		return store.KnowledgeDocument{}, err
-	}
-	if err := os.WriteFile(target, []byte(content), 0640); err != nil {
-		return store.KnowledgeDocument{}, err
-	}
-	name := truncateRunes(strings.TrimSpace(source.Title), 200)
-	if name == "" {
-		name = fmt.Sprintf("小红书研究-%d", source.ID)
-	}
-	item, err := s.store.AddKnowledgeDocument(r.Context(), principal, store.KnowledgeDocument{
-		CollectionID: source.TargetCollectionID, OriginalName: name + ".txt", StoredPath: filepath.ToSlash(relative),
-		MIMEType: "text/plain; charset=utf-8", Extension: ".txt",
-		Size: int64(len(content)), SHA256: hex.EncodeToString(digest[:]),
-	})
-	if err != nil {
-		_ = os.Remove(target)
-		return store.KnowledgeDocument{}, err
-	}
-	if err := s.store.MarkResearchSourceSaved(r.Context(), principal, source.ID, item.ID); err != nil {
-		_ = os.Remove(target)
-		return store.KnowledgeDocument{}, err
-	}
-	return item, nil
-}
-
 func (s *Server) downloadResearchAsset(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "assetID")
+	id, err := researchPathID(r, "assetID")
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -432,7 +343,7 @@ func (s *Server) downloadResearchAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteResearchSource(w http.ResponseWriter, r *http.Request) {
-	id, err := knowledgePathID(r, "sourceID")
+	id, err := researchPathID(r, "sourceID")
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -442,16 +353,6 @@ func (s *Server) deleteResearchSource(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
-	}
-	if source.Draft != nil && source.Draft.KnowledgeDocumentID != nil {
-		document, markErr := s.store.MarkKnowledgeDocumentDeleting(r.Context(), principal, *source.Draft.KnowledgeDocumentID)
-		if markErr != nil {
-			httpx.WriteError(w, s.logger, markErr)
-			return
-		}
-		if path, pathErr := s.safeDataPath(document.StoredPath, "knowledge"); pathErr == nil {
-			_ = os.Remove(path)
-		}
 	}
 	for _, asset := range source.Assets {
 		if path, pathErr := s.safeDataPath(asset.StoredPath, "research"); pathErr == nil {
@@ -478,6 +379,18 @@ func researchPagination(r *http.Request) (int, int, error) {
 		}
 	}
 	return limit, offset, nil
+}
+
+func researchPathID(r *http.Request, name string) (int64, error) {
+	raw := strings.TrimSpace(r.PathValue(name))
+	if raw == "" {
+		raw = strings.TrimSpace(r.URL.Query().Get(name))
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return 0, apierror.Validation(nil)
+	}
+	return value, nil
 }
 
 func cleanStrings(values []string, maxRunes int) []string {
