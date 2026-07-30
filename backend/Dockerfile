@@ -31,6 +31,7 @@ RUN apk add --no-cache ca-certificates chromium poppler-utils tzdata su-exec \
 WORKDIR /app
 COPY --from=builder /out/server /app/server
 COPY --from=builder /out/migrate /app/migrate
+COPY --from=builder /src/resources /app/resources
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
 

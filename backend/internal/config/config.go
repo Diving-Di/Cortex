@@ -63,6 +63,10 @@ type Config struct {
 	XHSAuthorizationTTL     time.Duration
 	XHSAuthorizationEnabled bool
 	XHSChromePath           string
+	RecipeDefaultTimezone   string
+	RecipeIndexWorkers      int
+	RecipeIndexBatchSize    int
+	RecipeIndexPollSeconds  int
 }
 
 func Load() (Config, error) {
@@ -264,7 +268,21 @@ func Load() (Config, error) {
 		XHSAuthorizationTTL:     time.Duration(xhsAuthorizationTTLSeconds) * time.Second,
 		XHSAuthorizationEnabled: parseBool(valueOrDefault("XHS_AUTHORIZATION_ENABLED", "false")),
 		XHSChromePath:           valueOrDefault("XHS_CHROME_PATH", "/usr/bin/chromium"),
+		RecipeDefaultTimezone:   valueOrDefault("RECIPE_DEFAULT_TIMEZONE", "Asia/Shanghai"),
+		RecipeIndexWorkers:      valueOrDefaultInt("RECIPE_INDEX_WORKERS", 1),
+		RecipeIndexBatchSize:    valueOrDefaultInt("RECIPE_INDEX_BATCH_SIZE", 16),
+		RecipeIndexPollSeconds:  valueOrDefaultInt("RECIPE_INDEX_POLL_SECONDS", 5),
 	}, nil
+}
+
+// helper to read int env with fallback without failing
+func valueOrDefaultInt(key string, fallback int) int {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return fallback
 }
 
 func parseBool(value string) bool {

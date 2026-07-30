@@ -3,7 +3,6 @@ import { Button, Menu, Spin } from 'antd';
 import {
   BarChartOutlined,
   BookOutlined,
-  BulbOutlined,
   EditOutlined,
   LogoutOutlined,
   MessageOutlined,
@@ -19,8 +18,7 @@ const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'));
 const NotesPage = lazy(() => import('./features/notes/NotesPage'));
 const ReportsPage = lazy(() => import('./features/reports/ReportsPage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
-const KnowledgePage = lazy(() => import('./features/knowledge/KnowledgePage'));
-const GrowthAssistantPage = lazy(() => import('./features/assistant/GrowthAssistantPage'));
+const TodayRecipePage = lazy(() => import('./features/recipes/TodayRecipePage'));
 const ResearchPage = lazy(() => import('./features/research/ResearchPage'));
 
 function AppLayout() {
@@ -51,8 +49,7 @@ function AppLayout() {
           items={[
             { key: '/', icon: <MessageOutlined />, label: '工作台' },
             { key: '/notes', icon: <EditOutlined />, label: '笔记本' },
-            { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
-            { key: '/assistant', icon: <BulbOutlined />, label: '成长助手' },
+            { key: '/recipes', icon: <BookOutlined />, label: '今日菜谱' },
             { key: '/research', icon: <SearchOutlined />, label: '小红书研究' },
             { key: '/reports', icon: <BarChartOutlined />, label: '周期报告' },
             { key: '/settings', icon: <SettingOutlined />, label: '设置' },
@@ -70,8 +67,9 @@ function AppLayout() {
           <Routes>
             <Route index element={<DashboardPage token={token} />} />
             <Route path="notes/*" element={<NotesPage token={token} />} />
-            <Route path="knowledge" element={<KnowledgePage token={token} />} />
-            <Route path="assistant" element={<GrowthAssistantPage token={token} />} />
+            <Route path="recipes" element={<TodayRecipePage token={token} />} />
+            <Route path="knowledge" element={<Navigate to="/recipes" replace />} />
+            <Route path="assistant" element={<Navigate to="/recipes" replace />} />
             <Route path="research" element={<ResearchPage token={token} />} />
             <Route path="reports" element={<ReportsPage token={token} />} />
             <Route path="settings" element={<SettingsPage />} />

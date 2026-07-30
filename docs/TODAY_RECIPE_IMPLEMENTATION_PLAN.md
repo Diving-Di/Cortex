@@ -953,3 +953,22 @@ docker compose config --quiet
 
 1. 小红书研究结果后续保存到“笔记本”还是仅保留“研究草稿”。本方案禁止其写入只读系统菜谱库。
 2. 是否提供只读菜谱详情页 `/recipes/{id}`。如果不提供，引用使用 Drawer 展示标题、章节和最小片段；不能继续跳转旧 `/knowledge` 页面。
+
+## 15. 当前实施状态总结（截至 2026-07-30）
+
+### 15.1 已完成事项
+
+- 已完成“系统菜谱语料”与“今日菜谱”改造的基础设施落地：新增 recipe corpus 迁移、recipe 系统表与同步/索引相关表，包含 `recipe_documents`、`recipe_parent_chunks`、`recipe_child_chunks`、`recipe_sync_runs`、`recipe_message_sources`、`user_preferences`、`recipe_index_jobs` 等结构。
+- 已完成菜谱语料解析、规范化、同步与索引骨架：新增 `backend/internal/recipe/document.go`、`parser.go`、`normalizer.go`、`corpus.go`、`sync.go`，实现对项目内 `backend/resources/howtocook` 的扫描、Markdown 解析、摘要生成、SHA-256 幂等校验，并将同步任务接入后台索引 job 队列。
+- 已完成后端检索与问答骨架：新增 `backend/internal/recipe/retriever.go`，支持 embedding 召回、reranker 重排、来源保存，并在 `/api/v1/recipes/chat` 和 `/api/v1/recipes/today` 中接入基础 flow。
+- 已完成偏好与推荐相关接口：新增用户偏好读取/更新接口、确定性每日推荐逻辑骨架、并把 `recipe` 会话/引用链路与现有 SSE 结构对齐。
+- 已完成本地embedding/reranker与开发环境支持：新增 `local-embedding` 与 `local-reranker` 的雏形服务、`docker-compose.local.yml` 与 `backend/scripts/ensure_recipe_vector_index.sh`，便于在本地或 CI 中拉起基础服务并构建向量索引。
+- 已完成前端入口替换：新增 `frontend/src/features/recipes/TodayRecipePage.tsx`、`frontend/src/api/recipes.ts`，并在 `frontend/src/App.tsx` 中将导航与路由切换到“今日菜谱”。
+
+### 15.2 待完成事项
+
+- 需在真实 Docker/Compose 环境中完成端到端验证：从语料同步、`recipe_index_jobs` 执行、embedding/reranker 调用，到 `/api/v1/recipes/today`、`/api/v1/recipes/chat` 的完整链路验证。
+- 需补齐真实 ModelScope/本地模型服务的部署与运行验证，确保 embedding 返回 512 维向量、reranker 正常排序，并且 `readyz` 能准确辨识组件健康状态。
+- 需补齐单元测试与集成测试：包括 parser/normalizer/sync/retriever/preferences、前端页面和 API 的测试，以及 `backend/scripts/recipe_sync_acceptance.ps1` 的验收脚本。
+- 需继续收敛旧的个人知识库入口与兼容逻辑：在不破坏历史数据的前提下，停止旧知识管理路由/页面对普通用户的可访问性，并完成迁移后的文档与运行说明更新。
+- 需完成生产可运维收敛：补齐指标、日志脱敏、备份恢复策略、向量索引调优（如 IVFFLAT 参数）以及对外部语料源变更的审计与回滚支持。

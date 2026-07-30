@@ -1,0 +1,7 @@
+services:
+  embedding-service:
+    ports:
+      - "127.0.0.1:4001:4000"
+  reranker-service:
+    ports:
+      - "127.0.0.1:8081:8080"

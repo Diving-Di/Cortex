@@ -83,13 +83,17 @@ services:
       - RAG_CHILD_TARGET_TOKENS=${RAG_CHILD_TARGET_TOKENS:-350}
       - RAG_CHILD_MAX_TOKENS=${RAG_CHILD_MAX_TOKENS:-500}
       - RAG_CHILD_OVERLAP_TOKENS=${RAG_CHILD_OVERLAP_TOKENS:-50}
-      - RAG_EMBEDDING_BASE_URL=${RAG_EMBEDDING_BASE_URL:-http://llm-gateway:4000/v1}
       - RAG_EMBEDDING_API_KEY=${LITELLM_VIRTUAL_KEY:?set LITELLM_VIRTUAL_KEY}
-      - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-cortex-embedding}
-      - RAG_EMBEDDING_DIMENSIONS=${RAG_EMBEDDING_DIMENSIONS:-1024}
+      - RAG_EMBEDDING_BASE_URL=http://embedding-service:4000/v1
+      - RAG_EMBEDDING_MODEL=iic/nlp_gte_sentence-embedding_chinese-small
+      - RAG_EMBEDDING_DIMENSIONS=512
       - RAG_EMBEDDING_SEND_DIMENSIONS=${RAG_EMBEDDING_SEND_DIMENSIONS:-false}
       - RAG_RERANK_BASE_URL=${RAG_RERANK_BASE_URL:-http://reranker-service:8080}
-      - RAG_RERANK_MODEL=${RAG_RERANK_MODEL:-Qwen/Qwen3-Reranker-0.6B}
+      - RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
+      - RECIPE_DEFAULT_TIMEZONE=${RECIPE_DEFAULT_TIMEZONE:-Asia/Shanghai}
+      - RECIPE_INDEX_WORKERS=${RECIPE_INDEX_WORKERS:-1}
+      - RECIPE_INDEX_BATCH_SIZE=${RECIPE_INDEX_BATCH_SIZE:-16}
+      - RECIPE_INDEX_POLL_SECONDS=${RECIPE_INDEX_POLL_SECONDS:-5}
       - AI_API_KEY=${LITELLM_VIRTUAL_KEY:?set LITELLM_VIRTUAL_KEY}
       - AI_BASE_URL=http://llm-gateway:4000/v1
       - AI_MODEL=diary-default
@@ -122,6 +126,10 @@ services:
         condition: service_healthy
       document-parser:
         condition: service_healthy
+      embedding-service:
+        condition: service_healthy
+      reranker-service:
+        condition: service_healthy
 
   document-parser:
     build: ./document-parser
@@ -149,19 +157,34 @@ services:
       timeout: 3s
       retries: 6
 
+  embedding-service:
+    build:
+      context: ./local-embedding
+      args:
+        MODEL_REVISION: 3c386e2c2c38680eaa38977bbf69c60d72fbf24f
+    cpus: 2.0
+    mem_limit: 3g
+    pids_limit: 256
+    expose:
+      - "4000"
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
   reranker-service:
-    profiles: ["local-ai"]
     build:
       context: ./local-reranker
       args:
-        RERANK_MODEL: Qwen/Qwen3-Reranker-0.6B
-        RERANK_MODEL_REVISION: e61197ed45024b0ed8a2d74b80b4d909f1255473
+        RERANK_MODEL_REVISION: e099d4b9cdbd291b1569d416f19aaa6523570bc3
     cpus: 4.0
     mem_limit: 8g
     pids_limit: 512
     environment:
-      - RERANK_MODEL=Qwen/Qwen3-Reranker-0.6B
-      - RERANK_MODEL_REVISION=e61197ed45024b0ed8a2d74b80b4d909f1255473
+      - RERANK_MODEL_PATH=/models/reranker
       - RERANK_MAX_DOCUMENTS=20
       - RERANK_MAX_LENGTH=2048
       - RERANK_BATCH_SIZE=4
