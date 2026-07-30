@@ -8,7 +8,7 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 
 > 当前版本正在进行“今日菜谱”生产验收；部署前仍须完成本文列出的 Compose 与验收脚本。
 
-AI 是可选能力。生成模型、Embedding 或 Reranker 不可用时，账号、笔记、标签、附件、搜索、
+生成模型、Embedding 或 Reranker 不可用时，账号、笔记、标签、附件、搜索、
 版本历史和 Markdown 导出仍保持可用；依赖模型的整理、报告、回忆、菜谱索引或问答返回明确错误。
 
 ## 能做什么
@@ -34,8 +34,7 @@ AI 是可选能力。生成模型、Embedding 或 Reranker 不可用时，账号
 - 保存跨设备忌口与时区，推荐不会命中规范化后的忌口词项。
 - 首页提供三个与当日菜品相关的问题，也可输入任意烹饪问题。
 - 菜谱问答使用 512 维中文 GTE Embedding 与 BGE CrossEncoder 精排，回答保存系统菜谱引用。
-- 知识库仅由仓库内 `resources/howtocook` 静态语料构成，不接收用户、研究、日报、
-  周报或个人笔记内容。
+- 知识库仅由仓库内 `resources/howtocook` 静态语料构成，来源是 Github 上的一个高 star 项目，具体可以进入资源库查看。
 
 ### 小红书研究
 
@@ -214,7 +213,7 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 ## API 与安全约定
 
 - 主业务接口使用 `/api/v1`，认证头为 `Authorization: Token <token>`。
-- `/healthz` 只反映进程存活；`/readyz` 验证数据库、菜谱 Embedding、Reranker 和菜谱索引。
+- `/healthz` 只反映进程存活；`/readyz` 只验证数据库可用。
 - 更新笔记使用乐观冲突保护；正文更新和 AI 覆盖前先创建 revision，删除默认软删除。
 - 跨租户资源统一表现为 404；软删除空间的普通业务请求返回 403。
 - 周报日期归一到周一，月报日期归一到月初。

@@ -30,7 +30,7 @@ data: [DONE]
 | 方法 | 路径 | 认证 | 说明 |
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | 否 | 进程存活检查 |
-| `GET` | `/readyz` | 否 | 数据库、Embedding、Reranker 与菜谱索引就绪检查 |
+| `GET` | `/readyz` | 否 | 数据库就绪检查 |
 | `GET` | `/metrics` | 否 | Prometheus 文本指标，不包含正文或身份信息 |
 | `POST` | `/api/v1/auth/register` | 否 | 注册账号并创建个人空间 |
 | `POST` | `/api/v1/auth/login` | 否 | 登录并返回 Token |

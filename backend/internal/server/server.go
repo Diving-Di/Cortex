@@ -173,52 +173,11 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	components := map[string]string{
-		"database":     "ready",
-		"embedding":    "ready",
-		"reranker":     "ready",
-		"recipe_index": "ready",
-	}
 	if err := s.store.Ping(ctx); err != nil {
-		components["database"] = "not_ready"
+		httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+		return
 	}
-	if err := checkHTTPHealth(ctx, strings.TrimSuffix(strings.TrimRight(s.cfg.EmbeddingBaseURL, "/"), "/v1")+"/healthz"); err != nil {
-		components["embedding"] = "not_ready"
-	}
-	if err := checkHTTPHealth(ctx, strings.TrimRight(s.cfg.RerankBaseURL, "/")+"/health"); err != nil {
-		components["reranker"] = "not_ready"
-	}
-	if err := s.store.RecipeIndexReady(ctx, s.cfg.EmbeddingModel); err != nil {
-		components["recipe_index"] = "not_ready"
-	}
-	for _, status := range components {
-		if status != "ready" {
-			httpx.JSON(w, http.StatusServiceUnavailable, map[string]any{
-				"status": "not_ready", "components": components,
-			})
-			return
-		}
-	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"status": "ready", "components": components})
-}
-
-func checkHTTPHealth(ctx context.Context, url string) error {
-	if strings.TrimSpace(url) == "" {
-		return errors.New("service is not configured")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("health status %d", resp.StatusCode)
-	}
-	return nil
+	httpx.JSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (s *Server) authenticate() gin.HandlerFunc {
