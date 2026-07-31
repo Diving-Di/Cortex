@@ -23,6 +23,23 @@ export interface RecipePreferences {
   version: number;
 }
 
+export interface RecipeConversation {
+  id: number;
+  title: string;
+  source_scope: 'recipe';
+  created_at: string;
+  updated_at: string;
+  version: number;
+  message_count: number;
+  total_tokens: number;
+  messages?: Array<{
+    id: number;
+    role: 'user' | 'assistant';
+    content: string;
+    created_at: string;
+  }>;
+}
+
 export async function getTodayRecipe(token: string) {
   const response = await http.get<TodayRecipe>('/api/v1/recipes/today', {
     headers: authHeaders(token),
@@ -39,6 +56,24 @@ export async function getRecipePreferences(token: string) {
 
 export async function updateRecipePreferences(token: string, value: RecipePreferences) {
   const response = await http.put<RecipePreferences>('/api/v1/settings/preferences', value, {
+    headers: authHeaders(token),
+  });
+  return response.data;
+}
+
+export async function listRecipeConversations(token: string) {
+  const response = await http.get<{ items: RecipeConversation[]; total: number }>(
+    '/api/v1/conversations',
+    {
+      headers: authHeaders(token),
+      params: { source_scope: 'recipe', limit: 100 },
+    },
+  );
+  return response.data?.items || [];
+}
+
+export async function getRecipeConversation(token: string, id: number) {
+  const response = await http.get<RecipeConversation>(`/api/v1/conversations/${id}`, {
     headers: authHeaders(token),
   });
   return response.data;

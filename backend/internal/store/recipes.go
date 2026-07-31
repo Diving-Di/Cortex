@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"diary-listener/backend/internal/apierror"
 	"diary-listener/backend/internal/domain"
@@ -368,7 +369,7 @@ func (s *Store) SaveRecipeAnswer(
 				return apierror.New("CONVERSATION_NOT_FOUND", "对话不存在", 404)
 			}
 		} else {
-			title := truncateText(question, 80)
+			title := recipeConversationTitle(question)
 			if err := tx.QueryRow(ctx, `INSERT INTO conversations
                 (tenant_id,user_id,title,source_scope) VALUES ($1,$2,$3,$4) RETURNING id`,
 				principal.TenantID, principal.UserID, title, "recipe").Scan(&id); err != nil {
@@ -397,6 +398,26 @@ func (s *Store) SaveRecipeAnswer(
 		return err
 	})
 	return messageID, savedConversationID, err
+}
+
+func recipeConversationTitle(question string) string {
+	title := strings.Join(strings.Fields(question), " ")
+	title = strings.TrimSpace(title)
+	for _, prefix := range []string{"请问一下", "请问", "麻烦问一下", "麻烦问", "我想知道"} {
+		title = strings.TrimSpace(strings.TrimPrefix(title, prefix))
+	}
+	if index := strings.IndexAny(title, "。！？!?；;\n"); index >= 0 {
+		title = strings.TrimSpace(title[:index])
+	}
+	title = strings.Trim(title, "，,：:。.！？!?；; ")
+	if title == "" {
+		return "菜谱问答"
+	}
+	runes := []rune(title)
+	if len(runes) > 32 {
+		return string(runes[:32]) + "…"
+	}
+	return title
 }
 
 // UpdateRecipeChildEmbeddingModel sets the embedding_model for child chunks matching document_id and content_hash.

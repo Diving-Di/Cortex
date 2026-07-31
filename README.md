@@ -206,7 +206,7 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 | `LITELLM_VIRTUAL_KEY` | 后端使用的限模型、限预算虚拟密钥 |
 | `LOCAL_EMBEDDING_BASE_URL` | LiteLLM 访问宿主机 Ollama 的 OpenAI 兼容地址 |
 | `LOCAL_EMBEDDING_API_KEY` | 本地接口占位凭据，不产生 API 费用 |
-| `OPENAI_API_KEY` / `KIMI_API_KEY` | 仅由 LiteLLM 使用的生成模型供应商凭据 |
+| `OPENAI_API_KEY` / `KIMI_API_KEY` / `DEEPSEEK_API_KEY` | 仅由 LiteLLM 使用的生成模型供应商凭据 |
 
 生产环境不得把真实 Key 写入仓库、URL、Cookie、普通日志、审计业务字段或导出文件。
 

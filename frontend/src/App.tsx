@@ -62,7 +62,9 @@ function AppLayout() {
           </Button>
         </div>
       </nav>
-      <main className="app-content">
+      <main
+        className={`app-content${location.pathname === '/recipes' ? ' app-content-fixed' : ''}`}
+      >
         <Suspense fallback={<Spin />}>
           <Routes>
             <Route index element={<DashboardPage token={token} />} />
@@ -71,7 +73,7 @@ function AppLayout() {
             <Route path="assistant" element={<Navigate to="/recipes" replace />} />
             <Route path="research" element={<ResearchPage token={token} />} />
             <Route path="reports" element={<ReportsPage token={token} />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings" element={<SettingsPage token={token} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

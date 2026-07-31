@@ -91,6 +91,7 @@
 
 .app-content {
   flex: 1;
+  min-height: 0;
   min-width: 0;
   padding: 30px 48px 40px;
   overflow-x: hidden;
@@ -100,6 +101,10 @@
   transition:
     background-color 160ms ease,
     color 160ms ease;
+}
+
+.app-content-fixed {
+  overflow: hidden;
 }
 
 @media (max-width: 800px) {

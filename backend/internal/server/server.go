@@ -381,7 +381,6 @@ func (s *Server) recipesChat(w http.ResponseWriter, r *http.Request) {
 	}
 	principal := principalFrom(r.Context())
 
-	// retrieval
 	retriever := recipe.Retriever{
 		Store:          s.store,
 		RerankURL:      s.cfg.RerankBaseURL + "/rerank",
@@ -389,27 +388,44 @@ func (s *Server) recipesChat(w http.ResponseWriter, r *http.Request) {
 		EmbeddingURL:   strings.TrimRight(s.cfg.EmbeddingBaseURL, "/") + "/embeddings",
 		EmbeddingModel: s.cfg.EmbeddingModel,
 	}
-	candidates, err := retriever.Search(r.Context(), req.Question, 10)
-	if err != nil {
-		httpx.WriteError(w, s.logger, apierror.New("RECIPE_EMBEDDING_UNAVAILABLE", "菜谱检索服务暂时不可用", 503))
-		return
-	}
-	if len(candidates) == 0 {
-		httpx.WriteError(w, s.logger, apierror.New("RECIPE_NO_EVIDENCE", "没有找到相关菜谱", 404))
-		return
-	}
-	candidates, err = retriever.Rerank(r.Context(), req.Question, candidates)
-	if err != nil {
-		httpx.WriteError(w, s.logger, apierror.New("RECIPE_RERANK_UNAVAILABLE", "菜谱精排服务暂时不可用", 503))
-		return
-	}
+	retrievalQuery := req.Question
+	var featured *store.RecipeCandidate
+	featuredOnly := false
 	if req.FeaturedRecipeID != nil {
-		featured, err := s.store.GetRecipeCandidate(r.Context(), *req.FeaturedRecipeID)
+		candidate, err := s.store.GetRecipeCandidate(r.Context(), *req.FeaturedRecipeID)
 		if err != nil {
 			httpx.WriteError(w, s.logger, err)
 			return
 		}
-		filtered := []store.RecipeCandidate{featured}
+		featured = &candidate
+		rewrite := recipe.RewriteQuery(req.Question, candidate.Title)
+		retrievalQuery = rewrite.Query
+		featuredOnly = rewrite.FeaturedOnly
+	}
+
+	var candidates []store.RecipeCandidate
+	var err error
+	if featuredOnly && featured != nil {
+		candidates = []store.RecipeCandidate{*featured}
+	} else {
+		candidates, err = retriever.Search(r.Context(), retrievalQuery, 10)
+		if err != nil {
+			httpx.WriteError(w, s.logger, apierror.New("RECIPE_EMBEDDING_UNAVAILABLE", "菜谱检索服务暂时不可用", 503))
+			return
+		}
+		if len(candidates) == 0 {
+			httpx.WriteError(w, s.logger, apierror.New("RECIPE_NO_EVIDENCE", "没有找到相关菜谱", 404))
+			return
+		}
+		candidates, err = retriever.Rerank(r.Context(), retrievalQuery, candidates)
+		if err != nil {
+			httpx.WriteError(w, s.logger, apierror.New("RECIPE_RERANK_UNAVAILABLE", "菜谱精排服务暂时不可用", 503))
+			return
+		}
+	}
+
+	if featured != nil && !featuredOnly {
+		filtered := []store.RecipeCandidate{*featured}
 		for _, candidate := range candidates {
 			if candidate.DocumentID != featured.DocumentID {
 				filtered = append(filtered, candidate)
@@ -431,8 +447,14 @@ func (s *Server) recipesChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conversationContext := s.recipeConversationContext(r, principal, req.ConversationID)
+	preferences, err := s.store.GetUserPreferences(r.Context(), principal, s.cfg.RecipeDefaultTimezone)
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
 	events, err := s.aiWorkflow().AnswerKnowledge(s.aiContext(r.Context(), "recipe_chat", principal), ai.KnowledgeInput{
 		Question: req.Question, ConversationContext: conversationContext, Evidence: evidence,
+		DietaryRestrictions: preferences.DietaryRestrictions,
 	})
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)

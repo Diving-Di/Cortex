@@ -17,6 +17,7 @@ services:
       - DATABASE_URL=postgresql://diary_litellm:${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD}@db:5432/diary_litellm
       - OPENAI_API_KEY=${OPENAI_API_KEY:?set OPENAI_API_KEY}
       - KIMI_API_KEY=${KIMI_API_KEY:?set KIMI_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}
       - LOCAL_EMBEDDING_BASE_URL=${LOCAL_EMBEDDING_BASE_URL:-http://host.docker.internal:11434/v1}
       - LOCAL_EMBEDDING_API_KEY=${LOCAL_EMBEDDING_API_KEY:-ollama-local}
     expose:
@@ -142,11 +143,13 @@ services:
       context: ./local-reranker
       args:
         RERANK_MODEL_REVISION: e099d4b9cdbd291b1569d416f19aaa6523570bc3
+    gpus: all
     cpus: 4.0
     mem_limit: 8g
     pids_limit: 512
     environment:
       - RERANK_MODEL_PATH=/models/reranker
+      - RERANK_DEVICE=cuda
       - RERANK_MAX_DOCUMENTS=20
       - RERANK_MAX_LENGTH=2048
       - RERANK_BATCH_SIZE=4

@@ -91,9 +91,10 @@ Cortex 后端
 | 逻辑模型 | 顺序 | 实际上游 | 用途 |
 | --- | ---: | --- | --- |
 | `diary-default` | 1 | Kimi `kimi-k2.5` | 主模型；已通过真实 SSE、整理、报告和回忆验收 |
-| `diary-openai-fallback` | 2 | OpenAI `gpt-5.6` | 备用；当前本地 OpenAI 账户为 `insufficient_quota` |
+| `diary-deepseek-fallback` | 2 | DeepSeek `deepseek-chat` | 第一备用，由 LiteLLM 在主模型失败时调度 |
+| `diary-openai-fallback` | 3 | OpenAI `gpt-5.6` | 第二备用；当前本地 OpenAI 账户为 `insufficient_quota` |
 
-LiteLLM 配置以 Kimi 为主路由，并将 OpenAI 放入 fallback。OpenAI 额度恢复前，fallback 只用于验证路由行为，不作为可用性保障。
+LiteLLM 配置以 Kimi 为主路由，并依次将 DeepSeek、OpenAI 放入 fallback。OpenAI 额度恢复前，OpenAI fallback 只用于验证路由行为，不作为可用性保障。
 
 ## 4. 配置规范
 

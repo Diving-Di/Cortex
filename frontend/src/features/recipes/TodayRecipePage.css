@@ -1,0 +1,164 @@
+.recipe-workspace {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.recipe-history {
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 18px 0 0 18px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 12px;
+}
+
+.recipe-history-title {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+  padding: 0 8px 12px;
+}
+
+.recipe-history-title .ant-typography {
+  margin: 0;
+}
+
+.recipe-history > .ant-btn {
+  margin-bottom: 12px;
+}
+
+.recipe-history .ant-list-item {
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  margin: 3px 0;
+  padding: 10px;
+}
+
+.recipe-history .ant-list-item:hover,
+.recipe-history .ant-list-item.active {
+  background: var(--surface-pressed);
+}
+
+.recipe-chat {
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-left: 0;
+  border-radius: 0 18px 18px 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.recipe-hero {
+  border-bottom: 1px solid var(--border-color);
+  padding: 28px 32px 20px;
+  text-align: center;
+}
+
+.recipe-hero .ant-typography {
+  margin-bottom: 6px;
+  margin-top: 0;
+}
+
+.recipe-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 24px max(24px, 8%);
+}
+
+.recipe-messages .ant-empty {
+  margin: auto;
+}
+
+.recipe-message {
+  background: var(--surface-hover);
+  border-radius: 16px;
+  max-width: min(820px, 88%);
+  padding: 12px 16px;
+}
+
+.recipe-message.user {
+  align-self: flex-end;
+  background: var(--page-text);
+  color: var(--page-background);
+}
+
+.recipe-message.assistant {
+  align-self: flex-start;
+}
+
+.recipe-message p:last-child,
+.recipe-message ol:last-child,
+.recipe-message ul:last-child {
+  margin-bottom: 0;
+}
+
+.recipe-composer-area {
+  padding: 0 max(24px, 8%) 22px;
+}
+
+.recipe-composer {
+  align-items: flex-end;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 7%);
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+}
+
+.recipe-composer .ant-input {
+  border: 0;
+  box-shadow: none;
+  resize: none;
+}
+
+.recipe-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.recipe-suggestions .ant-btn {
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+@media (max-width: 800px) {
+  .recipe-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(120px, 28%) minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .recipe-history {
+    border-radius: 16px;
+    margin-bottom: 12px;
+  }
+
+  .recipe-chat {
+    border-left: 1px solid var(--border-color);
+    border-radius: 16px;
+    min-height: 0;
+  }
+
+  .recipe-hero {
+    padding: 22px 18px 16px;
+  }
+
+  .recipe-messages,
+  .recipe-composer-area {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}

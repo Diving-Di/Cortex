@@ -7,10 +7,12 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sentence_transformers import CrossEncoder
+import torch
 
 
 MODEL_ID = "BAAI/bge-reranker-v2-m3"
 MODEL_PATH = os.getenv("RERANK_MODEL_PATH", "/models/reranker")
+DEVICE = os.getenv("RERANK_DEVICE", "cpu").strip().lower()
 MAX_DOCUMENTS = int(os.getenv("RERANK_MAX_DOCUMENTS", "20"))
 MAX_LENGTH = int(os.getenv("RERANK_MAX_LENGTH", "2048"))
 DocumentText = Annotated[str, Field(min_length=1, max_length=131_072)]
@@ -34,7 +36,9 @@ class RerankResponse(BaseModel):
 
 class RecipeReranker:
     def __init__(self) -> None:
-        self.model = CrossEncoder(MODEL_PATH, max_length=MAX_LENGTH, device="cpu")
+        if DEVICE == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("RERANK_DEVICE=cuda but CUDA is unavailable")
+        self.model = CrossEncoder(MODEL_PATH, max_length=MAX_LENGTH, device=DEVICE)
         self.lock = threading.Lock()
 
     def score(self, query: str, documents: list[str]) -> list[float]:
@@ -55,7 +59,7 @@ app = FastAPI(title="Diary Listener recipe reranker", lifespan=lifespan)
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "model": MODEL_ID}
+    return {"status": "ok", "model": MODEL_ID, "device": DEVICE}
 
 
 @app.post("/rerank", response_model=RerankResponse)

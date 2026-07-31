@@ -80,7 +80,7 @@ func (s *Store) SaveConversationSummary(ctx context.Context, p domain.Principal,
 }
 
 func ValidSourceScope(scope string) bool {
-	return scope == "knowledge" || scope == "growth" || scope == "all"
+	return scope == "knowledge" || scope == "growth" || scope == "all" || scope == "recipe"
 }
 
 func (s *Store) CreateConversation(ctx context.Context, principal domain.Principal, title, sourceScope string) (Conversation, error) {
@@ -111,7 +111,7 @@ func (s *Store) ListScopedConversations(ctx context.Context, principal domain.Pr
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
 		}
-		where := `c.tenant_id=$1 AND c.user_id=$2 AND c.source_scope IN ('knowledge','growth','all')
+		where := `c.tenant_id=$1 AND c.user_id=$2 AND c.source_scope IN ('knowledge','growth','all','recipe')
 		  AND ($3='' OR c.source_scope=$3) AND ($4='' OR c.title ILIKE '%'||$4||'%' OR EXISTS
 		  (SELECT 1 FROM messages m WHERE m.tenant_id=c.tenant_id AND m.conversation_id=c.id AND m.content ILIKE '%'||$4||'%'))`
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM conversations c WHERE `+where,
