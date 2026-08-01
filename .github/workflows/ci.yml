@@ -57,6 +57,7 @@ jobs:
       LITELLM_VIRTUAL_KEY: sk-ci-virtual-key
       OPENAI_API_KEY: sk-ci-openai-key
       KIMI_API_KEY: sk-ci-kimi-key
+      DEEPSEEK_API_KEY: sk-ci-deepseek-key
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet
