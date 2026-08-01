@@ -19,6 +19,7 @@
 | `/` | `features/dashboard/DashboardPage.tsx` |
 | `/notes/*` | `features/notes/NotesPage.tsx` |
 | `/recipes` | `features/recipes/TodayRecipePage.tsx` |
+| `/ai-events` | `features/aiEvents/AIEventsPage.tsx` |
 | `/reports` | `features/reports/ReportsPage.tsx` |
 | `/settings` | `features/settings/SettingsPage.tsx` |
 

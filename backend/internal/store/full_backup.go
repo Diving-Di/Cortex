@@ -52,6 +52,8 @@ var backupTableSpecs = []backupTableSpec{
 	{name: "research_assets", id: "id", foreign: map[string]string{"source_id": "research_sources"}},
 	{name: "scheduled_report_tasks", id: "id", userFields: []string{"created_by"}},
 	{name: "scheduled_report_runs", id: "id", foreign: map[string]string{"task_id": "scheduled_report_tasks", "report_note_id": "notes"}},
+	{name: "writing_templates", id: "id", userFields: []string{"created_by"}},
+	{name: "template_reactions", withoutID: true, userFields: []string{"user_id"}},
 }
 
 func (s *Store) ExportFullBackup(ctx context.Context, principal domain.Principal) (FullBackup, error) {
@@ -78,6 +80,10 @@ func (s *Store) ExportFullBackup(ctx context.Context, principal domain.Principal
 				filter += " AND EXISTS(SELECT 1 FROM research_drafts d JOIN research_sources s ON s.tenant_id=d.tenant_id AND s.id=d.source_id WHERE d.tenant_id=t.tenant_id AND d.id=t.draft_id AND s.deleted_at IS NULL)"
 			case "research_assets":
 				filter += " AND EXISTS(SELECT 1 FROM research_sources s WHERE s.tenant_id=t.tenant_id AND s.id=t.source_id AND s.deleted_at IS NULL)"
+			case "template_reactions":
+				filter += " AND t.kind='favorite'"
+			case "writing_templates":
+				filter += " AND t.deleted_at IS NULL"
 			}
 			query := fmt.Sprintf(
 				"SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY %s), '[]'::jsonb) FROM %s t WHERE %s",
@@ -124,6 +130,8 @@ func (s *Store) RestoreFullBackup(ctx context.Context, principal domain.Principa
 			UNION ALL SELECT 1 FROM research_jobs WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM research_sources WHERE tenant_id=$1
 			UNION ALL SELECT 1 FROM scheduled_report_tasks WHERE tenant_id=$1
+			UNION ALL SELECT 1 FROM writing_templates WHERE tenant_id=$1 AND deleted_at IS NULL
+			UNION ALL SELECT 1 FROM template_reactions WHERE tenant_id=$1 AND kind='favorite'
 		)`, principal.TenantID).Scan(&occupied); err != nil {
 			return err
 		}
@@ -158,6 +166,9 @@ func (s *Store) RestoreFullBackup(ctx context.Context, principal domain.Principa
 				}
 				if spec.name == "research_drafts" {
 					delete(row, "knowledge_document_id")
+				}
+				if spec.name == "writing_templates" {
+					row["status"] = "private"
 				}
 				for field, targetTable := range spec.foreign {
 					if row[field] == nil {

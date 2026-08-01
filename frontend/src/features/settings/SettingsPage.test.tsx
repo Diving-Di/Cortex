@@ -16,6 +16,7 @@ vi.mock('../../api/recipes', () => ({
   getRecipePreferences: vi.fn(async () => ({
     dietary_restrictions: ['花生'],
     timezone: 'Asia/Shanghai',
+    marketplace_personalization: true,
     version: 1,
   })),
   updateRecipePreferences: (...args: [string, RecipePreferences]) =>
@@ -39,6 +40,7 @@ test('edits and saves dietary restrictions from settings', async () => {
     expect(updateRecipePreferences).toHaveBeenCalledWith('token', {
       dietary_restrictions: ['花生', '香菜'],
       timezone: 'Asia/Shanghai',
+      marketplace_personalization: true,
       version: 1,
     }),
   );

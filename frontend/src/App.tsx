@@ -7,6 +7,7 @@ import {
   LogoutOutlined,
   MessageOutlined,
   SearchOutlined,
+  ThunderboltOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
@@ -20,6 +21,7 @@ const ReportsPage = lazy(() => import('./features/reports/ReportsPage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const TodayRecipePage = lazy(() => import('./features/recipes/TodayRecipePage'));
 const ResearchPage = lazy(() => import('./features/research/ResearchPage'));
+const AIEventsPage = lazy(() => import('./features/aiEvents/AIEventsPage'));
 
 function AppLayout() {
   const navigate = useNavigate();
@@ -51,6 +53,7 @@ function AppLayout() {
             { key: '/notes', icon: <EditOutlined />, label: '笔记本' },
             { key: '/recipes', icon: <BookOutlined />, label: '今日菜谱' },
             { key: '/research', icon: <SearchOutlined />, label: '小红书研究' },
+            { key: '/ai-events', icon: <ThunderboltOutlined />, label: 'AI 限量活动' },
             { key: '/reports', icon: <BarChartOutlined />, label: '周期报告' },
             { key: '/settings', icon: <SettingOutlined />, label: '设置' },
           ]}
@@ -72,6 +75,7 @@ function AppLayout() {
             <Route path="recipes" element={<TodayRecipePage token={token} />} />
             <Route path="assistant" element={<Navigate to="/recipes" replace />} />
             <Route path="research" element={<ResearchPage token={token} />} />
+            <Route path="ai-events" element={<AIEventsPage token={token} />} />
             <Route path="reports" element={<ReportsPage token={token} />} />
             <Route path="settings" element={<SettingsPage token={token} />} />
             <Route path="*" element={<Navigate to="/" replace />} />

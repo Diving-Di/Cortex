@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"diary-listener/backend/internal/ai"
@@ -19,6 +20,7 @@ import (
 	"diary-listener/backend/internal/domain"
 	"diary-listener/backend/internal/httpx"
 	"diary-listener/backend/internal/recipe"
+	"diary-listener/backend/internal/rediscoord"
 	"diary-listener/backend/internal/store"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -26,10 +28,18 @@ import (
 )
 
 type Server struct {
-	cfg     config.Config
-	store   *store.Store
-	logger  *slog.Logger
-	version string
+	cfg        config.Config
+	store      *store.Store
+	logger     *slog.Logger
+	version    string
+	redis      *rediscoord.Client
+	rateMu     sync.Mutex
+	localRates map[string]localRateWindow
+}
+
+type localRateWindow struct {
+	Started time.Time
+	Count   int
 }
 
 type contextKey int
@@ -41,7 +51,8 @@ var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
-	s := &Server{cfg: cfg, store: db, logger: logger, version: version}
+	s := &Server{cfg: cfg, store: db, logger: logger, version: version, localRates: make(map[string]localRateWindow)}
+	s.redis, _ = rediscoord.New(cfg.RedisURL)
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(s.requestTracing())
@@ -122,6 +133,32 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.POST("/api/v1/research/xhs/authorizations/:attemptID/cancel", gin.WrapF(s.cancelXHSAuthorization))
 			active.POST("/api/v1/research/xhs/authorization/verify", gin.WrapF(s.verifyXHSAuthorization))
 			active.DELETE("/api/v1/research/xhs/authorization", gin.WrapF(s.revokeXHSAuthorization))
+			active.GET("/api/v1/public-profile", gin.WrapF(s.getPublicProfile))
+			active.PUT("/api/v1/public-profile", gin.WrapF(s.upsertPublicProfile))
+			active.GET("/api/v1/templates/public", gin.WrapF(s.listPublicTemplates))
+			active.GET("/api/v1/templates/public/:publicID", gin.WrapF(s.getPublicTemplate))
+			active.GET("/api/v1/templates/mine", gin.WrapF(s.listMyTemplates))
+			active.POST("/api/v1/templates", gin.WrapF(s.createTemplate))
+			active.GET("/api/v1/templates/:templateID", gin.WrapF(s.getTemplate))
+			active.PATCH("/api/v1/templates/:templateID", gin.WrapF(s.updateTemplate))
+			active.DELETE("/api/v1/templates/:templateID", gin.WrapF(s.deleteTemplate))
+			active.POST("/api/v1/templates/:templateID/publish", gin.WrapF(s.publishTemplate))
+			active.POST("/api/v1/templates/:templateID/withdraw", gin.WrapF(s.withdrawTemplate))
+			active.POST("/api/v1/templates/:templateID/use", gin.WrapF(s.usePrivateTemplate))
+			active.PUT("/api/v1/templates/public/:publicID/like", gin.WrapF(s.likeTemplate))
+			active.DELETE("/api/v1/templates/public/:publicID/like", gin.WrapF(s.unlikeTemplate))
+			active.PUT("/api/v1/templates/public/:publicID/favorite", gin.WrapF(s.favoriteTemplate))
+			active.DELETE("/api/v1/templates/public/:publicID/favorite", gin.WrapF(s.unfavoriteTemplate))
+			active.POST("/api/v1/templates/public/:publicID/use", gin.WrapF(s.useTemplate))
+			active.POST("/api/v1/templates/public/:publicID/views", gin.WrapF(s.viewTemplate))
+			active.POST("/api/v1/templates/public/:publicID/reports", gin.WrapF(s.reportTemplate))
+			active.GET("/api/v1/ai-points/balance", gin.WrapF(s.aiPointBalance))
+			active.GET("/api/v1/ai-events/current", gin.WrapF(s.currentAIEvent))
+			active.GET("/api/v1/ai-events/history", gin.WrapF(s.aiEventHistory))
+			active.GET("/api/v1/ai-events/:eventID", gin.WrapF(s.getAIEvent))
+			active.POST("/api/v1/ai-events/:eventID/claims", gin.WrapF(s.claimAIEvent))
+			active.GET("/api/v1/ai-events/:eventID/claims/me", gin.WrapF(s.myAIEventClaim))
+			active.GET("/api/v1/ai-event-claims/:claimID", gin.WrapF(s.getAIEventClaim))
 
 			notes := active.Group("/api/v1/notes")
 			notes.GET("", gin.WrapF(s.listNotes))
@@ -496,18 +533,20 @@ func (s *Server) getPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"dietary_restrictions": prefs.DietaryRestrictions,
-		"timezone":             prefs.Timezone,
-		"version":              prefs.Version,
+		"dietary_restrictions":        prefs.DietaryRestrictions,
+		"timezone":                    prefs.Timezone,
+		"marketplace_personalization": prefs.MarketplacePersonalization,
+		"version":                     prefs.Version,
 	})
 }
 
 func (s *Server) updatePreferences(w http.ResponseWriter, r *http.Request) {
 	principal := principalFrom(r.Context())
 	var body struct {
-		DietaryRestrictions []string `json:"dietary_restrictions"`
-		Timezone            string   `json:"timezone"`
-		Version             int      `json:"version"`
+		DietaryRestrictions        []string `json:"dietary_restrictions"`
+		Timezone                   string   `json:"timezone"`
+		Version                    int      `json:"version"`
+		MarketplacePersonalization bool     `json:"marketplace_personalization"`
 	}
 	if err := httpx.DecodeJSON(r, &body); err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -528,14 +567,15 @@ func (s *Server) updatePreferences(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("INVALID_TIMEZONE", "invalid timezone", 400))
 		return
 	}
-	prefs, err := s.store.UpdateUserPreferences(r.Context(), principal, body.DietaryRestrictions, body.Timezone, body.Version)
+	prefs, err := s.store.UpdateUserPreferences(r.Context(), principal, body.DietaryRestrictions, body.Timezone, body.MarketplacePersonalization, body.Version)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"dietary_restrictions": prefs.DietaryRestrictions,
-		"timezone":             prefs.Timezone,
-		"version":              prefs.Version,
+		"dietary_restrictions":        prefs.DietaryRestrictions,
+		"timezone":                    prefs.Timezone,
+		"marketplace_personalization": prefs.MarketplacePersonalization,
+		"version":                     prefs.Version,
 	})
 }

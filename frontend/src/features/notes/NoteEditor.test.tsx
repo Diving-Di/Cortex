@@ -49,7 +49,7 @@ function renderEditor() {
       <QueryClientProvider client={new QueryClient()}>
         <Routes>
           <Route path="/notes/:id" element={<NoteEditor token="test-token" />} />
-          <Route path="/notes" element={<div>笔记本列表</div>} />
+          <Route path="/notes/list" element={<div>笔记本列表</div>} />
         </Routes>
       </QueryClientProvider>
     </MemoryRouter>,

@@ -13,6 +13,7 @@ import (
 
 	"diary-listener/backend/internal/config"
 	"diary-listener/backend/internal/recipe"
+	"diary-listener/backend/internal/rediscoord"
 	"diary-listener/backend/internal/server"
 	"diary-listener/backend/internal/store"
 )
@@ -56,6 +57,9 @@ func main() {
 	}()
 	server.RunResearchWorkers(ctx, cfg, db, logger)
 	server.RunXHSAuthorizationWorkers(ctx, cfg, db, logger)
+	server.RunAIEventWorkers(ctx, cfg, db, logger)
+	redis, _ := rediscoord.New(cfg.RedisURL)
+	server.RunMarketplaceWorker(ctx, db, redis, logger)
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddress,
 		Handler:           handler,

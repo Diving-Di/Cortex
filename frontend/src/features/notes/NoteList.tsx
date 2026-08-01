@@ -40,6 +40,14 @@ export default function NoteList({ token }: { token: string }) {
     <section className="notes-page">
       <header className="notes-toolbar">
         <h1>笔记本</h1>
+        <Button
+          onClick={() => {
+            localStorage.setItem('diary:notes-section', 'templates');
+            navigate('/notes');
+          }}
+        >
+          模板广场
+        </Button>
         <DatePicker
           allowClear
           placeholder="按日期筛选"

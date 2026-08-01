@@ -57,6 +57,7 @@ type Config struct {
 	RecipeIndexWorkers      int
 	RecipeIndexBatchSize    int
 	RecipeIndexPollSeconds  int
+	RedisURL                string
 }
 
 func Load() (Config, error) {
@@ -216,6 +217,7 @@ func Load() (Config, error) {
 		RecipeIndexWorkers:      recipeIndexWorkers,
 		RecipeIndexBatchSize:    recipeIndexBatchSize,
 		RecipeIndexPollSeconds:  recipeIndexPollSeconds,
+		RedisURL:                valueOrDefault("REDIS_URL", "redis://redis:6379/0"),
 	}, nil
 }
 

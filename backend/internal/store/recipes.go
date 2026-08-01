@@ -98,29 +98,31 @@ func (s *Store) DeactivateMissingRecipeDocuments(ctx context.Context, activePath
 
 // UserPreferences represents a user's recipe preferences.
 type UserPreferences struct {
-	TenantID            string
-	UserID              int32
-	DietaryRestrictions []string
-	Timezone            string
-	Version             int
+	TenantID                   string
+	UserID                     int32
+	DietaryRestrictions        []string
+	Timezone                   string
+	Version                    int
+	MarketplacePersonalization bool
 }
 
 func (s *Store) GetUserPreferences(ctx context.Context, principal domain.Principal, defaultTimezone string) (UserPreferences, error) {
 	p := UserPreferences{
-		TenantID:            principal.TenantID.String(),
-		UserID:              principal.UserID,
-		DietaryRestrictions: []string{},
-		Timezone:            defaultTimezone,
-		Version:             0,
+		TenantID:                   principal.TenantID.String(),
+		UserID:                     principal.UserID,
+		DietaryRestrictions:        []string{},
+		Timezone:                   defaultTimezone,
+		Version:                    0,
+		MarketplacePersonalization: true,
 	}
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
 		}
-		err := tx.QueryRow(ctx, `SELECT tenant_id::text,user_id,dietary_restrictions,timezone,version
+		err := tx.QueryRow(ctx, `SELECT tenant_id::text,user_id,dietary_restrictions,timezone,version,marketplace_personalization
 			FROM user_preferences WHERE tenant_id=$1 AND user_id=$2`,
 			principal.TenantID, principal.UserID).
-			Scan(&p.TenantID, &p.UserID, &p.DietaryRestrictions, &p.Timezone, &p.Version)
+			Scan(&p.TenantID, &p.UserID, &p.DietaryRestrictions, &p.Timezone, &p.Version, &p.MarketplacePersonalization)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -129,32 +131,33 @@ func (s *Store) GetUserPreferences(ctx context.Context, principal domain.Princip
 	return p, err
 }
 
-func (s *Store) UpdateUserPreferences(ctx context.Context, principal domain.Principal, dietary []string, timezone string, version int) (UserPreferences, error) {
+func (s *Store) UpdateUserPreferences(ctx context.Context, principal domain.Principal, dietary []string, timezone string, personalization bool, version int) (UserPreferences, error) {
 	var p UserPreferences
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
 		}
 		tag, err := tx.Exec(ctx, `INSERT INTO user_preferences
-				(tenant_id,user_id,dietary_restrictions,timezone,version,created_at,updated_at)
-			VALUES ($1,$2,$3,$4,1,now(),now())
+				(tenant_id,user_id,dietary_restrictions,timezone,marketplace_personalization,version,created_at,updated_at)
+			VALUES ($1,$2,$3,$4,$5,1,now(),now())
 			ON CONFLICT (tenant_id,user_id) DO UPDATE SET
 				dietary_restrictions=EXCLUDED.dietary_restrictions,
 				timezone=EXCLUDED.timezone,
+				marketplace_personalization=EXCLUDED.marketplace_personalization,
 				version=user_preferences.version+1,
 				updated_at=now()
 			WHERE user_preferences.version=$5`,
-			principal.TenantID, principal.UserID, dietary, timezone, version)
+			principal.TenantID, principal.UserID, dietary, timezone, personalization, version)
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
 			return apierror.New("VERSION_CONFLICT", "偏好设置已在其他设备更新", 409)
 		}
-		return tx.QueryRow(ctx, `SELECT tenant_id::text,user_id,dietary_restrictions,timezone,version
+		return tx.QueryRow(ctx, `SELECT tenant_id::text,user_id,dietary_restrictions,timezone,version,marketplace_personalization
 			FROM user_preferences WHERE tenant_id=$1 AND user_id=$2`,
 			principal.TenantID, principal.UserID).
-			Scan(&p.TenantID, &p.UserID, &p.DietaryRestrictions, &p.Timezone, &p.Version)
+			Scan(&p.TenantID, &p.UserID, &p.DietaryRestrictions, &p.Timezone, &p.Version, &p.MarketplacePersonalization)
 	})
 	return p, err
 }

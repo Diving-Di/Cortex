@@ -10,6 +10,7 @@
 - AI 整理、报告、来源引用和回忆问答。
 - 每个账号对应一个服务端解析的个人租户。
 - Markdown ZIP 内容导出、版本化完整备份与空租户恢复；笔记版本恢复和软删除租户恢复继续保留。
+- 用户自主上架的 Markdown 模板广场，以及每日限量 AI 深度月报活动。
 
 桌面组件、团队协作、计费和数据库/Markdown 双向同步不属于当前范围。
 
@@ -24,6 +25,7 @@
 | AI | LiteLLM Proxy、OpenAI 兼容 Chat Completions、SSE |
 | 菜谱检索 | 固定 revision 的 GTE 中文 Embedding、BGE CrossEncoder Reranker、pgvector |
 | 部署 | Docker Compose、多阶段静态 Go 镜像 |
+| 活动协调 | Redis 7、Lua 原子预扣；PostgreSQL 保存最终事实 |
 
 后端唯一入口为 `backend/cmd/server/main.go`。仓库不保留 Python 后端或 Alembic。
 
@@ -68,4 +70,4 @@ docker compose up -d --build
 - 所有 Go 源码必须通过 `gofmt`；允许使用 Go 惯例中的 Tab 缩进。
 - `db`、`llm-gateway` 和 `backend` 必须为 healthy。
 - 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
-- 新 PostgreSQL 空库必须完成 32 张表、RLS、注册和登录验收。
+- 新 PostgreSQL 空库必须完成 48 张表、RLS、注册和登录验收。

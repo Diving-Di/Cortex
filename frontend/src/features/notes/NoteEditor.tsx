@@ -66,7 +66,7 @@ export default function NoteEditor({ token }: { token: string }) {
       setState('saved');
       qc.setQueryData(['note', id], n);
       await qc.invalidateQueries({ queryKey: ['notes'] });
-      navigate('/notes');
+      navigate('/notes/list');
     } catch (e: any) {
       setState(e?.response?.status === 409 ? 'conflict' : 'error');
     }
@@ -99,7 +99,7 @@ export default function NoteEditor({ token }: { token: string }) {
           <Button
             className="note-editor-action"
             disabled={state === 'saving'}
-            onClick={() => navigate('/notes')}
+            onClick={() => navigate('/notes/list')}
           >
             取消
           </Button>

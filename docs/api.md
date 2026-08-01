@@ -155,6 +155,50 @@ data: {"conversation_id":12,"message_id":34}
 任务使用 IANA 时区，调度时间在数据库中保存为 UTC。多个 worker 通过数据库
 claim 保证同一到期任务只生成一条运行记录。
 
+## 模板广场
+
+公开模板作者必须先设置公开昵称。模板由作者自主上架和下架，不经过管理员审核；公开读取只
+访问脱敏快照，不访问其他租户的私有原稿。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` / `PUT` | `/api/v1/public-profile` | 读取或设置公开昵称 |
+| `GET` / `POST` | `/api/v1/templates/mine`、`/api/v1/templates` | 查询或创建私有模板 |
+| `GET` / `PATCH` / `DELETE` | `/api/v1/templates/{id}` | 读取、乐观锁更新或软删除自己的模板 |
+| `POST` | `/api/v1/templates/{id}/publish` | 作者上架当前版本并生成公开快照 |
+| `POST` | `/api/v1/templates/{id}/withdraw` | 作者下架公开快照 |
+| `POST` | `/api/v1/templates/{id}/use` | 携带 `Idempotency-Key` 从自己的模板原子创建笔记 |
+| `GET` | `/api/v1/templates/public` | 查询公开模板；支持四种 `ranking`、筛选和服务端签名 `cursor` |
+| `GET` | `/api/v1/templates/public/{public_id}` | 获取公开模板详情 |
+| `PUT` / `DELETE` | `/api/v1/templates/public/{public_id}/like` | 点赞或取消点赞 |
+| `PUT` / `DELETE` | `/api/v1/templates/public/{public_id}/favorite` | 收藏或取消收藏 |
+| `POST` | `/api/v1/templates/public/{public_id}/use` | 携带 `Idempotency-Key` 原子创建笔记 |
+| `POST` | `/api/v1/templates/public/{public_id}/views` | 记录有效浏览 |
+| `POST` | `/api/v1/templates/public/{public_id}/reports` | 提交举报反馈，不自动上下架 |
+
+## 每日限量 AI 深度月报
+
+活动按数据库配置的 `Asia/Shanghai` 时间每天 20:00 开放、20:10 关闭，共 10 个名额，固定
+消耗 100 点。连续 5 天包含活动当天，当天只计算 20:00 前完成的有效笔记。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/ai-points/balance` | 查询当月点数、冻结和可用余额 |
+| `GET` | `/api/v1/ai-events/current` | 查询当前活动、资格和近似剩余名额 |
+| `GET` | `/api/v1/ai-events/history` | 查询近期活动的完全匿名成功名单 |
+| `GET` | `/api/v1/ai-events/{event_id}` | 查询指定活动及当前用户资格 |
+| `POST` | `/api/v1/ai-events/{event_id}/claims` | 携带 UUID `Idempotency-Key` 领取并排队 |
+| `GET` | `/api/v1/ai-events/{event_id}/claims/me` | 查询当前用户本场生成状态和报告 ID |
+
+领取通过 Redis Lua 原子预扣，PostgreSQL 唯一约束与点数账本最终裁决。成功后自动写入月报并
+保存 revision 和来源；最终失败返还点数、不返普通名额。
+
+活动时间、持续分钟数、名额、固定点数、连续天数和月度赠送点数保存在
+`ai_flash_event_settings`，默认分别为 `Asia/Shanghai` 20:00、10 分钟、10 名、100 点、5 天和
+每月 1,000 点。scheduler 预热 Redis 后才开放领取；未预热时领取 fail-closed。
+数据库字段 `reservation_ready` 记录本场预热状态；预热失败时活动详情返回 `paused`，恢复后由
+worker 重新聚合资格和点数镜像并自动置为就绪。
+
 ## 内容导出
 
 | 方法 | 路径 | 说明 |
@@ -164,7 +208,8 @@ claim 保证同一到期任务只生成一条运行记录。
 | `POST` | `/api/v1/backups/full/restore` | 将完整备份 ZIP 恢复到空租户 |
 
 Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 格式，包含笔记、标签、
-版本、附件、定时报告以及研究来源、草稿和资产；恢复旧备份时会忽略其中的个人知识数据及
+版本、附件、定时报告、私有模板、个人收藏以及研究来源、草稿和资产；模板恢复后统一为
+`private`。公开快照、公共排名、举报和活动库存不进入备份。恢复旧备份时会忽略其中的个人知识数据及
 研究知识关联字段；不包含 Token、AI Provider、
 用量、敏感审计、小红书 Cookie 或授权尝试。恢复会重新分配并映射资源 ID，校验 ZIP 路径和
 文件 SHA-256，且只允许目标租户为空时执行。数据库与文件卷的基础设施灾备仍由部署者负责。

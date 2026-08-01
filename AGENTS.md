@@ -4,7 +4,7 @@
 
 ## 1. 产品与架构边界
 
-- 产品范围是个人笔记、日报/周报/月报、标签、附件、历史版本、中文搜索、dashboard、AI 整理/报告/回忆、Markdown ZIP 导出、完整备份和空租户恢复。
+- 产品范围是个人笔记、日报/周报/月报、标签、附件、历史版本、中文搜索、dashboard、AI 整理/报告/回忆、Markdown 模板广场、每日限量 AI 深度月报、Markdown ZIP 导出、完整备份和空租户恢复。
 - 桌面组件、团队协作、计费及数据库与 Markdown 双向同步不在当前范围。
 - 前端固定为 React 18、TypeScript、Webpack 5、Ant Design；后端固定为 Go、Gin、pgx/v5；数据库固定为 PostgreSQL 16；AI 经 LiteLLM 的 OpenAI 兼容 SSE 接口访问。
 - `backend/cmd/server/main.go` 是唯一后端入口。不得重新引入 Python 后端、FastAPI、SQLAlchemy 或 Alembic。
@@ -75,4 +75,4 @@ npm run build
 .\backend\scripts\ai_acceptance.ps1
 ```
 
-- 发布前确认 Go 源码已经过 `gofmt`，并确认 Compose 的 `db`、`llm-gateway`、`backend` healthy。新 PostgreSQL 空库须通过 32 张表、RLS、ready、注册和登录验收。
+- 发布前确认 Go 源码已经过 `gofmt`，并确认 Compose 的 `db`、`redis`、`llm-gateway`、`backend` healthy。新 PostgreSQL 空库须通过 48 张表、RLS、ready、注册和登录验收。

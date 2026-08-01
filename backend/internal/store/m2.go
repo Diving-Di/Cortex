@@ -156,9 +156,10 @@ func (s *Store) ConfirmReport(
 		}
 		var noteID int32
 		var previousContent string
-		err = tx.QueryRow(ctx, `SELECT id,content FROM notes WHERE tenant_id=$1 AND type=$2
+		var previousUpdatedAt time.Time
+		err = tx.QueryRow(ctx, `SELECT id,content,updated_at FROM notes WHERE tenant_id=$1 AND type=$2
             AND note_date=$3 AND deleted_at IS NULL`, principal.TenantID, kind, start,
-		).Scan(&noteID, &previousContent)
+		).Scan(&noteID, &previousContent, &previousUpdatedAt)
 		if err == nil && !overwrite {
 			return apierror.New("REPORT_EXISTS", "该周期报告已存在，请明确选择覆盖", 409)
 		}
@@ -173,11 +174,15 @@ func (s *Store) ConfirmReport(
 			); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `UPDATE notes SET title=$1,content=$2,word_count=$3,
-                updated_by=$4,updated_at=now() WHERE tenant_id=$5 AND id=$6`,
-				title, content, wordCount(content), principal.UserID, principal.TenantID, noteID,
-			); err != nil {
+			command, err := tx.Exec(ctx, `UPDATE notes SET title=$1,content=$2,word_count=$3,
+				updated_by=$4,updated_at=now() WHERE tenant_id=$5 AND id=$6 AND updated_at=$7`,
+				title, content, wordCount(content), principal.UserID, principal.TenantID, noteID, previousUpdatedAt,
+			)
+			if err != nil {
 				return err
+			}
+			if command.RowsAffected() != 1 {
+				return apierror.New("REPORT_VERSION_CONFLICT", "报告已被其他任务修改", 409)
 			}
 			if _, err := tx.Exec(ctx, `DELETE FROM report_sources WHERE tenant_id=$1 AND report_note_id=$2`, principal.TenantID, noteID); err != nil {
 				return err

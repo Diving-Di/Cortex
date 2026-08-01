@@ -21,6 +21,7 @@ export interface RecipePreferences {
   dietary_restrictions: string[];
   timezone: string;
   version: number;
+  marketplace_personalization: boolean;
 }
 
 export interface RecipeConversation {

@@ -1,0 +1,17 @@
+DROP TABLE IF EXISTS public.tenant_daily_writing_stats;
+DROP TABLE IF EXISTS public.outbox_events;
+DROP TABLE IF EXISTS public.ai_event_jobs;
+DROP TABLE IF EXISTS public.ai_flash_claims;
+DROP TABLE IF EXISTS public.ai_flash_events;
+DROP TABLE IF EXISTS public.ai_flash_event_settings;
+DROP TABLE IF EXISTS public.ai_point_ledger;
+DROP TABLE IF EXISTS public.ai_point_accounts;
+DROP TABLE IF EXISTS public.template_public_stats;
+DROP TABLE IF EXISTS public.template_reports;
+DROP TABLE IF EXISTS public.template_usages;
+DROP TABLE IF EXISTS public.template_reactions;
+DROP TABLE IF EXISTS public.published_template_snapshots;
+DROP TABLE IF EXISTS public.template_publications;
+DROP TABLE IF EXISTS public.writing_templates;
+DROP TABLE IF EXISTS public.public_profiles;
+ALTER TABLE public.user_preferences DROP COLUMN IF EXISTS marketplace_personalization;

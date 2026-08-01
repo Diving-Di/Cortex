@@ -1,121 +1,158 @@
 package store
 
 import (
-    "context"
+	"context"
 
-    "diary-listener/backend/internal/apierror"
-    "diary-listener/backend/internal/domain"
-    "github.com/jackc/pgx/v5"
+	"diary-listener/backend/internal/apierror"
+	"diary-listener/backend/internal/domain"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type TenantSummary struct {
-    ID                   string `json:"id"`
-    Name                 string `json:"name"`
-    Status               string `json:"status"`
-    NoteQuota            int64  `json:"note_quota"`
-    NoteCount            int64  `json:"note_count"`
-    AttachmentQuotaBytes int64  `json:"attachment_quota_bytes"`
-    AITokenQuota         int64  `json:"ai_token_quota"`
-    AITokensUsed         int64  `json:"ai_tokens_used"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	Status               string `json:"status"`
+	NoteQuota            int64  `json:"note_quota"`
+	NoteCount            int64  `json:"note_count"`
+	AttachmentQuotaBytes int64  `json:"attachment_quota_bytes"`
+	AITokenQuota         int64  `json:"ai_token_quota"`
+	AITokensUsed         int64  `json:"ai_tokens_used"`
 }
 
 func tenantSummary(ctx context.Context, tx pgx.Tx, principal domain.Principal) (TenantSummary, error) {
-    var summary TenantSummary
-    err := tx.QueryRow(ctx, `
+	var summary TenantSummary
+	err := tx.QueryRow(ctx, `
         SELECT t.id::text,t.name,t.status,t.note_quota,
             (SELECT count(*) FROM notes n WHERE n.tenant_id=t.id AND n.deleted_at IS NULL),
             t.attachment_quota_bytes,t.ai_token_quota,
             COALESCE((SELECT sum(input_tokens+output_tokens) FROM ai_usage_records a WHERE a.tenant_id=t.id),0)
         FROM tenants t WHERE t.id=$1`, principal.TenantID,
-    ).Scan(
-        &summary.ID, &summary.Name, &summary.Status, &summary.NoteQuota,
-        &summary.NoteCount, &summary.AttachmentQuotaBytes, &summary.AITokenQuota,
-        &summary.AITokensUsed,
-    )
-    return summary, err
+	).Scan(
+		&summary.ID, &summary.Name, &summary.Status, &summary.NoteQuota,
+		&summary.NoteCount, &summary.AttachmentQuotaBytes, &summary.AITokenQuota,
+		&summary.AITokensUsed,
+	)
+	return summary, err
 }
 
 func (s *Store) GetTenant(ctx context.Context, principal domain.Principal) (TenantSummary, error) {
-    var result TenantSummary
-    err := s.WithTx(ctx, func(tx pgx.Tx) error {
-        if err := setTenant(ctx, tx, principal); err != nil {
-            return err
-        }
-        var err error
-        result, err = tenantSummary(ctx, tx, principal)
-        return err
-    })
-    return result, err
+	var result TenantSummary
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		var err error
+		result, err = tenantSummary(ctx, tx, principal)
+		return err
+	})
+	return result, err
 }
 
 func (s *Store) UpdateTenant(ctx context.Context, principal domain.Principal, name string) (TenantSummary, error) {
-    var result TenantSummary
-    err := s.WithTx(ctx, func(tx pgx.Tx) error {
-        if err := setTenant(ctx, tx, principal); err != nil {
-            return err
-        }
-        if _, err := tx.Exec(ctx, `UPDATE tenants SET name=$1,updated_at=now() WHERE id=$2`, name, principal.TenantID); err != nil {
-            return err
-        }
-        if err := auditResource(ctx, tx, principal, "tenant.update", "tenant", principal.TenantID.String()); err != nil {
-            return err
-        }
-        var err error
-        result, err = tenantSummary(ctx, tx, principal)
-        return err
-    })
-    return result, err
+	var result TenantSummary
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE tenants SET name=$1,updated_at=now() WHERE id=$2`, name, principal.TenantID); err != nil {
+			return err
+		}
+		if err := auditResource(ctx, tx, principal, "tenant.update", "tenant", principal.TenantID.String()); err != nil {
+			return err
+		}
+		var err error
+		result, err = tenantSummary(ctx, tx, principal)
+		return err
+	})
+	return result, err
 }
 
-func (s *Store) DeleteTenant(ctx context.Context, principal domain.Principal) error {
-    return s.WithTx(ctx, func(tx pgx.Tx) error {
-        if err := setTenant(ctx, tx, principal); err != nil {
-            return err
-        }
-        if err := auditResource(ctx, tx, principal, "tenant.soft_delete", "tenant", principal.TenantID.String()); err != nil {
-            return err
-        }
-        _, err := tx.Exec(ctx, `UPDATE tenants SET status='deleted',deleted_at=now(),updated_at=now() WHERE id=$1`, principal.TenantID)
-        return err
-    })
+func (s *Store) DeleteTenant(ctx context.Context, principal domain.Principal) ([]uuid.UUID, error) {
+	var publicIDs []uuid.UUID
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		if err := auditResource(ctx, tx, principal, "tenant.soft_delete", "tenant", principal.TenantID.String()); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, `SELECT p.public_template_id FROM published_template_snapshots p JOIN template_publications tp ON tp.id=p.source_publication_id WHERE tp.tenant_id=$1 AND p.status='published'`, principal.TenantID)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id uuid.UUID
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			publicIDs = append(publicIDs, id)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+		if _, err := tx.Exec(ctx, `UPDATE published_template_snapshots SET status='withdrawn',withdrawn_at=now()
+			WHERE status='published' AND source_publication_id IN
+			(SELECT id FROM template_publications WHERE tenant_id=$1)`, principal.TenantID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE writing_templates SET status='withdrawn',updated_at=now()
+			WHERE tenant_id=$1 AND status='published'`, principal.TenantID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE template_publications SET status='withdrawn',withdrawn_at=now() WHERE tenant_id=$1 AND status='published'`, principal.TenantID); err != nil {
+			return err
+		}
+		for _, id := range publicIDs {
+			if _, err := tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type) VALUES($1,'template',$2,'template.withdrawn')`, uuid.New(), id.String()); err != nil {
+				return err
+			}
+		}
+		_, err = tx.Exec(ctx, `UPDATE tenants SET status='deleted',deleted_at=now(),updated_at=now() WHERE id=$1`, principal.TenantID)
+		return err
+	})
+	return publicIDs, err
 }
 
 func (s *Store) RestoreTenant(ctx context.Context, principal domain.Principal) (TenantSummary, error) {
-    var result TenantSummary
-    err := s.WithTx(ctx, func(tx pgx.Tx) error {
-        command, err := tx.Exec(ctx, `
+	var result TenantSummary
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		command, err := tx.Exec(ctx, `
             UPDATE tenants SET status='active',deleted_at=NULL,updated_at=now()
             WHERE id=$1 AND user_id=$2 AND status='deleted'`, principal.TenantID, principal.UserID,
-        )
-        if err != nil {
-            return err
-        }
-        if command.RowsAffected() == 0 {
-            return apierror.New("TENANT_NOT_DELETED", "个人空间不处于可恢复状态", 409)
-        }
-        if err := setTenant(ctx, tx, principal); err != nil {
-            return err
-        }
-        if err := auditResource(ctx, tx, principal, "tenant.restore", "tenant", principal.TenantID.String()); err != nil {
-            return err
-        }
-        result, err = tenantSummary(ctx, tx, principal)
-        return err
-    })
-    return result, err
+		)
+		if err != nil {
+			return err
+		}
+		if command.RowsAffected() == 0 {
+			return apierror.New("TENANT_NOT_DELETED", "个人空间不处于可恢复状态", 409)
+		}
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		if err := auditResource(ctx, tx, principal, "tenant.restore", "tenant", principal.TenantID.String()); err != nil {
+			return err
+		}
+		result, err = tenantSummary(ctx, tx, principal)
+		return err
+	})
+	return result, err
 }
 
 func auditResource(
-    ctx context.Context,
-    tx pgx.Tx,
-    principal domain.Principal,
-    action string,
-    resourceType string,
-    resourceID string,
+	ctx context.Context,
+	tx pgx.Tx,
+	principal domain.Principal,
+	action string,
+	resourceType string,
+	resourceID string,
 ) error {
-    _, err := tx.Exec(ctx, `INSERT INTO audit_logs
+	_, err := tx.Exec(ctx, `INSERT INTO audit_logs
         (tenant_id,user_id,action,resource_type,resource_id) VALUES ($1,$2,$3,$4,$5)`,
-        principal.TenantID, principal.UserID, action, resourceType, resourceID,
-    )
-    return err
+		principal.TenantID, principal.UserID, action, resourceType, resourceID,
+	)
+	return err
 }

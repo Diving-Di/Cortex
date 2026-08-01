@@ -52,6 +52,13 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 - PostgreSQL RLS 与显式 `tenant_id` 条件共同约束业务查询。
 - 附件保存在受控数据目录中，不作为公开静态资源暴露。
 
+### 模板与限量 AI 活动
+
+- 创建私有 Markdown 模板，并由作者自主上架或下架公开快照。
+- 从公开模板幂等创建笔记，支持点赞、收藏、使用统计和举报反馈。
+- 每天 20:00 开放 10 分钟的 AI 深度月报活动，限 10 个名额，固定消耗 100 点。
+- Redis 负责高峰原子预扣，PostgreSQL 保存点数、领取和生成任务的最终事实。
+
 Markdown ZIP 只用于内容交换。版本化完整备份可恢复到空的个人空间并重映射资源 ID，且排除
 Token、密钥、小红书授权会话和敏感审计；生产灾备仍应覆盖 PostgreSQL 数据库与应用数据卷。
 个人空间软删除恢复和笔记版本恢复继续保留。
@@ -62,7 +69,7 @@ Token、密钥、小红书授权会话和敏感审计；生产灾备仍应覆盖
 | --- | --- |
 | 前端 | React 18、TypeScript、Webpack 5、Ant Design、TanStack Query、CodeMirror |
 | 后端 | Go、Gin、pgx/v5 |
-| 数据 | PostgreSQL 16、pgvector、RLS |
+| 数据 | PostgreSQL 16、pgvector、RLS、Redis 7（活动协调与公共缓存） |
 | AI 网关 | LiteLLM、OpenAI 兼容 Chat Completions / Embeddings、SSE |
 | RAG | 父子切块、PostgreSQL FTS、向量召回、Qwen3 Reranker |
 | 部署 | Docker Compose |
@@ -263,6 +270,7 @@ docker compose config --quiet
 .\backend\scripts\ai_acceptance.ps1
 docker compose --profile local-ai up -d --build reranker-service
 .\backend\scripts\recipe_sync_acceptance.ps1
+.\backend\scripts\template_ai_event_acceptance.ps1
 ```
 
 菜谱验收脚本验证 HowToCook 静态语料 revision、推荐稳定性、建议问题和问答来源。

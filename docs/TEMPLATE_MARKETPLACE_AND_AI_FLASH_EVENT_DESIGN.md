@@ -1,6 +1,6 @@
 # 模板广场与限量 AI 深度月报技术方案
 
-> 状态：设计草案  
+> 状态：已实现并作为当前技术基线
 > 适用仓库：Diary Listener / Cortex  
 > 目标版本：分阶段交付  
 > 最后更新：2026-08-01
@@ -12,7 +12,7 @@
 1. **日记模板与写作提示广场**：用户使用 Markdown 创建模板，可选择仅自己使用或自主上架到模板广场，其他用户可以预览、收藏、点赞并据此创建笔记。
 2. **每日限量 AI 深度月报活动**：用户拥有月度 AI 点数额度；每天固定时间开放有限名额，满足连续记录 5 天条件的用户可以参与。Redis 负责原子资格预检、库存预扣和高并发削峰，PostgreSQL 保存活动、领取、点数账本与生成任务的最终事实。
 
-本文是实施前的技术基线，不直接改变当前数据库或 API。正式实施时必须同步更新 `AGENTS.md`、`README.md`、`docs/api.md`、数据库初始化基线和版本化迁移。
+本文同时作为当前实现基线；相关 API、数据库初始化基线、版本化迁移、部署配置和验收脚本已同步到仓库。
 
 ## 2. 产品边界与核心原则
 
@@ -616,18 +616,18 @@ trend = recent_score / pow(hours_since_publish + 2, 1.3)
 为 Redis Cluster 兼容性，Lua 涉及的 Key 必须使用相同 hash tag：
 
 ```text
-flash:{event_public_id}:meta
-flash:{event_public_id}:stock
-flash:{event_public_id}:eligible
-flash:{event_public_id}:claimed
-flash:{event_public_id}:points:{tenant_id}
-flash:{event_public_id}:reservation:{request_id}
+diary:ai-event:{event_public_id}:window
+diary:ai-event:{event_public_id}:stock
+diary:ai-event:{event_public_id}:eligible
+diary:ai-event:{event_public_id}:claimed
+diary:ai-event:{event_public_id}:points
+diary:ai-event:{event_public_id}:pending
 ```
 
 实际形式需使用 `{event_public_id}` hash tag，例如：
 
 ```text
-diary:prod:v1:flash:{550e8400-e29b-41d4-a716-446655440000}:stock
+diary:ai-event:{550e8400-e29b-41d4-a716-446655440000}:stock
 ```
 
 TTL 至少覆盖活动关闭时间加 48 小时，便于补偿与对账。活动结束后由清理任务删除，不依赖同步请求清理。
@@ -664,46 +664,47 @@ return 0
 领取脚本只做高并发快速预扣，返回稳定状态：
 
 ```lua
--- KEYS: meta, stock, eligible, claimed, points, reservation
--- ARGV: tenant_id, request_id, now_ms, points_cost, reservation_json, ttl_seconds
+-- KEYS: stock, claimed, window, eligible, points, pending
+-- ARGV: 后端生成的 tenant hash；窗口中保存 opens、closes、cost
 
-local opens_at = tonumber(redis.call('HGET', KEYS[1], 'opens_at_ms'))
-local closes_at = tonumber(redis.call('HGET', KEYS[1], 'closes_at_ms'))
-local now = tonumber(ARGV[3])
+local opens_at = tonumber(redis.call('HGET', KEYS[3], 'opens'))
+local closes_at = tonumber(redis.call('HGET', KEYS[3], 'closes'))
+local points_cost = tonumber(redis.call('HGET', KEYS[3], 'cost'))
+local now = tonumber(redis.call('TIME')[1])
 
 if now < opens_at then return {1, 'NOT_OPEN'} end
 if now >= closes_at then return {2, 'CLOSED'} end
-if redis.call('SISMEMBER', KEYS[3], ARGV[1]) == 0 then
-  return {3, 'NOT_ELIGIBLE'}
-end
-if redis.call('SISMEMBER', KEYS[4], ARGV[1]) == 1 then
+if redis.call('SISMEMBER', KEYS[2], ARGV[1]) == 1 then
   return {4, 'ALREADY_CLAIMED'}
 end
-if redis.call('EXISTS', KEYS[6]) == 1 then
-  return {0, 'IDEMPOTENT_REPLAY'}
+if redis.call('SISMEMBER', KEYS[4], ARGV[1]) == 0 then
+  return {3, 'NOT_ELIGIBLE'}
 end
 
-local available_points = tonumber(redis.call('GET', KEYS[5]) or '-1')
-if available_points < tonumber(ARGV[4]) then
+local available_points = tonumber(redis.call('HGET', KEYS[5], ARGV[1]) or '-1')
+if available_points < points_cost then
   return {5, 'INSUFFICIENT_POINTS'}
 end
-local stock = tonumber(redis.call('GET', KEYS[2]) or '0')
+local stock = tonumber(redis.call('GET', KEYS[1]) or '0')
 if stock <= 0 then return {6, 'SOLD_OUT'} end
 
-redis.call('DECR', KEYS[2])
-redis.call('DECRBY', KEYS[5], ARGV[4])
-redis.call('SADD', KEYS[4], ARGV[1])
-redis.call('SET', KEYS[6], ARGV[5], 'EX', ARGV[6])
+redis.call('DECR', KEYS[1])
+redis.call('HINCRBY', KEYS[5], ARGV[1], -points_cost)
+redis.call('SADD', KEYS[2], ARGV[1])
+redis.call('ZADD', KEYS[6], now, ARGV[1])
 return {0, 'RESERVED'}
 ```
 
 重要限制：
 
-- `now_ms` 最好由 Redis `TIME` 获取，避免相信客户端时间；
+- 时间由 Redis `TIME` 获取，不相信客户端时间；
 - 脚本不直接生成数据库 ID；请求 ID 由后端生成 UUID；
+- Redis 使用不可逆的租户哈希成员，幂等键仍由 PostgreSQL唯一约束裁决；
 - Lua 成功后必须立即执行 PostgreSQL确认事务；
+- PostgreSQL确认成功后从 pending ZSet 移除预扣；每分钟预热先删除超过 30 秒的孤儿 pending，
+  pending 为空时再按 PostgreSQL 真值绝对重建库存、领取成员、资格和点数镜像；
 - PostgreSQL确认失败时执行幂等补偿脚本：返还库存、返还点数镜像、移除 claimed、标记 reservation 已补偿；
-- 补偿失败写入 reconciliation 表并报警；
+- 补偿失败记录错误指标并由每分钟 PostgreSQL 真值预热纠正；
 - 数据库唯一冲突意味着已有成功记录，此时不得盲目返还库存，应查询现有领取再决定。
 
 ## 10. 活动领取完整链路
@@ -1073,17 +1074,7 @@ candidate_score = 0.45 × 趋势标准分
 
 ### 14.2 重建工具
 
-提供只读扫描 + 明确确认的管理命令：
-
-```powershell
-Set-Location backend
-go run ./cmd/admin redis rebuild-template-rankings --window 7d
-go run ./cmd/admin redis warm-ai-event --event-id <uuid>
-go run ./cmd/admin ai-events reconcile --event-id <uuid>
-go run ./cmd/admin ai-points reconcile --period 2026-08
-```
-
-注意：当前规范规定 `backend/cmd/server/main.go` 是唯一后端入口。如确需 `cmd/admin`，必须先修改架构规范；否则把这些能力实现为 `backend/scripts` 调用的受保护内部管理 API，或在 server 二进制中提供显式、不可与服务模式混用的管理子命令。未经边界调整不得直接新增第二入口。
+当前由唯一的 server 入口内置 worker 每分钟从 PostgreSQL 重建活动资格、点数镜像和领取成员；未决预扣存在时暂缓覆盖，超过 30 秒的孤儿预扣会先被清理。模板 Outbox worker 使用绝对投影值更新排行，并在 Redis 投影缺失时执行完整排行重建。`/metrics` 暴露库存、点数、任务、Outbox 和来源漂移，人工处理前先以这些 PostgreSQL 真值指标确认范围；人工补发使用 `backend/scripts/grant_ai_event_replacement.ps1`，必须显式指定活动、数量、延长时间和确认开关。本期不新增第二个后端入口或管理员审核 CLI。
 
 ### 14.3 对账
 
@@ -1342,6 +1333,7 @@ gofmt -w <changed-go-files>
 go vet ./...
 go test ./...
 go build ./cmd/server
+go build ./cmd/migrate
 ```
 
 前端：
@@ -1359,9 +1351,11 @@ npm run build
 docker compose config --quiet
 .\backend\scripts\non_ai_smoke.ps1
 .\backend\scripts\ai_acceptance.ps1
+.\backend\scripts\template_ai_event_acceptance.ps1
+.\backend\scripts\template_ai_event_redis_failure_acceptance.ps1
+.\backend\scripts\ai_event_concurrency_acceptance.ps1
+.\backend\scripts\backup_acceptance.ps1
 ```
-
-另需增加 Redis 故障降级、活动并发与跨租户安全验收。
 
 ## 20. 分阶段实施计划
 

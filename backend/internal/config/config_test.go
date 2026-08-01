@@ -12,4 +12,7 @@ func TestLoadRecipeRetrievalDefaults(t *testing.T) {
 	if cfg.RerankModel != "BAAI/bge-reranker-v2-m3" {
 		t.Fatalf("RerankModel = %q", cfg.RerankModel)
 	}
+	if cfg.RedisURL != "redis://redis:6379/0" {
+		t.Fatalf("RedisURL = %q", cfg.RedisURL)
+	}
 }

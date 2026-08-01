@@ -103,3 +103,16 @@ Set-Location ..
 docker compose config --quiet
 .\backend\scripts\recipe_sync_acceptance.ps1
 ```
+
+## 9. 模板广场与限量 AI 活动
+
+私有模板受租户 RLS 保护，作者明确上架时生成不含租户标识的公开快照；作者下架或删除租户时
+立即使快照不可见。完整备份只包含私有模板和个人收藏。
+
+每日活动配置保存在 PostgreSQL，Redis Lua 负责库存和重复领取预扣，数据库唯一约束、点数
+账本与 claim/job 状态机保存最终事实。Worker 使用有限租约领取任务，成功后自动写入带来源的
+月报；最终失败释放冻结点数但不返普通名额。Redis 不可用时只关闭领取，不影响核心笔记功能。
+
+活动参数集中保存在 `ai_flash_event_settings`。scheduler 使用 PostgreSQL 剩余名额和既有领取记录
+预热带时间窗的 Redis Key；领取请求先由 Redis `TIME` 裁决开放时间和库存，只有预扣成功的少量
+请求进入 PostgreSQL。模板排行由 outbox 幂等投影到 ZSet/HLL，Redis 清空后从公开统计重建。

@@ -7,6 +7,7 @@ import {
   Empty,
   Input,
   List,
+  Modal,
   Row,
   Space,
   Statistic,
@@ -18,6 +19,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { getDashboard } from '../../api/dashboard';
 import { confirmOrganize, streamPost } from '../../api/m2';
+import { getCurrentAIEvent } from '../../api/aiEvents';
 import './Dashboard.css';
 
 function OfflineStatus() {
@@ -49,6 +51,13 @@ export default function DashboardPage({ token }: { token: string }) {
     queryFn: () => getDashboard(token),
     retry: navigator.onLine ? 1 : false,
   });
+  const aiEvent = useQuery({ queryKey: ['ai-event'], queryFn: () => getCurrentAIEvent(token) });
+  const [eventOpen, setEventOpen] = useState(false);
+  useEffect(() => {
+    if (!aiEvent.data) return;
+    const key = `ai-event-modal-dismissed:${aiEvent.data.id}`;
+    if (aiEvent.data.show_dashboard_prompt && !localStorage.getItem(key)) setEventOpen(true);
+  }, [aiEvent.data]);
   const [raw, setRaw] = useState('');
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
@@ -105,9 +114,43 @@ export default function DashboardPage({ token }: { token: string }) {
   }
 
   const data = dashboard.data;
+  const eventTime = aiEvent.data
+    ? new Intl.DateTimeFormat('zh-CN', {
+        timeZone: aiEvent.data.timezone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(new Date(aiEvent.data.opens_at))
+    : '';
+  const eventDuration = aiEvent.data
+    ? Math.round(
+        (new Date(aiEvent.data.closes_at).getTime() - new Date(aiEvent.data.opens_at).getTime()) /
+          60000,
+      )
+    : 0;
   return (
     <div className="feature-page dashboard-page">
       <OfflineStatus />
+      <Modal
+        open={eventOpen}
+        title={eventTime ? `今晚 ${eventTime} AI 深度月报限量开放` : 'AI 深度月报限量开放'}
+        onOk={() => navigate('/ai-events')}
+        okText="查看活动"
+        cancelText="今日不再提醒"
+        onCancel={() => {
+          if (aiEvent.data)
+            localStorage.setItem(`ai-event-modal-dismissed:${aiEvent.data.id}`, '1');
+          setEventOpen(false);
+        }}
+      >
+        {aiEvent.data && (
+          <p>
+            持续 {eventDuration} 分钟，共 {aiEvent.data.total_slots} 个名额，固定消耗{' '}
+            {aiEvent.data.points_cost} 点。连续记录 {aiEvent.data.required_streak_days}{' '}
+            天（含活动当天）即可参与。
+          </p>
+        )}
+      </Modal>
       <div className="dashboard-heading">
         <div>
           <h1>工作台</h1>

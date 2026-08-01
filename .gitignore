@@ -49,3 +49,7 @@ htmlcov/
 .pytest_cache/
 soak-results/
 /tmp/
+
+# Repository-local acceptance and corpus workspaces
+/.tmp-*/
+/.recipe-corpus-tmp/

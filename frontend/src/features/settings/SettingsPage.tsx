@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Input, Segmented, Space, Spin, Typography, message } from 'antd';
+import { Button, Card, Input, Segmented, Space, Spin, Switch, Typography, message } from 'antd';
 import { ThemePreference, useTheme } from '../../app/theme';
 import {
   getRecipePreferences,
@@ -93,6 +93,25 @@ export default function SettingsPage({ token }: { token: string }) {
         ) : (
           <Spin aria-label="正在加载忌口设置" />
         )}
+      </Card>
+      <Card title="模板广场" className="settings-card">
+        <Space>
+          <Switch
+            aria-label="个性化模板推荐"
+            checked={preferences?.marketplace_personalization ?? true}
+            disabled={!preferences || savingPreferences}
+            onChange={(checked) => {
+              if (!preferences) return;
+              const next = { ...preferences, marketplace_personalization: checked };
+              setSavingPreferences(true);
+              void updateRecipePreferences(token, next)
+                .then(setPreferences)
+                .catch(() => message.error('保存失败，设置可能已在其他设备更新'))
+                .finally(() => setSavingPreferences(false));
+            }}
+          />
+          <Typography.Text>根据收藏和使用记录提供个性化模板推荐</Typography.Text>
+        </Space>
       </Card>
     </div>
   );
