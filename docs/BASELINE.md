@@ -1,7 +1,7 @@
 # Cortex 工程基线
 
 > 状态：当前有效
-> 更新日期：2026-07-27
+> 更新日期：2026-08-01
 
 ## 产品范围
 
@@ -21,7 +21,8 @@
 | 后端 | Go 1.26、Gin、标准 `net/http`、`gofmt` |
 | 数据访问 | pgx/v5、显式 SQL、显式事务 |
 | 数据库 | PostgreSQL 16、RLS |
-| AI | LiteLLM Proxy、OpenAI 兼容 Chat Completions/Embeddings、SSE |
+| AI | LiteLLM Proxy、OpenAI 兼容 Chat Completions、SSE |
+| 菜谱检索 | 固定 revision 的 GTE 中文 Embedding、BGE CrossEncoder Reranker、pgvector |
 | 部署 | Docker Compose、多阶段静态 Go 镜像 |
 
 后端唯一入口为 `backend/cmd/server/main.go`。仓库不保留 Python 后端或 Alembic。
@@ -42,10 +43,10 @@
 - `.env` 只用于本地运行并必须被 Git 忽略。
 - 供应商 Key 仅注入 LiteLLM；业务后端只持有网关密钥。
 - Key 不得进入前端、URL、日志、审计记录、备份或文档。
-- 知识向量固定使用宿主机 Ollama 的 `qwen3-embedding:0.6b`（1024 维），
-  Backend 只调用 LiteLLM 逻辑模型 `cortex-embedding`，不得直连 Ollama。
-- `LOCAL_EMBEDDING_API_KEY` 只是 OpenAI 兼容接口占位值，不是付费供应商凭据；
-  Ollama 端口只允许本机和 Docker 私有网络访问。
+- 菜谱知识向量使用 Compose 内部 `embedding-service` 加载固定 revision 的
+  `iic/nlp_gte_sentence-embedding_chinese-small`（512 维）。
+- 菜谱精排使用 Compose 内部 `reranker-service` 加载固定 revision 的
+  `BAAI/bge-reranker-v2-m3`；两个模型服务均不暴露宿主机端口。
 
 ## 必须通过的验证
 
@@ -66,5 +67,5 @@ docker compose up -d --build
 
 - 所有 Go 源码必须通过 `gofmt`；允许使用 Go 惯例中的 Tab 缩进。
 - `db`、`llm-gateway` 和 `backend` 必须为 healthy。
-- 本地 Qwen embedding 必须通过经 LiteLLM 的单条、批量、中英文、维度异常和不可用降级验收。
+- 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
 - 新 PostgreSQL 空库必须完成 32 张表、RLS、注册和登录验收。

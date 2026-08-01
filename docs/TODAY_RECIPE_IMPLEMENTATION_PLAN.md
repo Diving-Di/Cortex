@@ -4,7 +4,7 @@
 
 - 系统知识库唯一来源为 `backend/resources/howtocook`。
 - 语料 revision 固定在 `SOURCE.json`，服务启动时幂等同步。
-- 菜谱与技巧写入独立的 `recipe_documents`、`recipe_child_chunks` 和索引任务表。
+- 菜谱与技巧写入独立的 `recipe_documents`、`recipe_parent_chunks`、`recipe_child_chunks` 和索引任务表。
 - `/recipes` 提供今日推荐、三个建议问题和自由问答。
 - `/knowledge`、`/assistant` 页面及 `/api/v1/knowledge/*` 已删除。
 - 用户知识文件上传、集合、预览、下载、删除、重建索引和通用知识问答已删除。

@@ -116,32 +116,26 @@ AI_MODEL=diary-default
 - 网关管理端口不得公开暴露；仅应用调用端口允许在内部网络访问。
 - 开发、测试和生产环境使用不同的虚拟密钥、预算与日志空间。
 
-### 4.1 本地知识库 Embedding
+### 4.1 菜谱知识库 Embedding
 
-LiteLLM 暴露逻辑模型 `cortex-embedding`，并将请求转发到
-宿主机 Ollama 的 OpenAI 兼容接口。当前模型为
-`qwen3-embedding:0.6b`，默认返回 1024 维向量，支持中英文和中英混合语料。
-Cortex Backend 只持有 `LITELLM_VIRTUAL_KEY`，不得绕过 LiteLLM 直连
-Ollama。Ollama 不使用付费供应商 Key；`LOCAL_EMBEDDING_API_KEY` 只是
-LiteLLM OpenAI 兼容客户端所需的本地占位凭据。
+当前 Compose 由内部 `embedding-service` 加载固定 revision 的
+`iic/nlp_gte_sentence-embedding_chinese-small`，Backend 通过 OpenAI 兼容接口直接调用该
+服务。模型返回 512 维向量，支持中英文和中英混合语料。服务不暴露宿主机端口。
 
-Backend 默认不发送 `dimensions`，但仍严格校验响应必须为 1024 维；
+Backend 默认不发送 `dimensions`，但仍严格校验响应必须为 512 维；
 `RAG_EMBEDDING_SEND_DIMENSIONS` 保持 `false`。配置如下：
 
 ```env
-LOCAL_EMBEDDING_BASE_URL=http://host.docker.internal:11434/v1
-LOCAL_EMBEDDING_API_KEY=ollama-local
-RAG_EMBEDDING_BASE_URL=http://llm-gateway:4000/v1
+RAG_EMBEDDING_BASE_URL=http://embedding-service:4000/v1
 RAG_EMBEDDING_API_KEY=<LiteLLM virtual key>
-RAG_EMBEDDING_MODEL=cortex-embedding
-RAG_EMBEDDING_DIMENSIONS=1024
+RAG_EMBEDDING_MODEL=iic/nlp_gte_sentence-embedding_chinese-small
+RAG_EMBEDDING_DIMENSIONS=512
 RAG_EMBEDDING_SEND_DIMENSIONS=false
 ```
 
-原文件、提取文本、父子分片和 embedding 返回值都保存在本机；
-只有生成向量所需的 child 文本和查询文本会经 LiteLLM 发送给宿主机 Ollama。
-Windows 上 Ollama 必须监听 Docker Desktop 可访问的地址，例如
-`OLLAMA_HOST=0.0.0.0:11434`，并通过防火墙禁止公网访问该端口。
+原文件、提取文本、父子分片和 embedding 返回值都保存在本地部署环境；只有生成向量所需的
+child 文本和查询文本会发送给内部 Embedding 服务。精排由内部 `reranker-service` 的
+`BAAI/bge-reranker-v2-m3` 完成，同样不暴露宿主机端口。
 
 ## 5. 路由与可靠性规范
 
@@ -285,7 +279,8 @@ normalized_request_hash
 
 LiteLLM 已使用独立管理数据库。业务后端通过 `LITELLM_VIRTUAL_KEY` 访问网关；
 `LITELLM_MASTER_KEY` 仅用于管理。`backend/scripts/provision-litellm-key.ps1`
-负责签发只允许 `diary-default`、`cortex-embedding` 且具有预算周期的虚拟密钥；
+负责签发只允许业务所需逻辑模型且具有预算周期的虚拟密钥；当前 Backend 的生成请求使用
+`diary-default`，菜谱 Embedding 由内部 `embedding-service` 提供；
 默认不显示 key，传入 `-EnvironmentFile` 时可原子更新被忽略的本地 Compose
 环境文件。生产发布仍应接入平台 Secret 管理系统。
 

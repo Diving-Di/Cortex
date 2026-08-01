@@ -18,6 +18,7 @@
 | `/login` | `features/auth/LoginPage.tsx` |
 | `/` | `features/dashboard/DashboardPage.tsx` |
 | `/notes/*` | `features/notes/NotesPage.tsx` |
+| `/recipes` | `features/recipes/TodayRecipePage.tsx` |
 | `/reports` | `features/reports/ReportsPage.tsx` |
 | `/settings` | `features/settings/SettingsPage.tsx` |
 

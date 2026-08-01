@@ -16,8 +16,7 @@ Authorization: Token <token>
 `X-Request-ID`。非法或缺失时服务端生成 UUID，所有响应都通过
 `X-Request-ID` 返回最终追踪标识。
 
-通用 AI 流式接口返回 `text/event-stream`。知识 Chat 使用具名的
-`retrieval`、`delta`、`sources`、`error` 和 `done` 事件：
+通用 AI 流式接口返回 `text/event-stream`，增量内容格式为：
 
 ```text
 data: {"content":"文本片段"}
@@ -47,6 +46,8 @@ data: [DONE]
 | `DELETE` | `/api/v1/tenant` | 软删除个人空间 |
 | `POST` | `/api/v1/tenant/restore` | 恢复个人空间 |
 | `GET` | `/api/dashboard?timezone=Asia/Shanghai` | 获取工作台统计摘要 |
+
+`/api/dashboard` 是当前保留的未版本化工作台接口；其他产品业务接口使用 `/api/v1`。
 
 ## 笔记与版本
 
@@ -180,7 +181,7 @@ Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 
 | `POST` | `/api/v1/research/jobs/{job_id}/retry` | 将失败或取消的任务重新排队 |
 | `GET` | `/api/v1/research/sources` | 筛选、搜索和分页查询研究结果 |
 | `GET` | `/api/v1/research/sources/{source_id}` | 查询来源、图片、OCR 和整理草稿 |
-| `DELETE` | `/api/v1/research/sources/{source_id}` | 软删除来源并使关联知识文档停止检索 |
+| `DELETE` | `/api/v1/research/sources/{source_id}` | 软删除研究来源并删除关联资产文件 |
 | `POST` | `/api/v1/research/sources/{source_id}/retry` | 为失败来源创建重新采集任务 |
 | `POST` | `/api/v1/research/sources/{source_id}/recollect` | 为来源创建重新采集任务 |
 | `PATCH` | `/api/v1/research/sources/{source_id}/draft` | 使用版本号更新整理草稿 |

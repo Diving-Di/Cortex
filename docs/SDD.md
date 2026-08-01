@@ -39,7 +39,7 @@ HowToCook 语料，不与数据库做双向同步。
 flowchart LR
     RESOURCE["resources/howtocook<br/>固定 revision Markdown"]
     SYNC["启动同步<br/>Recipe Sync"]
-    DB[("recipe_documents<br/>recipe_child_chunks")]
+    DB[("recipe_documents<br/>recipe_parent_chunks<br/>recipe_child_chunks")]
     INDEX["Recipe Indexer"]
     EMBED["固定 Embedding 服务"]
     API["/api/v1/recipes/*"]
@@ -85,8 +85,8 @@ AI 未配置或不可用时，认证、笔记、搜索、附件、导出、备�
 
 ## 8. 部署与验证
 
-Compose 下数据库和 LiteLLM 不暴露宿主机端口。`/healthz` 只反映进程存活，
-`/readyz` 验证数据库及菜谱检索所需组件。
+Compose 下数据库、LiteLLM、Embedding 和 Reranker 服务不暴露宿主机端口。
+`/healthz` 只反映进程存活，`/readyz` 只验证数据库可用。
 
 ```powershell
 Set-Location backend
