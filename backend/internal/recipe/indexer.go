@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -61,7 +63,7 @@ func StartRecipeIndexer(ctx context.Context, s *store.Store, embeddingURL, embed
 				for _, job := range jobs {
 					var rows []childRow
 					_ = s.WithTx(ctx, func(tx pgx.Tx) error {
-						r, err := tx.Query(ctx, `SELECT id,document_id,content_hash,embedding_text FROM recipe_child_chunks WHERE document_id=$1 AND (embedding IS NULL OR embedding_model IS NULL)`, job.DocumentID)
+						r, err := tx.Query(ctx, `SELECT id,document_id,content_hash,embedding_text FROM recipe_child_chunks WHERE document_id=$1 AND index_version=$2 AND (embedding IS NULL OR embedding_model IS NULL)`, job.DocumentID, job.TargetIndexVersion)
 						if err != nil {
 							return err
 						}
@@ -76,64 +78,44 @@ func StartRecipeIndexer(ctx context.Context, s *store.Store, embeddingURL, embed
 						return r.Err()
 					})
 					if len(rows) == 0 {
+						if err := s.ActivateRecipeIndex(ctx, job.DocumentID, job.TargetIndexVersion, embeddingModel); err != nil {
+							_ = s.FailRecipeIndex(ctx, job, "INDEX_ACTIVATION_FAILED", true)
+							continue
+						}
 						_ = s.CompleteRecipeIndex(ctx, job)
 						continue
 					}
+					texts := make([]string, len(rows))
+					for i := range rows {
+						texts[i] = rows[i].EmbeddingText
+					}
+					vectors := make([][]float32, len(rows))
 					success := true
-					for _, r := range rows {
-						slog.Info("indexer: embedding candidate", "document_id", r.DocumentID, "content_hash", r.ContentHash)
-						reqBody := map[string]any{"input": r.EmbeddingText, "model": embeddingModel}
-						b, _ := json.Marshal(reqBody)
-						req, err := http.NewRequestWithContext(ctx, "POST", embeddingURL, bytes.NewReader(b))
+					for i := range rows {
+						one, err := embedRecipeInput(ctx, client, embeddingURL, embeddingModel, texts[i], 1)
 						if err != nil {
-							slog.Error("indexer: build request failed", "code", "EMBEDDING_REQUEST_INVALID")
+							slog.Error("indexer: embedding failed", "document_id", rows[i].DocumentID, "code", "EMBEDDING_UNAVAILABLE")
 							success = false
 							continue
 						}
-						req.Header.Set("Content-Type", "application/json")
-						resp, err := client.Do(req)
-						if err != nil {
-							slog.Error("indexer: embedding call failed", "code", "EMBEDDING_UNAVAILABLE")
+						vectors[i] = one[0]
+					}
+					for i, row := range rows {
+						if vectors[i] == nil {
+							slog.Error("indexer: write embedding failed", "document_id", row.DocumentID, "code", "EMBEDDING_MISSING")
 							success = false
 							continue
 						}
-						if resp.StatusCode != http.StatusOK {
-							slog.Error("indexer: embedding service returned non-200", "status", resp.StatusCode)
-							resp.Body.Close()
-							success = false
-							continue
-						}
-						var parsed map[string]any
-						wroteEmbedding := false
-						if err := json.NewDecoder(resp.Body).Decode(&parsed); err == nil {
-							if data, ok := parsed["data"].([]any); ok && len(data) > 0 {
-								if first, ok := data[0].(map[string]any); ok {
-									if emb, ok := first["embedding"].([]any); ok {
-										vec := make([]float32, 0, len(emb))
-										for _, v := range emb {
-											if f, ok := v.(float64); ok {
-												vec = append(vec, float32(f))
-											}
-										}
-										if len(vec) == EmbeddingDimensions {
-											if err := s.UpdateRecipeChildEmbedding(ctx, r.DocumentID, r.ContentHash, vec, embeddingModel); err != nil {
-												slog.Error("indexer: write embedding failed", "err", err)
-												success = false
-											} else {
-												wroteEmbedding = true
-											}
-										}
-									}
-								}
-							}
-						}
-						resp.Body.Close()
-						if !wroteEmbedding {
-							slog.Error("indexer: invalid embedding response", "code", "EMBEDDING_INVALID_RESPONSE")
+						if err := s.UpdateRecipeChildEmbeddingByID(ctx, row.ID, vectors[i], embeddingModel); err != nil {
+							slog.Error("indexer: write embedding failed", "document_id", row.DocumentID, "err", err)
 							success = false
 						}
 					}
 					if success {
+						if err := s.ActivateRecipeIndex(ctx, job.DocumentID, job.TargetIndexVersion, embeddingModel); err != nil {
+							_ = s.FailRecipeIndex(ctx, job, "INDEX_ACTIVATION_FAILED", true)
+							continue
+						}
 						_ = s.CompleteRecipeIndex(ctx, job)
 					} else {
 						_ = s.FailRecipeIndex(ctx, job, "EMBEDDING_FAILED", true)
@@ -147,4 +129,41 @@ func StartRecipeIndexer(ctx context.Context, s *store.Store, embeddingURL, embed
 			}
 		}(w)
 	}
+}
+
+func embedRecipeTexts(ctx context.Context, client *http.Client, url, model string, texts []string) ([][]float32, error) {
+	return embedRecipeInput(ctx, client, url, model, texts, len(texts))
+}
+
+func embedRecipeInput(ctx context.Context, client *http.Client, url, model string, input any, expected int) ([][]float32, error) {
+	body, _ := json.Marshal(map[string]any{"input": input, "model": model})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("embedding status %d", resp.StatusCode)
+	}
+	var parsed struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil || len(parsed.Data) != expected {
+		return nil, errors.New("invalid embedding batch response")
+	}
+	vectors := make([][]float32, len(parsed.Data))
+	for i := range parsed.Data {
+		if len(parsed.Data[i].Embedding) != EmbeddingDimensions {
+			return nil, errors.New("invalid embedding dimensions")
+		}
+		vectors[i] = parsed.Data[i].Embedding
+	}
+	return vectors, nil
 }

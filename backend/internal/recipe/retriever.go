@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"diary-listener/backend/internal/store"
@@ -20,6 +22,11 @@ type Retriever struct {
 	EmbeddingURL   string
 	EmbeddingModel string
 	HTTPClient     *http.Client
+	VectorTopK     int
+	TitleTopK      int
+	KeywordTopK    int
+	FusionTopK     int
+	ContextTopK    int
 }
 
 const EmbeddingDimensions = 512
@@ -34,8 +41,57 @@ func (r *Retriever) Search(ctx context.Context, query string, limit int) ([]stor
 	if client == nil {
 		client = &http.Client{Timeout: 6 * time.Second}
 	}
-	reqBody := map[string]any{"input": query, "model": r.EmbeddingModel}
-	b, _ := json.Marshal(reqBody)
+	vectorTopK := r.VectorTopK
+	if vectorTopK <= 0 {
+		vectorTopK = max(15, limit)
+	}
+	titleTopK := r.TitleTopK
+	if titleTopK <= 0 {
+		titleTopK = 10
+	}
+	keywordTopK := r.KeywordTopK
+	if keywordTopK <= 0 {
+		keywordTopK = 15
+	}
+	fusionTopK := r.FusionTopK
+	if fusionTopK <= 0 {
+		fusionTopK = max(20, limit)
+	}
+	queries := ExpandRetrievalQueries(query)
+	routes := make([][]store.RecipeCandidate, 0, len(queries)+2)
+	for _, variant := range queries {
+		vec, err := r.embedQuery(ctx, client, variant.Text)
+		if err != nil {
+			return nil, err
+		}
+		items, err := r.Store.SearchRecipesByVector(ctx, vec, r.EmbeddingModel, vectorTopK)
+		if err != nil {
+			return nil, err
+		}
+		for i := range items {
+			items[i].Routes = []string{"vector_" + variant.Kind}
+		}
+		routes = append(routes, items)
+	}
+	intent := queries[len(queries)-1].Kind
+	tokens := retrievalTokens(query)
+	if items, err := r.Store.SearchRecipesByTitle(ctx, query, intent, titleTopK); err == nil {
+		for i := range items {
+			items[i].Routes = []string{"title"}
+		}
+		routes = append(routes, items)
+	}
+	if items, err := r.Store.SearchRecipesByKeywords(ctx, query, tokens, intent, keywordTopK); err == nil {
+		for i := range items {
+			items[i].Routes = []string{"keyword"}
+		}
+		routes = append(routes, items)
+	}
+	return fuseCandidates(routes, 60, fusionTopK), nil
+}
+
+func (r *Retriever) embedQuery(ctx context.Context, client *http.Client, query string) ([]float32, error) {
+	b, _ := json.Marshal(map[string]any{"input": query, "model": r.EmbeddingModel})
 	req, err := http.NewRequestWithContext(ctx, "POST", r.EmbeddingURL, bytes.NewReader(b))
 	if err != nil {
 		return nil, err
@@ -49,26 +105,79 @@ func (r *Retriever) Search(ctx context.Context, query string, limit int) ([]stor
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("recipe embedding returned status %d", resp.StatusCode)
 	}
-	var parsed map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err == nil {
-		if data, ok := parsed["data"].([]any); ok && len(data) > 0 {
-			if first, ok := data[0].(map[string]any); ok {
-				if emb, ok := first["embedding"].([]any); ok {
-					vec := make([]float32, 0, len(emb))
-					for _, v := range emb {
-						if f, ok := v.(float64); ok {
-							vec = append(vec, float32(f))
-						}
-					}
-					if len(vec) != EmbeddingDimensions {
-						return nil, fmt.Errorf("recipe embedding dimensions: got %d want %d", len(vec), EmbeddingDimensions)
-					}
-					return r.Store.SearchRecipesByVector(ctx, vec, r.EmbeddingModel, limit)
-				}
+	var parsed struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil || len(parsed.Data) == 0 {
+		return nil, errors.New("recipe embedding response is invalid")
+	}
+	vec := parsed.Data[0].Embedding
+	if len(vec) != EmbeddingDimensions {
+		return nil, fmt.Errorf("recipe embedding dimensions: got %d want %d", len(vec), EmbeddingDimensions)
+	}
+	return vec, nil
+}
+
+func retrievalTokens(query string) []string {
+	fields := strings.FieldsFunc(query, func(r rune) bool { return strings.ContainsRune("，。！？、；：,.!?;:（）() ", r) })
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range fields {
+		f = strings.TrimSpace(f)
+		if len([]rune(f)) < 2 || seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out
+}
+
+func fuseCandidates(routes [][]store.RecipeCandidate, k float64, limit int) []store.RecipeCandidate {
+	byID := map[int64]*store.RecipeCandidate{}
+	for _, route := range routes {
+		seen := map[int64]bool{}
+		for rank, item := range route {
+			if seen[item.ChunkID] {
+				continue
 			}
+			seen[item.ChunkID] = true
+			existing := byID[item.ChunkID]
+			if existing == nil {
+				copy := item
+				existing = &copy
+				byID[item.ChunkID] = existing
+			}
+			existing.FusionScore += 1 / (k + float64(rank+1))
+			existing.Routes = appendUnique(existing.Routes, item.Routes...)
 		}
 	}
-	return nil, errors.New("recipe embedding response is invalid")
+	result := make([]store.RecipeCandidate, 0, len(byID))
+	for _, v := range byID {
+		result = append(result, *v)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].FusionScore == result[j].FusionScore {
+			return result[i].ChunkID < result[j].ChunkID
+		}
+		return result[i].FusionScore > result[j].FusionScore
+	})
+	return result[:min(limit, len(result))]
+}
+func appendUnique(values []string, more ...string) []string {
+	seen := map[string]bool{}
+	for _, v := range values {
+		seen[v] = true
+	}
+	for _, v := range more {
+		if !seen[v] {
+			values = append(values, v)
+			seen[v] = true
+		}
+	}
+	return values
 }
 
 type rerankRequest struct {
@@ -121,20 +230,32 @@ func (r *Retriever) Rerank(ctx context.Context, query string, candidates []store
 	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
 		return nil, errors.New("recipe reranker response is invalid")
 	}
+	if len(rr.Results) != len(candidates) {
+		return nil, errors.New("recipe reranker response is incomplete")
+	}
 	// build new ordering
 	ordered := make([]store.RecipeCandidate, 0, len(candidates))
 	seen := make([]bool, len(candidates))
 	for _, res := range rr.Results {
 		if res.Index >= 0 && res.Index < len(candidates) && !seen[res.Index] {
-			ordered = append(ordered, candidates[res.Index])
+			candidate := candidates[res.Index]
+			score := res.RelevanceScore
+			candidate.RerankScore = &score
+			ordered = append(ordered, candidate)
 			seen[res.Index] = true
 		}
 	}
-	// append any missing
-	for i, c := range candidates {
-		if !seen[i] {
-			ordered = append(ordered, c)
+	for _, present := range seen {
+		if !present {
+			return nil, errors.New("recipe reranker response has duplicate or invalid indexes")
 		}
+	}
+	contextTopK := r.ContextTopK
+	if contextTopK <= 0 {
+		contextTopK = 5
+	}
+	if r.Store != nil {
+		return r.Store.ExpandRecipeParents(ctx, ordered, contextTopK, 2)
 	}
 	return ordered, nil
 }

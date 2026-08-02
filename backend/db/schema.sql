@@ -3697,6 +3697,7 @@ GRANT SELECT,USAGE ON SEQUENCE public.xhs_authorizations_id_seq TO diary_app;
 -- Template marketplace and AI flash-event baseline. Kept identical to migration 000014.
 \ir ../internal/migrations/sql/000014_template_marketplace_ai_events.up.sql
 \ir ../internal/migrations/sql/000015_ai_event_reservation_readiness.up.sql
+\ir ../internal/migrations/sql/000016_recipe_retrieval_v2.up.sql
 
 
 --

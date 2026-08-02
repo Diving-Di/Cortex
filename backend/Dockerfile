@@ -18,6 +18,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w" \
     -o /out/migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath \
+    -ldflags="-s -w" \
+    -o /out/rag-eval ./cmd/rag-eval
 
 FROM alpine:3.23
 
@@ -31,7 +35,9 @@ RUN apk add --no-cache ca-certificates chromium tzdata su-exec \
 WORKDIR /app
 COPY --from=builder /out/server /app/server
 COPY --from=builder /out/migrate /app/migrate
+COPY --from=builder /out/rag-eval /app/rag-eval
 COPY --from=builder /src/resources /app/resources
+COPY --from=builder /src/testdata/rag /app/testdata/rag
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
 

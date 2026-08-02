@@ -424,6 +424,9 @@ func (s *Server) recipesChat(w http.ResponseWriter, r *http.Request) {
 		RerankModel:    s.cfg.RerankModel,
 		EmbeddingURL:   strings.TrimRight(s.cfg.EmbeddingBaseURL, "/") + "/embeddings",
 		EmbeddingModel: s.cfg.EmbeddingModel,
+		VectorTopK:     s.cfg.RAGVectorTopK, TitleTopK: s.cfg.RAGTitleTopK,
+		KeywordTopK: s.cfg.RAGKeywordTopK, FusionTopK: s.cfg.RAGFusionTopK,
+		ContextTopK: s.cfg.RAGContextTopK,
 	}
 	retrievalQuery := req.Question
 	var featured *store.RecipeCandidate

@@ -66,10 +66,19 @@ RAG_EMBEDDING_MODEL=iic/nlp_gte_sentence-embedding_chinese-small
 RAG_EMBEDDING_DIMENSIONS=512
 RAG_RERANK_BASE_URL=http://reranker-service:8080
 RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
+RAG_VECTOR_TOP_K=15
+RAG_TITLE_TOP_K=10
+RAG_KEYWORD_TOP_K=15
+RAG_FUSION_TOP_K=20
+RAG_CONTEXT_PARENT_TOP_K=5
 ```
 
 菜谱模型由 Compose 内部服务从 ModelScope 固定 revision 构建并离线运行；
 Embedding 输出严格为 512 维，Reranker 使用 BGE CrossEncoder。
+检索索引 v2 按 Markdown 二级章节生成 parent context 和不超过 500 字的 child，
+原始/确定性扩展 query 分别进行向量召回，并与标题、中文关键词召回使用 RRF 融合；
+rerank 后按 parent 去重，同一文档最多保留两个 parent。索引重建期间旧版本继续服务，
+只有目标版本所有 child embedding 完整且模型一致时才会切换。
 
 知识库唯一来源是仓库内 `resources/howtocook`。用户、研究任务和个人笔记没有写入入口，
 后端也不提供 `/api/v1/knowledge/*` 文档管理接口。
@@ -79,3 +88,21 @@ Embedding 输出严格为 512 维，Reranker 使用 BGE CrossEncoder。
 `iic/nlp_gte_sentence-embedding_chinese-small` 和 `BAAI/bge-reranker-v2-m3`。
 完整环境就绪后运行 `scripts/recipe_sync_acceptance.ps1` 验证推荐稳定性、三个建议问题、
 偏好乐观锁和语料 revision。
+
+## RAG 离线评测
+
+`testdata/rag/recipe_eval_v1.jsonl` 包含 90 条由真实 HowToCook 资源整理的中文问题、
+完整参考答案和来源路径。评测命令复用当前 embedding、pgvector、reranker 和
+`AnswerKnowledge` 链路，计算 Hit@1/3/5/10、rerank 前后 MRR、Context Recall、
+Context Precision、Faithfulness 和 Answer Relevancy。
+
+配置数据库、LiteLLM、embedding 和 reranker 环境变量后执行：
+
+```powershell
+.\scripts\rag_eval.ps1
+```
+
+脚本构建包含离线二进制和评测集的 backend 镜像，并通过一次性
+`docker compose run` 使用 Compose 内部依赖；它不会创建常驻评测服务。结果写入
+仓库根目录的 `artifacts/rag-eval/<timestamp>/`，包含 `cases.jsonl`、
+`summary.json`、`config.json` 和 `report.md`，不会写入业务数据库。

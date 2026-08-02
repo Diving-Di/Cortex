@@ -28,6 +28,11 @@ type Config struct {
 	EmbeddingSendDimensions bool
 	RerankBaseURL           string
 	RerankModel             string
+	RAGVectorTopK           int
+	RAGTitleTopK            int
+	RAGKeywordTopK          int
+	RAGFusionTopK           int
+	RAGContextTopK          int
 	AIAPIKey                string
 	AIBaseURL               string
 	AIModel                 string
@@ -170,6 +175,29 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	ragVectorTopK, err := positiveInt("RAG_VECTOR_TOP_K", 15)
+	if err != nil {
+		return Config{}, err
+	}
+	ragTitleTopK, err := positiveInt("RAG_TITLE_TOP_K", 10)
+	if err != nil {
+		return Config{}, err
+	}
+	ragKeywordTopK, err := positiveInt("RAG_KEYWORD_TOP_K", 15)
+	if err != nil {
+		return Config{}, err
+	}
+	ragFusionTopK, err := positiveInt("RAG_FUSION_TOP_K", 20)
+	if err != nil {
+		return Config{}, err
+	}
+	ragContextTopK, err := positiveInt("RAG_CONTEXT_PARENT_TOP_K", 5)
+	if err != nil {
+		return Config{}, err
+	}
+	if ragContextTopK > ragFusionTopK {
+		return Config{}, fmt.Errorf("RAG_CONTEXT_PARENT_TOP_K must not exceed RAG_FUSION_TOP_K")
+	}
 	return Config{
 		DatabaseURL:             databaseURL,
 		MigrationDatabaseURL:    migrationDatabaseURL,
@@ -188,6 +216,8 @@ func Load() (Config, error) {
 		EmbeddingSendDimensions: parseBool(valueOrDefault("RAG_EMBEDDING_SEND_DIMENSIONS", "false")),
 		RerankBaseURL:           valueOrDefault("RAG_RERANK_BASE_URL", "http://reranker-service:8080"),
 		RerankModel:             valueOrDefault("RAG_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
+		RAGVectorTopK:           ragVectorTopK, RAGTitleTopK: ragTitleTopK, RAGKeywordTopK: ragKeywordTopK,
+		RAGFusionTopK: ragFusionTopK, RAGContextTopK: ragContextTopK,
 		AIAPIKey:                strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIBaseURL:               valueOrDefault("AI_BASE_URL", "https://api.openai.com/v1"),
 		AIModel:                 valueOrDefault("AI_MODEL", "gpt-5.6"),

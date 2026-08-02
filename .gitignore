@@ -53,3 +53,4 @@ soak-results/
 # Repository-local acceptance and corpus workspaces
 /.tmp-*/
 /.recipe-corpus-tmp/
+artifacts/rag-eval*/

@@ -85,12 +85,12 @@ func SyncCorpus(ctx context.Context, s *store.Store, resourcesDir string) (*Sync
 			sha := hex.EncodeToString(sum[:])
 			doc.ContentSHA256 = sha
 			activePaths = append(activePaths, doc.SourcePath)
-			previousHash, exists, err := s.RecipeDocumentHash(ctx, doc.SourcePath)
+			previousID, previousHash, previousVersion, exists, err := s.RecipeDocumentState(ctx, doc.SourcePath)
 			if err != nil {
 				res.Failed++
 				return nil
 			}
-			if exists && previousHash == sha {
+			if exists && previousHash == sha && previousVersion == RecipeIndexVersion {
 				return nil
 			}
 
@@ -105,29 +105,23 @@ func SyncCorpus(ctx context.Context, s *store.Store, resourcesDir string) (*Sync
 				slog.Error("recipe sync upsert failed", "source_path", doc.SourcePath, "code", "RECIPE_UPSERT_FAILED")
 				return nil
 			}
+			if exists && previousHash == sha {
+				id = previousID
+			}
 			if exists {
 				res.Updated++
 			} else {
 				res.Created++
 			}
 
-			// simple chunking: one parent and one child containing full content
-			chunk := store.RecipeChildChunk{
-				ParentID:      0,
-				ChildIndex:    0,
-				HeadingPath:   "",
-				Content:       doc.ContentMarkdown,
-				EmbeddingText: doc.ContentMarkdown,
-				ContentHash:   sha,
-				TokenCount:    0,
-			}
-			if err := s.InsertRecipeChildChunks(ctx, id, 1, []store.RecipeChildChunk{chunk}); err != nil {
+			parents := ChunkDocument(doc)
+			if err := s.ReplaceRecipeChunks(ctx, id, RecipeIndexVersion, parents); err != nil {
 				res.Failed++
 				slog.Error("recipe sync chunk failed", "source_path", doc.SourcePath, "code", "RECIPE_CHUNK_FAILED")
 				return nil
 			}
 			// enqueue index job for background indexing (avoid blocking on embedding)
-			if err := s.InsertRecipeIndexJob(ctx, id, 1); err != nil {
+			if err := s.InsertRecipeIndexJob(ctx, id, RecipeIndexVersion); err != nil {
 				res.Failed++
 				slog.Error("recipe sync enqueue failed", "source_path", doc.SourcePath, "code", "RECIPE_ENQUEUE_FAILED")
 				return nil
