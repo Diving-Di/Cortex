@@ -286,7 +286,11 @@ func firstRelevantRank(gold []string, candidates []store.RecipeCandidate, k int)
 }
 
 func normalizeSourcePath(path string) string {
-	path = filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+	// Evaluation datasets and indexed records can be produced on different
+	// operating systems. filepath.ToSlash only replaces the current OS path
+	// separator, so normalize Windows separators explicitly before cleaning.
+	path = strings.ReplaceAll(strings.TrimSpace(path), `\`, "/")
+	path = filepath.ToSlash(filepath.Clean(path))
 	const marker = "resources/howtocook/"
 	if index := strings.Index(path, marker); index >= 0 {
 		path = path[index+len(marker):]

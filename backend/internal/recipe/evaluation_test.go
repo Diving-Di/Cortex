@@ -24,6 +24,18 @@ func TestRetrievalMetricsUsesNormalizedSourcePath(t *testing.T) {
 	}
 }
 
+func TestNormalizeSourcePathIsIndependentOfHostOS(t *testing.T) {
+	const want = "dishes/vegetable_dish/酸辣土豆丝.md"
+	for _, input := range []string{
+		`backend\resources\howtocook\dishes\vegetable_dish\酸辣土豆丝.md`,
+		"backend/resources/howtocook/dishes/vegetable_dish/酸辣土豆丝.md",
+	} {
+		if got := normalizeSourcePath(input); got != want {
+			t.Fatalf("normalizeSourcePath(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestRetrievalMetricsShowsRerankRegression(t *testing.T) {
 	gold := []string{"dishes/gold.md"}
 	before := []store.RecipeCandidate{{SourcePath: "dishes/gold.md"}, {SourcePath: "dishes/noise.md"}}
