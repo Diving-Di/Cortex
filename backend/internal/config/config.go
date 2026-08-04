@@ -11,58 +11,64 @@ import (
 )
 
 type Config struct {
-	DatabaseURL             string
-	MigrationDatabaseURL    string
-	ListenAddress           string
-	CORSOrigins             []string
-	TokenTTL                time.Duration
-	StatementTimeout        time.Duration
-	PoolSize                int32
-	LogLevel                slog.Level
-	DataDir                 string
-	MaxAttachmentBytes      int64
-	EmbeddingBaseURL        string
-	EmbeddingAPIKey         string
-	EmbeddingModel          string
-	EmbeddingDimensions     int
-	EmbeddingSendDimensions bool
-	RerankBaseURL           string
-	RerankModel             string
-	RAGVectorTopK           int
-	RAGTitleTopK            int
-	RAGKeywordTopK          int
-	RAGFusionTopK           int
-	RAGContextTopK          int
-	AIAPIKey                string
-	AIBaseURL               string
-	AIModel                 string
-	AISystemPrompt          string
-	Environment             string
-	ScheduledReportsEnabled bool
-	ScheduledReportPoll     time.Duration
-	ResearchEnabled         bool
-	ResearchWorkers         int
-	ResearchMaxKeywords     int
-	ResearchMaxURLs         int
-	ResearchMaxResults      int
-	ResearchMaxImages       int
-	ResearchMaxImageBytes   int64
-	ResearchMaxBodyChars    int
-	ResearchLease           time.Duration
-	ResearchMaxAttempts     int
-	ResearchRequestInterval time.Duration
-	ResearchHTTPTimeout     time.Duration
-	ResearchOCRURL          string
-	XHSSessionEncryptionKey string
-	XHSSessionKeyVersion    int
-	XHSAuthorizationTTL     time.Duration
-	XHSAuthorizationEnabled bool
-	XHSChromePath           string
-	RecipeDefaultTimezone   string
-	RecipeIndexWorkers      int
-	RecipeIndexBatchSize    int
-	RecipeIndexPollSeconds  int
-	RedisURL                string
+	DatabaseURL                  string
+	MigrationDatabaseURL         string
+	ListenAddress                string
+	CORSOrigins                  []string
+	TokenTTL                     time.Duration
+	StatementTimeout             time.Duration
+	PoolSize                     int32
+	LogLevel                     slog.Level
+	DataDir                      string
+	MaxAttachmentBytes           int64
+	EmbeddingBaseURL             string
+	EmbeddingAPIKey              string
+	EmbeddingModel               string
+	EmbeddingDimensions          int
+	EmbeddingSendDimensions      bool
+	RerankBaseURL                string
+	RerankModel                  string
+	RAGVectorTopK                int
+	RAGTitleTopK                 int
+	RAGKeywordTopK               int
+	RAGFusionTopK                int
+	RAGContextTopK               int
+	AIAPIKey                     string
+	AIBaseURL                    string
+	AIModel                      string
+	AISystemPrompt               string
+	Environment                  string
+	ScheduledReportsEnabled      bool
+	ScheduledReportPoll          time.Duration
+	ResearchEnabled              bool
+	ResearchWorkers              int
+	ResearchMaxKeywords          int
+	ResearchMaxURLs              int
+	ResearchMaxResults           int
+	ResearchMaxImages            int
+	ResearchMaxImageBytes        int64
+	ResearchMaxBodyChars         int
+	ResearchLease                time.Duration
+	ResearchMaxAttempts          int
+	ResearchRequestInterval      time.Duration
+	ResearchHTTPTimeout          time.Duration
+	ResearchOCRURL               string
+	XHSSessionEncryptionKey      string
+	XHSSessionKeyVersion         int
+	XHSAuthorizationTTL          time.Duration
+	XHSAuthorizationEnabled      bool
+	XHSChromePath                string
+	RecipeDefaultTimezone        string
+	RecipeIndexWorkers           int
+	RecipeIndexBatchSize         int
+	RecipeIndexPollSeconds       int
+	KnowledgeMaxUploadBytes      int64
+	KnowledgeMaxExtractedBytes   int64
+	KnowledgeMaxFileBytes        int64
+	KnowledgeMaxFiles            int
+	KnowledgeMaxDepth            int
+	KnowledgeMaxCompressionRatio int
+	RedisURL                     string
 }
 
 func Load() (Config, error) {
@@ -107,9 +113,19 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	dataDir, err := filepath.Abs(valueOrDefault("DIARY_DATA_DIR", "./data"))
+	dataDirSetting := strings.TrimSpace(os.Getenv("CORTEX_DATA_DIR"))
+	if dataDirSetting == "" {
+		dataDirSetting = strings.TrimSpace(os.Getenv("DIARY_DATA_DIR"))
+		if dataDirSetting != "" {
+			slog.Warn("DIARY_DATA_DIR is deprecated; use CORTEX_DATA_DIR")
+		}
+	}
+	if dataDirSetting == "" {
+		dataDirSetting = "./data"
+	}
+	dataDir, err := filepath.Abs(dataDirSetting)
 	if err != nil {
-		return Config{}, fmt.Errorf("resolve DIARY_DATA_DIR: %w", err)
+		return Config{}, fmt.Errorf("resolve CORTEX_DATA_DIR: %w", err)
 	}
 	researchWorkers, err := positiveInt("RESEARCH_WORKERS", 1)
 	if err != nil {
@@ -175,6 +191,30 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	knowledgeMaxUploadBytes, err := positiveInt("KNOWLEDGE_MAX_UPLOAD_BYTES", 256*1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
+	knowledgeMaxExtractedBytes, err := positiveInt("KNOWLEDGE_MAX_EXTRACTED_BYTES", 1024*1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
+	knowledgeMaxFileBytes, err := positiveInt("KNOWLEDGE_MAX_FILE_BYTES", 64*1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
+	knowledgeMaxFiles, err := positiveInt("KNOWLEDGE_MAX_FILES", 5000)
+	if err != nil {
+		return Config{}, err
+	}
+	knowledgeMaxDepth, err := positiveInt("KNOWLEDGE_MAX_DEPTH", 16)
+	if err != nil {
+		return Config{}, err
+	}
+	knowledgeMaxCompressionRatio, err := positiveInt("KNOWLEDGE_MAX_COMPRESSION_RATIO", 100)
+	if err != nil {
+		return Config{}, err
+	}
 	ragVectorTopK, err := positiveInt("RAG_VECTOR_TOP_K", 15)
 	if err != nil {
 		return Config{}, err
@@ -218,36 +258,42 @@ func Load() (Config, error) {
 		RerankModel:             valueOrDefault("RAG_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
 		RAGVectorTopK:           ragVectorTopK, RAGTitleTopK: ragTitleTopK, RAGKeywordTopK: ragKeywordTopK,
 		RAGFusionTopK: ragFusionTopK, RAGContextTopK: ragContextTopK,
-		AIAPIKey:                strings.TrimSpace(os.Getenv("AI_API_KEY")),
-		AIBaseURL:               valueOrDefault("AI_BASE_URL", "https://api.openai.com/v1"),
-		AIModel:                 valueOrDefault("AI_MODEL", "gpt-5.6"),
-		AISystemPrompt:          valueOrDefault("AI_SYSTEM_PROMPT", "你是一个温暖、贴心的 AI 助手。"),
-		Environment:             valueOrDefault("APP_ENV", "development"),
-		ScheduledReportsEnabled: parseBool(valueOrDefault("SCHEDULED_REPORTS_ENABLED", "true")),
-		ScheduledReportPoll:     time.Duration(max(10, pollSeconds)) * time.Second,
-		ResearchEnabled:         parseBool(valueOrDefault("RESEARCH_ENABLED", "true")),
-		ResearchWorkers:         researchWorkers,
-		ResearchMaxKeywords:     researchMaxKeywords,
-		ResearchMaxURLs:         researchMaxURLs,
-		ResearchMaxResults:      researchMaxResults,
-		ResearchMaxImages:       researchMaxImages,
-		ResearchMaxImageBytes:   int64(researchMaxImageBytes),
-		ResearchMaxBodyChars:    researchMaxBodyChars,
-		ResearchLease:           time.Duration(researchLeaseSeconds) * time.Second,
-		ResearchMaxAttempts:     researchMaxAttempts,
-		ResearchRequestInterval: time.Duration(researchIntervalMS) * time.Millisecond,
-		ResearchHTTPTimeout:     time.Duration(researchTimeoutSeconds) * time.Second,
-		ResearchOCRURL:          strings.TrimSpace(os.Getenv("RESEARCH_OCR_URL")),
-		XHSSessionEncryptionKey: strings.TrimSpace(os.Getenv("XHS_SESSION_ENCRYPTION_KEY")),
-		XHSSessionKeyVersion:    xhsKeyVersion,
-		XHSAuthorizationTTL:     time.Duration(xhsAuthorizationTTLSeconds) * time.Second,
-		XHSAuthorizationEnabled: parseBool(valueOrDefault("XHS_AUTHORIZATION_ENABLED", "false")),
-		XHSChromePath:           valueOrDefault("XHS_CHROME_PATH", "/usr/bin/chromium"),
-		RecipeDefaultTimezone:   valueOrDefault("RECIPE_DEFAULT_TIMEZONE", "Asia/Shanghai"),
-		RecipeIndexWorkers:      recipeIndexWorkers,
-		RecipeIndexBatchSize:    recipeIndexBatchSize,
-		RecipeIndexPollSeconds:  recipeIndexPollSeconds,
-		RedisURL:                valueOrDefault("REDIS_URL", "redis://redis:6379/0"),
+		AIAPIKey:                     strings.TrimSpace(os.Getenv("AI_API_KEY")),
+		AIBaseURL:                    valueOrDefault("AI_BASE_URL", "https://api.openai.com/v1"),
+		AIModel:                      valueOrDefault("AI_MODEL", "gpt-5.6"),
+		AISystemPrompt:               valueOrDefault("AI_SYSTEM_PROMPT", "你是一个温暖、贴心的 AI 助手。"),
+		Environment:                  valueOrDefault("APP_ENV", "development"),
+		ScheduledReportsEnabled:      parseBool(valueOrDefault("SCHEDULED_REPORTS_ENABLED", "true")),
+		ScheduledReportPoll:          time.Duration(max(10, pollSeconds)) * time.Second,
+		ResearchEnabled:              parseBool(valueOrDefault("RESEARCH_ENABLED", "true")),
+		ResearchWorkers:              researchWorkers,
+		ResearchMaxKeywords:          researchMaxKeywords,
+		ResearchMaxURLs:              researchMaxURLs,
+		ResearchMaxResults:           researchMaxResults,
+		ResearchMaxImages:            researchMaxImages,
+		ResearchMaxImageBytes:        int64(researchMaxImageBytes),
+		ResearchMaxBodyChars:         researchMaxBodyChars,
+		ResearchLease:                time.Duration(researchLeaseSeconds) * time.Second,
+		ResearchMaxAttempts:          researchMaxAttempts,
+		ResearchRequestInterval:      time.Duration(researchIntervalMS) * time.Millisecond,
+		ResearchHTTPTimeout:          time.Duration(researchTimeoutSeconds) * time.Second,
+		ResearchOCRURL:               strings.TrimSpace(os.Getenv("RESEARCH_OCR_URL")),
+		XHSSessionEncryptionKey:      strings.TrimSpace(os.Getenv("XHS_SESSION_ENCRYPTION_KEY")),
+		XHSSessionKeyVersion:         xhsKeyVersion,
+		XHSAuthorizationTTL:          time.Duration(xhsAuthorizationTTLSeconds) * time.Second,
+		XHSAuthorizationEnabled:      parseBool(valueOrDefault("XHS_AUTHORIZATION_ENABLED", "false")),
+		XHSChromePath:                valueOrDefault("XHS_CHROME_PATH", "/usr/bin/chromium"),
+		RecipeDefaultTimezone:        valueOrDefault("RECIPE_DEFAULT_TIMEZONE", "Asia/Shanghai"),
+		RecipeIndexWorkers:           recipeIndexWorkers,
+		RecipeIndexBatchSize:         recipeIndexBatchSize,
+		RecipeIndexPollSeconds:       recipeIndexPollSeconds,
+		KnowledgeMaxUploadBytes:      int64(knowledgeMaxUploadBytes),
+		KnowledgeMaxExtractedBytes:   int64(knowledgeMaxExtractedBytes),
+		KnowledgeMaxFileBytes:        int64(knowledgeMaxFileBytes),
+		KnowledgeMaxFiles:            knowledgeMaxFiles,
+		KnowledgeMaxDepth:            knowledgeMaxDepth,
+		KnowledgeMaxCompressionRatio: knowledgeMaxCompressionRatio,
+		RedisURL:                     valueOrDefault("REDIS_URL", "redis://redis:6379/0"),
 	}, nil
 }
 

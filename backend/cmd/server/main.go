@@ -7,12 +7,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"diary-listener/backend/internal/config"
-	"diary-listener/backend/internal/recipe"
 	"diary-listener/backend/internal/rediscoord"
 	"diary-listener/backend/internal/server"
 	"diary-listener/backend/internal/store"
@@ -40,21 +38,8 @@ func main() {
 	defer db.Close()
 
 	handler := server.New(cfg, db, logger, version)
+	server.RunKnowledgeIndexer(ctx, cfg, db, logger)
 	go server.RunScheduler(ctx, cfg, db, logger)
-	go func() {
-		if _, err := recipe.SyncCorpus(ctx, db, "resources/howtocook"); err != nil {
-			logger.Error("recipe corpus sync failed", "code", "RECIPE_SYNC_FAILED")
-		}
-		recipe.StartRecipeIndexer(
-			ctx,
-			db,
-			strings.TrimRight(cfg.EmbeddingBaseURL, "/")+"/embeddings",
-			cfg.EmbeddingModel,
-			cfg.RecipeIndexWorkers,
-			cfg.RecipeIndexBatchSize,
-			time.Duration(cfg.RecipeIndexPollSeconds)*time.Second,
-		)
-	}()
 	server.RunResearchWorkers(ctx, cfg, db, logger)
 	server.RunXHSAuthorizationWorkers(ctx, cfg, db, logger)
 	server.RunAIEventWorkers(ctx, cfg, db, logger)

@@ -15,6 +15,8 @@ class EmbeddingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     input: str | list[str]
     model: str | None = None
+    encoding_format: str | None = None
+    dimensions: int | None = None
 
 
 @asynccontextmanager
@@ -38,6 +40,10 @@ def health() -> dict[str, object]:
 def embeddings(request: EmbeddingRequest) -> dict[str, object]:
     if request.model not in (None, MODEL_ID):
         raise HTTPException(status_code=400, detail="unsupported model")
+    if request.encoding_format not in (None, "float"):
+        raise HTTPException(status_code=400, detail="unsupported encoding format")
+    if request.dimensions not in (None, EXPECTED_DIMENSIONS):
+        raise HTTPException(status_code=400, detail="unsupported dimensions")
     values = [request.input] if isinstance(request.input, str) else request.input
     if not values or len(values) > 64 or any(not value.strip() for value in values):
         raise HTTPException(status_code=400, detail="invalid input")

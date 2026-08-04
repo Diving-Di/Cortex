@@ -1,0 +1,12 @@
+.knowledge-page {
+  display: grid;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.knowledge-page h2 {
+  margin: 0;
+}
+.knowledge-quota {
+  margin-top: 16px;
+}

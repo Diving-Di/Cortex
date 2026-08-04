@@ -104,11 +104,23 @@ data: [DONE]
 Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 master key
 不会进入业务后端或前端。未配置虚拟密钥时返回 `AI_NOT_CONFIGURED`。
 
-## 静态 HowToCook 知识库
+## 个人知识库
 
-知识库只由仓库中的 `backend/resources/howtocook` 构成。服务启动时按固定 revision
-同步到系统菜谱表并建立索引；用户、研究任务、日报、周报和个人笔记均不能写入知识库。
-系统不提供 `/api/v1/knowledge/*` 上传、集合、文档管理或通用知识 Chat 接口。
+知识问答只检索当前租户主动上传的 Markdown、Markdown ZIP 和明确开启知识问答的个人笔记。
+历史内置语料已一次性迁移到用户 `Diving` 的运行时私有知识库，不再作为系统级全局语料或应用种子分发。
+
+| 方法与路径 | 说明 |
+| --- | --- |
+| `POST /api/v1/knowledge/uploads` | 上传一个 `.md` 或 `.zip`，安全落盘后返回 202 |
+| `GET /api/v1/knowledge/uploads/{id}` | 查询上传和索引状态 |
+| `GET /api/v1/knowledge/documents` | 列出当前租户文档与 3 GiB 配额 |
+| `DELETE /api/v1/knowledge/documents/{id}` | 使文档立即退出检索并删除 |
+| `PATCH /api/v1/notes/{id}/knowledge` | 开启或关闭笔记知识索引 |
+| `POST /api/v1/knowledge/chat/stream` | 在服务端验证的范围内混合检索、精排并 SSE 回答 |
+
+客户端提交的 `tenant_id` 始终被忽略；无当前租户证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
+
+## 旧菜谱兼容接口
 
 | 方法与路径 | 说明 |
 | --- | --- |

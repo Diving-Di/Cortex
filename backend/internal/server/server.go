@@ -101,6 +101,15 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.POST("/api/v1/scheduled-reports/:taskID/retry", gin.WrapF(s.retryScheduledReport))
 			active.GET("/api/v1/scheduled-reports/:taskID/runs", gin.WrapF(s.listScheduledReportRuns))
 			active.POST("/api/v1/attachments", gin.WrapF(s.uploadAttachment))
+			active.POST("/api/v1/knowledge/uploads", gin.WrapF(s.uploadKnowledge))
+			active.GET("/api/v1/knowledge/uploads/:uploadID", gin.WrapF(s.getKnowledgeUpload))
+			active.GET("/api/v1/knowledge/documents", gin.WrapF(s.listKnowledgeDocuments))
+			active.DELETE("/api/v1/knowledge/documents/:documentID", gin.WrapF(s.deleteKnowledgeDocument))
+			active.GET("/api/v1/knowledge/documents/:documentID/assets/:assetID", gin.WrapF(s.downloadKnowledgeAsset))
+			active.POST("/api/v1/knowledge/documents/:documentID/retry", gin.WrapF(s.retryKnowledgeDocument))
+			active.GET("/api/v1/knowledge/collections", gin.WrapF(s.listKnowledgeCollections))
+			active.POST("/api/v1/knowledge/collections", gin.WrapF(s.createKnowledgeCollection))
+			active.POST("/api/v1/knowledge/chat/stream", gin.WrapF(s.knowledgeChat))
 			active.GET("/api/v1/attachments/note/:noteID", gin.WrapF(s.listAttachments))
 			active.GET("/api/v1/attachments/:attachmentID", gin.WrapF(s.downloadAttachment))
 			active.DELETE("/api/v1/attachments/:attachmentID", gin.WrapF(s.deleteAttachment))
@@ -172,6 +181,7 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			notes.POST("/:noteID/revisions/:revisionID/restore", gin.WrapF(s.restoreRevision))
 			notes.GET("/:noteID/tags", gin.WrapF(s.listNoteTags))
 			notes.PUT("/:noteID/tags", gin.WrapF(s.assignNoteTags))
+			notes.PATCH("/:noteID/knowledge", gin.WrapF(s.setNoteKnowledge))
 		}
 	}
 	return router

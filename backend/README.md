@@ -80,11 +80,11 @@ Embedding 输出严格为 512 维，Reranker 使用 BGE CrossEncoder。
 rerank 后按 parent 去重，同一文档最多保留两个 parent。索引重建期间旧版本继续服务，
 只有目标版本所有 child embedding 完整且模型一致时才会切换。
 
-知识库唯一来源是仓库内 `resources/howtocook`。用户、研究任务和个人笔记没有写入入口，
-后端也不提供 `/api/v1/knowledge/*` 文档管理接口。
-
-今日菜谱语料固定存放在 `resources/howtocook`，服务启动时会按 `SOURCE.json` revision
-幂等同步并排队生成 512 维向量。Compose 环境使用固定 revision 的
+个人知识库来源是当前租户上传资料与主动开启的笔记。历史内置语料已一次性迁移到用户
+`Diving` 的私有知识库，不再随应用镜像分发。运行时文件统一保存到
+`CORTEX_DATA_DIR/knowledge/<tenant-uuid>/<upload-uuid>/source`，
+并通过 `/api/v1/knowledge/*` 管理与问答接口访问。
+Compose 环境使用固定 revision 的
 `iic/nlp_gte_sentence-embedding_chinese-small` 和 `BAAI/bge-reranker-v2-m3`。
 完整环境就绪后运行 `scripts/recipe_sync_acceptance.ps1` 验证推荐稳定性、三个建议问题、
 偏好乐观锁和语料 revision。

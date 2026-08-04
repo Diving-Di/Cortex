@@ -31,7 +31,7 @@ HowToCook 语料，不与数据库做双向同步。
 - 跨租户资源访问统一表现为 404。
 - 密码使用 PBKDF2-SHA256；登录 Token 只保存 SHA-256 摘要。
 - 笔记更新使用乐观锁，正文更新和 AI 覆盖前创建 revision，删除默认软删除。
-- 附件只保存 `DIARY_DATA_DIR` 下的安全相对路径，不作为公开静态目录暴露。
+- 附件和知识文件只保存 `CORTEX_DATA_DIR` 下的安全相对路径，不作为公开静态目录暴露；`DIARY_DATA_DIR` 仅为兼容别名。
 
 ## 4. 静态 HowToCook 知识库
 

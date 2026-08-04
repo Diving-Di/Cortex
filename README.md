@@ -34,7 +34,7 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 - 保存跨设备忌口与时区，推荐不会命中规范化后的忌口词项。
 - 首页提供三个与当日菜品相关的问题，也可输入任意烹饪问题。
 - 菜谱问答使用 512 维中文 GTE Embedding 与 BGE CrossEncoder 精排，回答保存系统菜谱引用。
-- 知识库仅由仓库内 `resources/howtocook` 静态语料构成，来源是 Github 上的一个高 star 项目，具体可以进入资源库查看。
+- 个人知识库仅检索当前租户上传资料与主动开启的笔记；历史内置语料已一次性迁移到用户 `Diving` 的运行时私有知识库。
 
 ### 小红书研究
 
@@ -182,7 +182,7 @@ docker compose up -d --build
 Set-Location backend
 $env:DATABASE_URL = "postgresql://diary_app:<app-password>@127.0.0.1:5432/diary_listener"
 $env:MIGRATION_DATABASE_URL = "postgresql://diary_migrator:<migrator-password>@127.0.0.1:5432/diary_listener"
-$env:DIARY_DATA_DIR = ".\data"
+$env:CORTEX_DATA_DIR = ".\data"
 go run ./cmd/server
 ```
 
@@ -204,7 +204,7 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 | --- | --- |
 | `DATABASE_URL` | 业务连接，必须使用低权限 `diary_app` |
 | `MIGRATION_DATABASE_URL` | 迁移与 scheduler claim 使用的管理连接 |
-| `DIARY_DATA_DIR` | 附件、导出和日志的数据根目录 |
+| `CORTEX_DATA_DIR` | 附件、知识文件、导出和备份的数据根目录；旧 `DIARY_DATA_DIR` 仅作兼容回退 |
 | `MAX_ATTACHMENT_BYTES` | 单附件上限，默认 20 MiB |
 | `RAG_EMBEDDING_*` | Embedding 地址、凭据、逻辑模型和维度 |
 | `RAG_RERANK_*` | Reranker 地址和模型 |

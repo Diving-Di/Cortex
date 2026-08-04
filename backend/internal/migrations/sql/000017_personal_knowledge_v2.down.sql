@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS knowledge_message_sources, knowledge_index_jobs, knowledge_child_chunks, knowledge_parent_chunks, knowledge_assets, knowledge_documents, knowledge_uploads, knowledge_collections, knowledge_quotas CASCADE;

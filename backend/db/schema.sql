@@ -1450,8 +1450,6 @@ COPY public.schema_migrations (version, name, checksum, applied_at) FROM stdin;
 11	recipe_index_jobs	01046b8740695e346c9399bf49df09eb19b9c03a71906473de9fab157cc667cc	2026-07-30 09:47:39.911762+00
 12	remove_personal_knowledge	2b3b30f0f765b42e28af0b8e03359a6b235d76cf5c9dfcac6ac7caddedd7aa65	2026-07-30 09:47:39.911762+00
 13	remove_legacy_tables	64d0c7790025d2e61127d14a5655406dfb12807e9cc3c8c6da605246d6e78d9b	2026-07-30 09:50:10.636867+00
-14	template_marketplace_ai_events	825e8e740168f5c79dcf502ed2a87962ad5876454155c298303718d1bfbce7be	2026-08-01 08:00:00+00
-15	ai_event_reservation_readiness	21b83ca697a4b6bd335cd737512ebe690f691735504463a8ff02282d163efad9	2026-08-01 11:10:00+00
 \.
 
 
@@ -3694,10 +3692,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.xhs_authorizations TO diary_ap
 
 GRANT SELECT,USAGE ON SEQUENCE public.xhs_authorizations_id_seq TO diary_app;
 
--- Template marketplace and AI flash-event baseline. Kept identical to migration 000014.
-\ir ../internal/migrations/sql/000014_template_marketplace_ai_events.up.sql
-\ir ../internal/migrations/sql/000015_ai_event_reservation_readiness.up.sql
-\ir ../internal/migrations/sql/000016_recipe_retrieval_v2.up.sql
+-- Versions through 000015 are materialized in this baseline and recorded in
+-- schema_migrations above. Later versions are applied by cmd/migrate.
 
 
 --

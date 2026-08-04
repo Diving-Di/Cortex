@@ -86,7 +86,7 @@ services:
       - MIGRATION_DATABASE_URL=postgresql://diary_migrator:${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}@db:5432/diary_listener
       - CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
       - LISTEN_ADDRESS=0.0.0.0:8000
-      - DIARY_DATA_DIR=/app/data
+      - CORTEX_DATA_DIR=/app/data
       - MAX_ATTACHMENT_BYTES=${MAX_ATTACHMENT_BYTES:-20971520}
       - RAG_EMBEDDING_API_KEY=${LITELLM_VIRTUAL_KEY:?set LITELLM_VIRTUAL_KEY}
       - RAG_EMBEDDING_BASE_URL=http://embedding-service:4000/v1

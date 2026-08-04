@@ -19,7 +19,7 @@ const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'));
 const NotesPage = lazy(() => import('./features/notes/NotesPage'));
 const ReportsPage = lazy(() => import('./features/reports/ReportsPage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
-const TodayRecipePage = lazy(() => import('./features/recipes/TodayRecipePage'));
+const KnowledgePage = lazy(() => import('./features/knowledge/KnowledgePage'));
 const ResearchPage = lazy(() => import('./features/research/ResearchPage'));
 const AIEventsPage = lazy(() => import('./features/aiEvents/AIEventsPage'));
 
@@ -51,7 +51,7 @@ function AppLayout() {
           items={[
             { key: '/', icon: <MessageOutlined />, label: '工作台' },
             { key: '/notes', icon: <EditOutlined />, label: '笔记本' },
-            { key: '/recipes', icon: <BookOutlined />, label: '今日菜谱' },
+            { key: '/knowledge', icon: <BookOutlined />, label: '个人知识库' },
             { key: '/research', icon: <SearchOutlined />, label: '小红书研究' },
             { key: '/ai-events', icon: <ThunderboltOutlined />, label: 'AI 限量活动' },
             { key: '/reports', icon: <BarChartOutlined />, label: '周期报告' },
@@ -65,15 +65,14 @@ function AppLayout() {
           </Button>
         </div>
       </nav>
-      <main
-        className={`app-content${location.pathname === '/recipes' ? ' app-content-fixed' : ''}`}
-      >
+      <main className="app-content">
         <Suspense fallback={<Spin />}>
           <Routes>
             <Route index element={<DashboardPage token={token} />} />
             <Route path="notes/*" element={<NotesPage token={token} />} />
-            <Route path="recipes" element={<TodayRecipePage token={token} />} />
-            <Route path="assistant" element={<Navigate to="/recipes" replace />} />
+            <Route path="knowledge" element={<KnowledgePage token={token} />} />
+            <Route path="recipes" element={<Navigate to="/knowledge" replace />} />
+            <Route path="assistant" element={<Navigate to="/knowledge" replace />} />
             <Route path="research" element={<ResearchPage token={token} />} />
             <Route path="ai-events" element={<AIEventsPage token={token} />} />
             <Route path="reports" element={<ReportsPage token={token} />} />

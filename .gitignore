@@ -54,3 +54,6 @@ soak-results/
 /.tmp-*/
 /.recipe-corpus-tmp/
 artifacts/rag-eval*/
+
+# codex
+/.codex/
