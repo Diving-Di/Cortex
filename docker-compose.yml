@@ -201,5 +201,9 @@ services:
 
 volumes:
   db_data:
+    name: diary-listener_db_data
+    external: true
   app_data:
+    name: diary-listener_app_data
+    external: true
   redis_data:

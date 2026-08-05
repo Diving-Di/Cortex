@@ -190,7 +190,7 @@ export default function TemplatesPage({ token }: { token: string }) {
                   </Button>
                 </Space>
                 <List
-                  dataSource={mine.data}
+                  dataSource={mine.data ?? []}
                   renderItem={(x) => (
                     <List.Item
                       actions={[

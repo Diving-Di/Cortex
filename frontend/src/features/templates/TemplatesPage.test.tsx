@@ -3,7 +3,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, test, vi } from 'vitest';
 import TemplatesPage from './TemplatesPage';
-import { listPublicTemplates, recordTemplateView, reportTemplate } from '../../api/templates';
+import {
+  listMyTemplates,
+  listPublicTemplates,
+  recordTemplateView,
+  reportTemplate,
+} from '../../api/templates';
 
 vi.mock('../../api/templates', () => ({
   listPublicTemplates: vi.fn().mockResolvedValue({
@@ -115,4 +120,17 @@ test('loads the next signed-cursor page', async () => {
   fireEvent.click(screen.getByText('加载更多'));
   expect(await screen.findByText('第二页模板')).toBeInTheDocument();
   expect(listPublicTemplates).toHaveBeenLastCalledWith('t', 'recommended', 'signed-cursor');
+});
+
+test('renders an empty private-template list when the legacy API returns null', async () => {
+  vi.mocked(listMyTemplates).mockResolvedValueOnce(null as never);
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <TemplatesPage token="t" />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole('tab', { name: '我的模板' }));
+  expect(await screen.findByRole('button', { name: '新建模板' })).toBeInTheDocument();
 });

@@ -41,8 +41,11 @@ export async function listPublicTemplates(token: string, ranking = 'recommended'
   ).data;
 }
 export async function listMyTemplates(token: string) {
-  return (await http.get<{ items: WritingTemplate[] }>('/api/v1/templates/mine', headers(token)))
-    .data.items;
+  const response = await http.get<{ items: WritingTemplate[] | null }>(
+    '/api/v1/templates/mine',
+    headers(token),
+  );
+  return response.data.items ?? [];
 }
 export async function createTemplate(
   token: string,

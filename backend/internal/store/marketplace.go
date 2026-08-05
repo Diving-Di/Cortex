@@ -174,7 +174,7 @@ const writingTemplateSelect = `SELECT w.id,w.title,w.description,w.content_markd
 	 WHERE tp.tenant_id=w.tenant_id AND tp.template_id=w.id ORDER BY tp.id DESC LIMIT 1),w.created_at,w.updated_at FROM writing_templates w`
 
 func (s *Store) ListWritingTemplates(ctx context.Context, principal domain.Principal) ([]WritingTemplate, error) {
-	var result []WritingTemplate
+	result := make([]WritingTemplate, 0)
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err

@@ -73,6 +73,16 @@ code {
   min-height: 52px;
 }
 
+/* The monochrome info palette uses a dark surface in both themes. */
+.ant-alert-info,
+.ant-alert-info .ant-alert-message,
+.ant-alert-info .ant-alert-description,
+.ant-alert-info .ant-alert-icon,
+.ant-alert-info .ant-alert-close-icon,
+.ant-alert-info a {
+  color: #ffffff !important;
+}
+
 .ant-btn,
 .ant-input,
 .ant-select-selector,
