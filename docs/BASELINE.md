@@ -1,7 +1,7 @@
 # Cortex 工程基线
 
 > 状态：当前有效
-> 更新日期：2026-08-01
+> 更新日期：2026-08-05
 
 ## 产品范围
 
@@ -11,8 +11,12 @@
 - 每个账号对应一个服务端解析的个人租户。
 - Markdown ZIP 内容导出、版本化完整备份与空租户恢复；笔记版本恢复和软删除租户恢复继续保留。
 - 用户自主上架的 Markdown 模板广场，以及每日限量 AI 深度月报活动。
+- 个人知识库：上传 Markdown / Markdown ZIP、知识集合、个人笔记入库开关与混合问答（每租户 3 GiB 配额）。
 
 桌面组件、团队协作、计费和数据库/Markdown 双向同步不属于当前范围。
+
+> 2026-08-05：HowToCook 固定语料与菜谱接口（`/api/v1/recipes/*`）已移除，语料一次性迁移到用户
+> `Diving` 的运行时私有知识库；前端 `/recipes`、`/assistant` 已重定向到 `/knowledge`。
 
 ## 技术基线
 
@@ -23,7 +27,7 @@
 | 数据访问 | pgx/v5、显式 SQL、显式事务 |
 | 数据库 | PostgreSQL 16、RLS |
 | AI | LiteLLM Proxy、OpenAI 兼容 Chat Completions、SSE |
-| 菜谱检索 | 固定 revision 的 GTE 中文 Embedding、BGE CrossEncoder Reranker、pgvector |
+| 知识检索 | 个人知识库 GTE 中文 Embedding（512 维）、BGE CrossEncoder Reranker、pgvector 混合召回 |
 | 部署 | Docker Compose、多阶段静态 Go 镜像 |
 | 活动协调 | Redis 7、Lua 原子预扣；PostgreSQL 保存最终事实 |
 
@@ -45,10 +49,11 @@
 - `.env` 只用于本地运行并必须被 Git 忽略。
 - 供应商 Key 仅注入 LiteLLM；业务后端只持有网关密钥。
 - Key 不得进入前端、URL、日志、审计记录、备份或文档。
-- 菜谱知识向量使用 Compose 内部 `embedding-service` 加载固定 revision 的
+- 个人知识库使用 Compose 内部 `embedding-service` 加载固定 revision 的
   `iic/nlp_gte_sentence-embedding_chinese-small`（512 维）。
-- 菜谱精排使用 Compose 内部 `reranker-service` 加载固定 revision 的
+- 知识检索精排使用 Compose 内部 `reranker-service` 加载固定 revision 的
   `BAAI/bge-reranker-v2-m3`；两个模型服务均不暴露宿主机端口。
+- 个人知识库上传限制由 `KNOWLEDGE_MAX_*` 环境变量控制；每租户容量上限 3 GiB。
 
 ## 必须通过的验证
 
@@ -70,4 +75,5 @@ docker compose up -d --build
 - 所有 Go 源码必须通过 `gofmt`；允许使用 Go 惯例中的 Tab 缩进。
 - `db`、`llm-gateway` 和 `backend` 必须为 healthy。
 - 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
-- 新 PostgreSQL 空库必须完成 48 张表、RLS、注册和登录验收。
+- 新 PostgreSQL 空库必须完成全部版本化迁移（当前 57 张表）、RLS、注册和登录验收。
+- 个人知识库上传、索引、混合问答、跨租户隔离和 3 GiB 配额验收通过。

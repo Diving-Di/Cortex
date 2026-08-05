@@ -74,15 +74,13 @@ func TestWorkflowUsesEinoPromptChainForAllOperations(t *testing.T) {
 	m.chunks = []string{"回答"}
 	events, err = workflow.AnswerKnowledge(context.Background(), KnowledgeInput{
 		Question: "问题", ConversationContext: "历史",
-		Evidence:            []KnowledgeEvidence{{Citation: "K1", Kind: "文件", Title: "资料", Content: "内容"}},
-		DietaryRestrictions: []string{"花生", "香菜"},
+		Evidence: []KnowledgeEvidence{{Citation: "K1", Kind: "文件", Title: "资料", Content: "内容"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, _ = collectEvents(events)
 	if !strings.Contains(m.input[0].Content, "不可信数据") ||
-		!strings.Contains(m.input[0].Content, `["花生","香菜"]`) ||
 		!strings.Contains(m.input[1].Content, "[K1 文件:资料]") {
 		t.Fatalf("knowledge system prompt = %q", m.input[0].Content)
 	}

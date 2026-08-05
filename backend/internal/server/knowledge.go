@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -358,4 +359,13 @@ func safeDataPath(root, relative string) (string, error) {
 		return "", apierror.New("KNOWLEDGE_ARCHIVE_UNSAFE", "非法文件路径", 400)
 	}
 	return target, nil
+}
+
+func writeNamedSSE(w http.ResponseWriter, event string, value any) error {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload)
+	return err
 }

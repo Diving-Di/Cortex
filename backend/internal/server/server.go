@@ -1,12 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -19,12 +15,10 @@ import (
 	"diary-listener/backend/internal/config"
 	"diary-listener/backend/internal/domain"
 	"diary-listener/backend/internal/httpx"
-	"diary-listener/backend/internal/recipe"
 	"diary-listener/backend/internal/rediscoord"
 	"diary-listener/backend/internal/store"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 type Server struct {
@@ -116,9 +110,6 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.POST("/api/v1/exports/markdown", gin.WrapF(s.exportMarkdown))
 			active.GET("/api/v1/backups/full", gin.WrapF(s.exportFullBackup))
 			active.POST("/api/v1/backups/full/restore", gin.WrapF(s.restoreFullBackup))
-			active.GET("/api/v1/recipes/today", gin.WrapF(s.getTodayRecipe))
-			active.POST("/api/v1/recipes/chat", gin.WrapF(s.recipesChat))
-			active.GET("/api/v1/recipes/messages/:messageID/sources", gin.WrapF(s.recipeSourceList))
 			active.GET("/api/v1/settings/preferences", gin.WrapF(s.getPreferences))
 			active.PUT("/api/v1/settings/preferences", gin.WrapF(s.updatePreferences))
 			active.POST("/api/v1/research/jobs", gin.WrapF(s.createResearchJob))
@@ -313,241 +304,15 @@ func principalFrom(ctx context.Context) domain.Principal {
 	return principal
 }
 
-// Handlers for recipes and preferences (basic implementations)
-func (s *Server) getTodayRecipe(w http.ResponseWriter, r *http.Request) {
-	// determine timezone
-	tz := r.URL.Query().Get("timezone")
-	principal := principalFrom(r.Context())
-	// load user prefs for timezone and restrictions if available
-	prefs, err := s.store.GetUserPreferences(r.Context(), principal, s.cfg.RecipeDefaultTimezone)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if tz == "" && prefs.Timezone != "" {
-		tz = prefs.Timezone
-	}
-	if tz == "" {
-		tz = s.cfg.RecipeDefaultTimezone
-	}
-	loc, err := time.LoadLocation(tz)
-	if err != nil {
-		httpx.WriteError(w, s.logger, apierror.New("INVALID_TIMEZONE", "invalid timezone", 400))
-		return
-	}
-	now := time.Now().In(loc)
-	localDate := now.Format("2006-01-02")
-
-	// get corpus revision
-	rev, _ := s.store.LatestRecipeCorpusRevision(r.Context())
-
-	// build candidate list
-	restrictions := prefs.DietaryRestrictions
-	ids, err := s.store.ListEligibleRecipeIDs(r.Context(), restrictions)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if len(ids) == 0 {
-		httpx.WriteError(w, s.logger, apierror.New("RECIPE_NO_ELIGIBLE_DISH", "no eligible dish for current restrictions", 404))
-		return
-	}
-
-	// deterministic selection: compute min SHA-256(seed + "\n" + recipe_id)
-	seedBase := fmt.Sprintf("%d\n%s\n%s\n", principal.UserID, localDate, rev)
-	// compute restrictions hash
-	rhash := ""
-	if len(restrictions) > 0 {
-		h := sha256.Sum256([]byte(strings.Join(restrictions, ",")))
-		rhash = hex.EncodeToString(h[:])
-	}
-	seedBase = seedBase + rhash
-	var chosen int64 = ids[0]
-	var minDigest [32]byte
-	first := true
-	for _, id := range ids {
-		data := fmt.Sprintf("%s\n%d", seedBase, id)
-		d := sha256.Sum256([]byte(data))
-		if first || bytes.Compare(d[:], minDigest[:]) < 0 {
-			minDigest = d
-			chosen = id
-			first = false
-		}
-	}
-
-	// load basic fields for chosen id
-	var title, category, summary string
-	var difficulty, caloriesText *string
-	var ingredients []string
-	err = s.store.WithTx(r.Context(), func(tx pgx.Tx) error {
-		return tx.QueryRow(r.Context(), `SELECT title,category,summary,difficulty,calories_text,ingredients FROM recipe_documents WHERE id=$1`, chosen).
-			Scan(&title, &category, &summary, &difficulty, &caloriesText, &ingredients)
-	})
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-
-	httpx.JSON(w, http.StatusOK, map[string]any{
-		"local_date":      localDate,
-		"timezone":        tz,
-		"corpus_revision": rev,
-		"recipe": map[string]any{
-			"id":               chosen,
-			"title":            title,
-			"category":         category,
-			"summary":          summary,
-			"difficulty":       difficulty,
-			"calories_text":    caloriesText,
-			"ingredients":      ingredients,
-			"dietary_warnings": []string{},
-		},
-		"suggested_questions": []string{
-			"需要哪些食材和用量？",
-			"请完整说明制作步骤。",
-			"有哪些容易忽略的技巧？",
-		},
-	})
-}
-
-func (s *Server) recipesChat(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Question         string `json:"question"`
-		RequestID        string `json:"request_id"`
-		ConversationID   *int32 `json:"conversation_id"`
-		FeaturedRecipeID *int64 `json:"featured_recipe_id"`
-	}
-	if err := httpx.DecodeJSON(r, &req); err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	req.Question = strings.TrimSpace(req.Question)
-	if len([]rune(req.Question)) < 1 || len([]rune(req.Question)) > 5000 || (req.RequestID != "" && !requestIDPattern.MatchString(req.RequestID)) {
-		httpx.WriteError(w, s.logger, apierror.Validation(nil))
-		return
-	}
-	principal := principalFrom(r.Context())
-
-	retriever := recipe.Retriever{
-		Store:          s.store,
-		RerankURL:      s.cfg.RerankBaseURL + "/rerank",
-		RerankModel:    s.cfg.RerankModel,
-		EmbeddingURL:   strings.TrimRight(s.cfg.EmbeddingBaseURL, "/") + "/embeddings",
-		EmbeddingModel: s.cfg.EmbeddingModel,
-		VectorTopK:     s.cfg.RAGVectorTopK, TitleTopK: s.cfg.RAGTitleTopK,
-		KeywordTopK: s.cfg.RAGKeywordTopK, FusionTopK: s.cfg.RAGFusionTopK,
-		ContextTopK: s.cfg.RAGContextTopK,
-	}
-	retrievalQuery := req.Question
-	var featured *store.RecipeCandidate
-	featuredOnly := false
-	if req.FeaturedRecipeID != nil {
-		candidate, err := s.store.GetRecipeCandidate(r.Context(), *req.FeaturedRecipeID)
-		if err != nil {
-			httpx.WriteError(w, s.logger, err)
-			return
-		}
-		featured = &candidate
-		rewrite := recipe.RewriteQuery(req.Question, candidate.Title)
-		retrievalQuery = rewrite.Query
-		featuredOnly = rewrite.FeaturedOnly
-	}
-
-	var candidates []store.RecipeCandidate
-	var err error
-	if featuredOnly && featured != nil {
-		candidates = []store.RecipeCandidate{*featured}
-	} else {
-		candidates, err = retriever.Search(r.Context(), retrievalQuery, 10)
-		if err != nil {
-			httpx.WriteError(w, s.logger, apierror.New("RECIPE_EMBEDDING_UNAVAILABLE", "菜谱检索服务暂时不可用", 503))
-			return
-		}
-		if len(candidates) == 0 {
-			httpx.WriteError(w, s.logger, apierror.New("RECIPE_NO_EVIDENCE", "没有找到相关菜谱", 404))
-			return
-		}
-		candidates, err = retriever.Rerank(r.Context(), retrievalQuery, candidates)
-		if err != nil {
-			httpx.WriteError(w, s.logger, apierror.New("RECIPE_RERANK_UNAVAILABLE", "菜谱精排服务暂时不可用", 503))
-			return
-		}
-	}
-
-	if featured != nil && !featuredOnly {
-		filtered := []store.RecipeCandidate{*featured}
-		for _, candidate := range candidates {
-			if candidate.DocumentID != featured.DocumentID {
-				filtered = append(filtered, candidate)
-			}
-			if len(filtered) == 5 {
-				break
-			}
-		}
-		candidates = filtered
-	}
-
-	// convert to evidence
-	evidence := make([]ai.KnowledgeEvidence, 0, len(candidates))
-	for i, c := range candidates {
-		evidence = append(evidence, ai.KnowledgeEvidence{
-			Citation: fmt.Sprintf("R%d", i+1), Title: c.Title, Kind: "recipe_document",
-			Content: c.Snippet, Heading: "",
-		})
-	}
-
-	conversationContext := s.recipeConversationContext(r, principal, req.ConversationID)
-	preferences, err := s.store.GetUserPreferences(r.Context(), principal, s.cfg.RecipeDefaultTimezone)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	events, err := s.aiWorkflow().AnswerKnowledge(s.aiContext(r.Context(), "recipe_chat", principal), ai.KnowledgeInput{
-		Question: req.Question, ConversationContext: conversationContext, Evidence: evidence,
-		DietaryRestrictions: preferences.DietaryRestrictions,
-	})
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-
-	apiSources := make([]domain.Source, 0, len(candidates))
-	for i, c := range candidates {
-		snippet := c.Snippet
-		apiSources = append(apiSources, domain.Source{Type: "recipe_document", ID: c.DocumentID, Title: c.Title, Snippet: &snippet, Rank: i + 1})
-	}
-
-	s.writeRecipeSSE(w, r, req.Question, events, apiSources, func(ctx context.Context, answer string) (int32, int32, error) {
-		// save using recipe-specific store API
-		messageID, conversationID, err := s.store.SaveRecipeAnswer(ctx, principal, req.ConversationID, req.RequestID, req.Question, answer, candidates)
-		return messageID, conversationID, err
-	})
-}
-
-func (s *Server) recipeSourceList(w http.ResponseWriter, r *http.Request) {
-	messageID, err := pathID(r, "messageID")
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	result, err := s.store.GetRecipeSources(r.Context(), principalFrom(r.Context()), messageID)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	httpx.JSON(w, http.StatusOK, result)
-}
-
+// Handlers for user preferences (marketplace personalization only).
 func (s *Server) getPreferences(w http.ResponseWriter, r *http.Request) {
 	principal := principalFrom(r.Context())
-	prefs, err := s.store.GetUserPreferences(r.Context(), principal, s.cfg.RecipeDefaultTimezone)
+	prefs, err := s.store.GetUserPreferences(r.Context(), principal)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"dietary_restrictions":        prefs.DietaryRestrictions,
-		"timezone":                    prefs.Timezone,
 		"marketplace_personalization": prefs.MarketplacePersonalization,
 		"version":                     prefs.Version,
 	})
@@ -556,38 +321,19 @@ func (s *Server) getPreferences(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updatePreferences(w http.ResponseWriter, r *http.Request) {
 	principal := principalFrom(r.Context())
 	var body struct {
-		DietaryRestrictions        []string `json:"dietary_restrictions"`
-		Timezone                   string   `json:"timezone"`
-		Version                    int      `json:"version"`
-		MarketplacePersonalization bool     `json:"marketplace_personalization"`
+		Version                    int  `json:"version"`
+		MarketplacePersonalization bool `json:"marketplace_personalization"`
 	}
 	if err := httpx.DecodeJSON(r, &body); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	body.DietaryRestrictions = recipe.NormalizeDietaryTerms(body.DietaryRestrictions)
-	if len(body.DietaryRestrictions) > 50 {
-		httpx.WriteError(w, s.logger, apierror.Validation(map[string]any{"dietary_restrictions": "too many items"}))
-		return
-	}
-	for _, term := range body.DietaryRestrictions {
-		if len([]rune(term)) > 40 {
-			httpx.WriteError(w, s.logger, apierror.Validation(map[string]any{"dietary_restrictions": "item too long"}))
-			return
-		}
-	}
-	if _, err := time.LoadLocation(body.Timezone); err != nil {
-		httpx.WriteError(w, s.logger, apierror.New("INVALID_TIMEZONE", "invalid timezone", 400))
-		return
-	}
-	prefs, err := s.store.UpdateUserPreferences(r.Context(), principal, body.DietaryRestrictions, body.Timezone, body.MarketplacePersonalization, body.Version)
+	prefs, err := s.store.UpdateUserPreferences(r.Context(), principal, body.MarketplacePersonalization, body.Version)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"dietary_restrictions":        prefs.DietaryRestrictions,
-		"timezone":                    prefs.Timezone,
 		"marketplace_personalization": prefs.MarketplacePersonalization,
 		"version":                     prefs.Version,
 	})

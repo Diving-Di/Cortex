@@ -14,13 +14,13 @@ import (
 )
 
 func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store, logger *slog.Logger) {
-	client := ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, MaxBatchSize: cfg.RecipeIndexBatchSize}
+	client := ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, MaxBatchSize: cfg.KnowledgeIndexBatchSize}
 	owner := uuid.New()
 	go func() {
-		ticker := time.NewTicker(time.Duration(cfg.RecipeIndexPollSeconds) * time.Second)
+		ticker := time.NewTicker(time.Duration(cfg.KnowledgeIndexPollSeconds) * time.Second)
 		defer ticker.Stop()
 		for {
-			jobs, err := s.ClaimKnowledgeJobs(ctx, owner, cfg.RecipeIndexBatchSize, 5*time.Minute)
+			jobs, err := s.ClaimKnowledgeJobs(ctx, owner, cfg.KnowledgeIndexBatchSize, 5*time.Minute)
 			if err != nil {
 				logger.Error("knowledge job claim failed", "code", "KNOWLEDGE_INDEX_FAILED")
 			} else {

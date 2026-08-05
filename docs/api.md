@@ -120,17 +120,24 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 
 客户端提交的 `tenant_id` 始终被忽略；无当前租户证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
 
-## 旧菜谱兼容接口
+## 用户设置
 
 | 方法与路径 | 说明 |
 | --- | --- |
-| `GET /api/v1/recipes/today` | 返回按用户、当地日期、语料 revision 和忌口确定性选择的菜谱及 3 个问题 |
-| `POST /api/v1/recipes/chat` | 以 SSE 回答烹饪问题；可传 `featured_recipe_id` 锁定今日菜谱上下文 |
-| `GET /api/v1/recipes/messages/{message_id}/sources` | 返回只读系统菜谱引用 |
-| `GET /api/v1/settings/preferences` | 读取忌口、时区和版本 |
-| `PUT /api/v1/settings/preferences` | 以 `version` 乐观锁更新忌口与时区 |
+| `GET /api/v1/settings/preferences` | 读取模板广场个性化开关与版本 |
+| `PUT /api/v1/settings/preferences` | 以 `version` 乐观锁更新个性化开关 |
 
-菜谱 Chat 的 SSE 事件顺序如下：
+历史菜谱接口（`/api/v1/recipes/*` 与忌口、时区偏好）已随菜谱功能移除；前端入口
+`/recipes`、`/assistant` 已重定向到 `/knowledge`。
+
+## 会话
+
+会话列表支持 `search`、`source_scope`、`limit` 和 `offset`，响应为
+`{"items":[],"total":0}`。`PATCH /api/v1/conversations/{id}` 使用 `title` 与 `version`
+重命名；版本冲突返回 `CONVERSATION_VERSION_CONFLICT`。超过 20 条消息的会话会保存压缩摘要，
+回答上下文使用摘要与最近 10 条消息，但事实来源仍在每轮重新检索。
+
+知识问答 SSE 事件顺序如下：
 
 ```text
 event: retrieval
@@ -146,12 +153,7 @@ event: done
 data: {"conversation_id":12,"message_id":34}
 ```
 
-会话列表还支持 `search`、`source_scope`、`limit` 和 `offset`，响应为
-`{"items":[],"total":0}`。`PATCH /api/v1/conversations/{id}` 使用 `title` 与 `version`
-重命名；版本冲突返回 `CONVERSATION_VERSION_CONFLICT`。超过 20 条消息的会话会保存压缩摘要，
-回答上下文使用摘要与最近 10 条消息，但事实来源仍在每轮重新检索。
-
-失败使用 `event: error`，`data` 只包含稳定 `code` 和脱敏 `message`。菜谱来源包含
+失败使用 `event: error`，`data` 只包含稳定 `code` 和脱敏 `message`。来源包含
 `source_type`、`source_id`、`title`、`rank`、`source_deleted` 与最小 `snippet`。
 
 ## 定时报告
@@ -221,7 +223,8 @@ worker 重新聚合资格和点数镜像并自动置为就绪。
 
 Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 格式，包含笔记、标签、
 版本、附件、定时报告、私有模板、个人收藏以及研究来源、草稿和资产；模板恢复后统一为
-`private`。公开快照、公共排名、举报和活动库存不进入备份。恢复旧备份时会忽略其中的个人知识数据及
+`private`。公开快照、公共排名、举报和活动库存不进入备份；当前完整备份也不包含个人知识库上传、索引与
+问答数据（`knowledge_*` 表）。恢复旧备份时会忽略其中的个人知识数据及
 研究知识关联字段；不包含 Token、AI Provider、
 用量、敏感审计、小红书 Cookie 或授权尝试。恢复会重新分配并映射资源 ID，校验 ZIP 路径和
 文件 SHA-256，且只允许目标租户为空时执行。数据库与文件卷的基础设施灾备仍由部署者负责。

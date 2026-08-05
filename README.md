@@ -4,12 +4,12 @@
 `go vet`、测试与构建，前端格式检查、测试与构建，以及 Docker Compose 配置校验。
 
 Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录日常与周期笔记，并让 AI
-在可追溯的个人资料范围内帮助整理、总结、回顾和回答烹饪问题。
+在可追溯的个人资料范围内帮助整理、总结、回顾和回答知识问题。
 
-> 当前版本正在进行“今日菜谱”生产验收；部署前仍须完成本文列出的 Compose 与验收脚本。
+> 当前产品以个人知识库为核心；部署前仍须完成本文列出的 Compose 与验收脚本。
 
 生成模型、Embedding 或 Reranker 不可用时，账号、笔记、标签、附件、搜索、
-版本历史和 Markdown 导出仍保持可用；依赖模型的整理、报告、回忆、菜谱索引或问答返回明确错误。
+版本历史和 Markdown 导出仍保持可用；依赖模型的整理、报告、回忆、知识库索引或问答返回明确错误。
 
 ## 能做什么
 
@@ -28,13 +28,13 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 - 配置按 IANA 时区运行的周期报告任务，并查看运行记录或手动重试。
 - 通过回忆问答检索自己的历史笔记，回答保留可追踪引用。
 
-### 今日菜谱
+### 个人知识库
 
-- 从仓库内固定 revision 的 HowToCook 语料为每位用户确定性挑选每日菜谱。
-- 保存跨设备忌口与时区，推荐不会命中规范化后的忌口词项。
-- 首页提供三个与当日菜品相关的问题，也可输入任意烹饪问题。
-- 菜谱问答使用 512 维中文 GTE Embedding 与 BGE CrossEncoder 精排，回答保存系统菜谱引用。
-- 个人知识库仅检索当前租户上传资料与主动开启的笔记；历史内置语料已一次性迁移到用户 `Diving` 的运行时私有知识库。
+- 上传单个 Markdown 或 Markdown ZIP，可创建知识集合并管理文档，每租户容量上限 3 GiB。
+- 个人笔记可单独开启参与知识问答，回答只使用当前租户上传资料与已开启笔记作为依据。
+- 知识问答使用 512 维中文 GTE Embedding 与 BGE CrossEncoder 精排，回答保存当前租户来源引用。
+- 无当前租户有效证据时返回 `KNOWLEDGE_NO_EVIDENCE`，不依赖模型常识生成。
+- `/recipes` 与 `/assistant` 已重定向到 `/knowledge`；历史 HowToCook 语料已迁移到用户 `Diving` 的运行时私有知识库。
 
 ### 小红书研究
 
@@ -43,7 +43,7 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 - 通过 LiteLLM 生成摘要、关键观点、分类和标签研究草稿。
 - 任务、来源和草稿使用 PostgreSQL 持久化并受 RLS 隔离，不依赖 Redis。
 - 支持按个人租户扫码授权；会话使用 AES-256-GCM 加密保存，二维码和 Chromium Profile 仅临时存在。
-- 采集授权、平台限流或 AI/OCR 不可用时按能力降级，不影响笔记和静态菜谱知识库。
+- 采集授权、平台限流或 AI/OCR 不可用时按能力降级，不影响笔记和个人知识库。
 
 ### 数据自主与隔离
 
@@ -71,7 +71,7 @@ Token、密钥、小红书授权会话和敏感审计；生产灾备仍应覆盖
 | 后端 | Go、Gin、pgx/v5 |
 | 数据 | PostgreSQL 16、pgvector、RLS、Redis 7（活动协调与公共缓存） |
 | AI 网关 | LiteLLM、OpenAI 兼容 Chat Completions / Embeddings、SSE |
-| RAG | 父子切块、PostgreSQL FTS、向量召回、Qwen3 Reranker |
+| RAG | 父子切块、PostgreSQL FTS、向量召回、BGE CrossEncoder Reranker |
 | 部署 | Docker Compose |
 
 ```text
@@ -99,13 +99,13 @@ Browser
 │   ├── db/schema.sql            # 新实例初始化基线
 │   ├── internal/
 │   │   ├── ai/                  # 生成、Embedding 与 Rerank 客户端
-│   │   ├── recipe/              # HowToCook 同步、索引与检索
+│   │   ├── knowledge/           # 个人知识库上传、解析与切块
 │   │   ├── server/              # HTTP 契约和后台 worker
 │   │   └── store/               # SQL、事务与 RLS 数据访问
 │   └── scripts/                 # 数据库初始化与验收脚本
 ├── frontend/src/
 │   ├── api/                     # API 请求封装
-│   ├── features/                # 工作台、笔记、菜谱、研究、报告等
+│   ├── features/                # 工作台、笔记、知识库、研究、模板等
 │   └── routes/                  # 路由保护
 ├── docs/                        # API、设计、网关与验收文档
 ├── docker-compose.yml
@@ -118,29 +118,13 @@ Browser
 
 - Docker Engine 和 Docker Compose
 - 可用的上游生成模型配置
-- 宿主机安装并启动 Ollama；知识向量统一使用本地 `qwen3-embedding:0.6b`
-- 如启用可选的本地 Qwen3 Reranker，首次构建需要访问官方模型仓库并预留足够内存和磁盘
+- 首次构建内部 `embedding-service` / `reranker-service` 需要访问模型仓库并预留足够内存和磁盘
 
 ### 使用 Docker Compose
 
-先在宿主机启动 Ollama 并拉取 0.6B Embedding 模型。Windows 上需让
-Docker Desktop 能访问 Ollama 监听端口：
-
-在第一个 PowerShell 窗口运行：
-
-```powershell
-$env:OLLAMA_HOST = "0.0.0.0:11434"
-ollama serve
-```
-
-保持该进程运行，再在第二个 PowerShell 窗口执行：
-
-```powershell
-ollama pull qwen3-embedding:0.6b
-```
-
-`ollama serve` 需要保持运行。通过 Windows 防火墙将 `11434` 限制为本机和
-Docker 私有网络可访问，不要将它暴露到公网。
+知识库向量由 Compose 内部 `embedding-service` 与 `reranker-service` 提供，二者不暴露宿主机
+端口。如需在本地用 Ollama 调试 Embedding，可参照 `.env.example` 的 `LOCAL_EMBEDDING_*`
+配置；Compose 默认不使用宿主机 Ollama。
 
 然后复制环境变量模板，并替换其中所有 `replace-with-...` 占位值。数据库应用角色、迁移角色和 LiteLLM 数据库角色必须使用不同的强密码；生成模型供应商 Key 只提供给 LiteLLM。
 
@@ -160,7 +144,7 @@ docker compose ps
 
 `db` 和 `llm-gateway` 不暴露宿主机端口。后端只监听本机映射的 `8000`，前端监听 `5173`。
 
-菜谱 Embedding 与 Reranker 是 Compose 的必备内部服务：
+知识库 Embedding 与 Reranker 是 Compose 的必备内部服务：
 
 ```powershell
 docker compose up -d --build
@@ -268,12 +252,12 @@ npm run build
 docker compose config --quiet
 .\backend\scripts\non_ai_smoke.ps1
 .\backend\scripts\ai_acceptance.ps1
-docker compose --profile local-ai up -d --build reranker-service
-.\backend\scripts\recipe_sync_acceptance.ps1
+.\backend\scripts\research_acceptance.ps1
 .\backend\scripts\template_ai_event_acceptance.ps1
+.\backend\scripts\backup_acceptance.ps1
 ```
 
-菜谱验收脚本验证 HowToCook 静态语料 revision、推荐稳定性、建议问题和问答来源。
+知识库验收覆盖上传、索引、混合问答、来源保存与 3 GiB 配额；研究、模板与备份验收覆盖各自流程。
 
 ## 文档
 
@@ -282,5 +266,6 @@ docker compose --profile local-ai up -d --build reranker-service
 - [软件设计说明书](docs/SDD.md)：当前已实现的系统架构、数据、知识库、RAG、AI 工作流和部署设计
 - [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)：未实现、部分实现、待验证事项和发布阻断
 - [大模型网关规范](docs/LLM_GATEWAY.md)：LiteLLM 路由、密钥、隐私和用量治理
-- [小红书授权架构](docs/XHS_AUTHORIZATION_ARCHITECTURE.md)：功能页、扫码授权、会话加密、租户隔离与 API 数据流
-- [研究页面架构](docs/page/RESEARCH_PAGE_ARCHITECTURE.md)：研究采集、整理、保存、授权和验收说明
+- [个人知识库技术方案](docs/PERSONAL_KNOWLEDGE_BASE_TECHNICAL_DESIGN.md)：上传、索引、检索与配额设计
+- [小红书研究页](docs/page/RESEARCH_PAGE_ARCHITECTURE.md)：研究采集、整理、保存、授权和验收说明
+- [个人知识库页](docs/page/KNOWLEDGE_PAGE_ARCHITECTURE.md)：上传、配额、文档管理与降级说明

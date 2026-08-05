@@ -1,7 +1,7 @@
 # 大模型网关接入规范
 
 > 文档状态：阶段一已实施并验收
-> 适用范围：Cortex 后端的通用 AI 生成、M2 AI 工作流和定时报告
+> 适用范围：Cortex 后端的通用 AI 生成、AI 工作流（整理/报告/回忆/知识问答）和定时报告
 > 关联文档：`SDD.md`
 > 参考资料：[有没有用过大模型的网关框架？网关层解决了什么问题？](https://xiaolinnote.com/ai/tools/16_llm_gateway.html)
 
@@ -42,15 +42,15 @@ Cortex 后端
 - `backend/internal/ai/eino_client.go` 的 `EinoClient` 通过 Eino OpenAI 兼容组件统一调用
   `{base_url}/chat/completions`，并支持 SSE 流式响应。
 - `backend/internal/config/config.go` 通过 `AI_API_KEY`、`AI_BASE_URL` 和 `AI_MODEL` 读取网关配置。
-- 通用 AI、M2 工作流和定时报表均复用同一客户端。
+- 通用 AI、整理/报告/回忆/知识问答工作流和定时报表均复用同一客户端。
 - `docker-compose.yml` 将应用统一指向 LiteLLM Proxy。
-- `backend/internal/ai/client_test.go` 覆盖基本 SSE 解析。
+- `backend/internal/ai/eino_client_test.go` 覆盖基本 SSE 解析。
 
 因此，网关只要提供 OpenAI 兼容的 `/v1/chat/completions` 接口，第一阶段即可通过替换后端配置接入，无需改变前端协议或核心业务接口。
 
 现有 `AiProvider` 数据表和 `/api/v1/ai/providers` 接口只保存租户 Provider 信息，实际模型调用仍读取部署环境配置。网关实施前必须确定唯一配置来源，禁止数据库 Provider 配置与网关路由同时控制实际模型而产生歧义。
 
-网关验收范围以 `/api/v1/ai/stream`、M2 工作流和定时报告为准。
+网关验收范围以 `/api/v1/ai/stream`、AI 工作流（整理/报告/回忆/知识问答）和定时报告为准。
 
 ## 3. 技术选型原则
 
@@ -116,11 +116,11 @@ AI_MODEL=diary-default
 - 网关管理端口不得公开暴露；仅应用调用端口允许在内部网络访问。
 - 开发、测试和生产环境使用不同的虚拟密钥、预算与日志空间。
 
-### 4.1 菜谱知识库 Embedding
+### 4.1 知识库 Embedding
 
 当前 Compose 由内部 `embedding-service` 加载固定 revision 的
-`iic/nlp_gte_sentence-embedding_chinese-small`，Backend 通过 OpenAI 兼容接口直接调用该
-服务。模型返回 512 维向量，支持中英文和中英混合语料。服务不暴露宿主机端口。
+`iic/nlp_gte_sentence-embedding_chinese-small`，个人知识库 v2 通过该服务生成
+Embedding（512 维），Backend 经 OpenAI 兼容接口直接调用。模型返回 512 维向量，支持中英文和中英混合语料。服务不暴露宿主机端口。
 
 Backend 默认不发送 `dimensions`，但仍严格校验响应必须为 512 维；
 `RAG_EMBEDDING_SEND_DIMENSIONS` 保持 `false`。配置如下：
@@ -259,7 +259,7 @@ normalized_request_hash
 - [x] 在 Docker Compose 中增加仅内部可访问的网关服务。
 - [x] 将后端 `AI_BASE_URL` 和 `AI_API_KEY` 切换为网关地址和本地网关密钥。
 - [x] 配置逻辑模型、Kimi 主路由与 OpenAI fallback，缓存保持关闭。
-- [x] 验证通用流式接口、M2 整理/报告/回忆工作流。
+- [x] 验证通用流式接口、AI 整理/报告/回忆/知识问答工作流。
 - [x] 验证定时报告通过网关成功生成。
 
 阶段一真实验收结果（2026-07-26）：
@@ -338,7 +338,7 @@ LiteLLM 已使用独立管理数据库。业务后端通过 `LITELLM_VIRTUAL_KEY
 ### 回归
 
 - `/api/v1/ai/stream` 自动化测试通过。
-- M2 整理和报告集成测试通过。
+- AI 整理和报告集成测试通过。
 - 定时报告成功、失败和无来源场景通过。
 - 未配置网关虚拟密钥时继续返回 `AI_NOT_CONFIGURED`。
 

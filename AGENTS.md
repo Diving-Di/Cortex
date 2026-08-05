@@ -75,4 +75,4 @@ npm run build
 .\backend\scripts\ai_acceptance.ps1
 ```
 
-- 发布前确认 Go 源码已经过 `gofmt`，并确认 Compose 的 `db`、`redis`、`llm-gateway`、`backend` healthy。新 PostgreSQL 空库须通过 48 张表、RLS、ready、注册和登录验收。
+- 发布前确认 Go 源码已经过 `gofmt`，并确认 Compose 的 `db`、`redis`、`llm-gateway`、`backend` healthy。新 PostgreSQL 空库须通过 57 张表、RLS、ready、注册和登录验收。

@@ -31,56 +31,8 @@ type Conversation struct {
 	Summary      *string         `json:"summary,omitempty"`
 }
 
-func (s *Store) ConversationSummaryInput(ctx context.Context, p domain.Principal, id int32) (*string, int, []LegacyMessage, error) {
-	var summary *string
-	var version int
-	var messages []LegacyMessage
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, p); err != nil {
-			return err
-		}
-		if err := tx.QueryRow(ctx, `SELECT summary,summary_version FROM conversations WHERE tenant_id=$1 AND user_id=$2 AND id=$3`, p.TenantID, p.UserID, id).Scan(&summary, &version); errors.Is(err, pgx.ErrNoRows) {
-			return apierror.New("CONVERSATION_NOT_FOUND", "对话不存在", 404)
-		} else if err != nil {
-			return err
-		}
-		rows, err := tx.Query(ctx, `SELECT id,role,content,created_at FROM messages WHERE tenant_id=$1 AND conversation_id=$2 ORDER BY id`, p.TenantID, id)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var m LegacyMessage
-			var at time.Time
-			if err := rows.Scan(&m.ID, &m.Role, &m.Content, &at); err != nil {
-				return err
-			}
-			m.CreatedAt = at.Format(time.RFC3339Nano)
-			messages = append(messages, m)
-		}
-		return rows.Err()
-	})
-	return summary, version, messages, err
-}
-func (s *Store) SaveConversationSummary(ctx context.Context, p domain.Principal, id int32, summary string, through int32, version int, model string) error {
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, p); err != nil {
-			return err
-		}
-		tag, err := tx.Exec(ctx, `UPDATE conversations SET summary=$4,summary_through_message_id=$5,summary_version=summary_version+1,summary_model=$6,summary_updated_at=now()
-	WHERE tenant_id=$1 AND user_id=$2 AND id=$3 AND summary_version=$7`, p.TenantID, p.UserID, id, summary, through, model, version)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			return apierror.New("CONVERSATION_SUMMARY_CONFLICT", "会话摘要已被更新", 409)
-		}
-		return nil
-	})
-}
-
 func ValidSourceScope(scope string) bool {
-	return scope == "knowledge" || scope == "growth" || scope == "all" || scope == "recipe"
+	return scope == "knowledge" || scope == "growth" || scope == "all"
 }
 
 func (s *Store) CreateConversation(ctx context.Context, principal domain.Principal, title, sourceScope string) (Conversation, error) {
@@ -111,7 +63,7 @@ func (s *Store) ListScopedConversations(ctx context.Context, principal domain.Pr
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
 		}
-		where := `c.tenant_id=$1 AND c.user_id=$2 AND c.source_scope IN ('knowledge','growth','all','recipe')
+		where := `c.tenant_id=$1 AND c.user_id=$2 AND c.source_scope IN ('knowledge','growth','all')
 		  AND ($3='' OR c.source_scope=$3) AND ($4='' OR c.title ILIKE '%'||$4||'%' OR EXISTS
 		  (SELECT 1 FROM messages m WHERE m.tenant_id=c.tenant_id AND m.conversation_id=c.id AND m.content ILIKE '%'||$4||'%'))`
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM conversations c WHERE `+where,

@@ -1,13 +1,41 @@
 # Cortex 个人知识库技术方案
 
-> 状态：待实现  
+> 状态：核心已实现（v2）  
 > 适用范围：用户上传 Markdown、Markdown ZIP、个人笔记入库与个人知识库问答  
-> 最后更新：2026-08-04  
-> 替代方向：移除面向固定 HowToCook 语料的产品能力，RAG 仅检索当前租户主动上传的资料和其本人笔记
+> 最后更新：2026-08-05  
+> 替代方向：已移除面向固定 HowToCook 语料的产品能力；RAG 仅检索当前租户主动上传的资料和其本人笔记
+
+## 0. 实现现状（2026-08-05）
+
+本文的 v2 核心已落地：
+
+- 数据库：迁移 `000017_personal_knowledge_v2` 新增 `knowledge_quotas`、`knowledge_collections`、
+  `knowledge_uploads`、`knowledge_documents`、`knowledge_assets`、`knowledge_parent_chunks`、
+  `knowledge_child_chunks`、`knowledge_index_jobs`、`knowledge_message_sources` 九张表，全部启用 RLS。
+- 后端：`/api/v1/knowledge/uploads`、`/api/v1/knowledge/uploads/{id}`、
+  `/api/v1/knowledge/documents`（列表与删除）、`/api/v1/knowledge/documents/{id}/assets/{assetId}`、
+  `/api/v1/knowledge/documents/{id}/retry`、`/api/v1/knowledge/collections`、
+  `/api/v1/knowledge/chat/stream`、`PATCH /api/v1/notes/{id}/knowledge`；索引 worker 为
+  `RunKnowledgeIndexer`，上传校验在 `backend/internal/knowledge`。
+- 前端：`/knowledge` 页面支持上传 `.md` / `.zip`、配额展示、文档列表与删除；`/recipes`、
+  `/assistant` 已重定向到 `/knowledge`。
+- 检索：向量（GTE 512 维）+ 全文混合召回、RRF 融合、BGE 精排、SSE 生成并保存来源；
+  无证据返回 `KNOWLEDGE_NO_EVIDENCE`。
+- 上传限额（`.env.example` / Compose）：单次上传 `KNOWLEDGE_MAX_UPLOAD_BYTES`（默认 256 MiB）、
+  解压后 `KNOWLEDGE_MAX_EXTRACTED_BYTES`（1 GiB）、单文件 `KNOWLEDGE_MAX_FILE_BYTES`（64 MiB）、
+  `KNOWLEDGE_MAX_FILES`（5000）、`KNOWLEDGE_MAX_DEPTH`（16）、`KNOWLEDGE_MAX_COMPRESSION_RATIO`（100）；
+  每租户容量上限固定 3 GiB（3,221,225,472 字节）。
+
+尚未完成或待验证：
+
+- 前端集合管理、笔记入库设置页、知识问答页面。
+- 完整备份目前不包含个人知识库数据（`cortex-full-backup-v1` 未导出 `knowledge_*` 表）。
+- 个人知识库离线评测集（Hit@K / MRR / Faithfulness 等）尚未建立。
+- 上传失败/删除清理的临时目录回收与全量容量对账脚本。
 
 ## 1. 背景与目标
 
-Cortex 当前的 RAG 链路面向仓库内固定版本的 HowToCook 语料。本方案将其调整为个人知识库：用户在前端上传 Markdown 文件或 ZIP 压缩包，后端将原始文件保存在 `CORTEX_DATA_DIR` 下的租户私有目录，对 Markdown 正文建立全文和向量索引，并将用户自己编写的有效笔记作为另一类知识来源共同参与问答。
+Cortex 此前的 RAG 链路面向仓库内固定版本的 HowToCook 语料。本方案将其调整为个人知识库：用户在前端上传 Markdown 文件或 ZIP 压缩包，后端将原始文件保存在 `CORTEX_DATA_DIR` 下的租户私有目录，对 Markdown 正文建立全文和向量索引，并将用户自己编写的有效笔记作为另一类知识来源共同参与问答。
 
 目标如下：
 
@@ -193,22 +221,22 @@ collection_id 属于服务端已验证范围（若指定）
 
 没有当前租户证据时返回 `KNOWLEDGE_NO_EVIDENCE`，不能让模型依赖常识生成一个看似来自用户资料的回答。
 
-## 7. API 草案
+## 7. API（已实现）
 
 所有接口使用 `/api/v1` 和 `Authorization: Token <token>`。
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| `POST` | `/api/v1/knowledge/uploads` | `multipart/form-data` 上传一个 `.md` 或 `.zip`，支持幂等键 |
-| `GET` | `/api/v1/knowledge/uploads/{id}` | 查询解析、索引状态及稳定错误码 |
-| `GET` | `/api/v1/knowledge/documents` | 列出当前租户知识文档 |
-| `GET` | `/api/v1/knowledge/documents/{id}` | 查看文档元数据和索引状态 |
-| `DELETE` | `/api/v1/knowledge/documents/{id}` | 软删除并触发索引/文件清理 |
-| `GET` | `/api/v1/knowledge/documents/{id}/assets/{assetId}` | 鉴权读取文档图片 |
-| `POST` | `/api/v1/knowledge/documents/{id}/retry` | 重试失败的解析或索引任务 |
-| `GET/POST/PATCH/DELETE` | `/api/v1/knowledge/collections...` | 管理当前租户集合 |
-| `PATCH` | `/api/v1/notes/{id}/knowledge` | 设置笔记是否参与知识问答 |
-| `POST` | `/api/v1/knowledge/chat/stream` | 对已验证范围执行 SSE 问答 |
+| 方法 | 路径 | 说明 | 状态 |
+|---|---|---|---|
+| `POST` | `/api/v1/knowledge/uploads` | `multipart/form-data` 上传一个 `.md` 或 `.zip`，支持幂等键 | 已实现 |
+| `GET` | `/api/v1/knowledge/uploads/{id}` | 查询解析、索引状态及稳定错误码 | 已实现 |
+| `GET` | `/api/v1/knowledge/documents` | 列出当前租户知识文档与 3 GiB 配额 | 已实现 |
+| `GET` | `/api/v1/knowledge/documents/{id}` | 查看单条文档元数据和索引状态 | 待实现 |
+| `DELETE` | `/api/v1/knowledge/documents/{id}` | 删除文档并触发索引/文件清理 | 已实现 |
+| `GET` | `/api/v1/knowledge/documents/{id}/assets/{assetId}` | 鉴权读取文档图片 | 已实现 |
+| `POST` | `/api/v1/knowledge/documents/{id}/retry` | 重试失败的解析或索引任务 | 已实现 |
+| `GET` / `POST` | `/api/v1/knowledge/collections` | 查询或创建当前租户集合 | 已实现 |
+| `PATCH` | `/api/v1/notes/{id}/knowledge` | 设置笔记是否参与知识问答 | 已实现 |
+| `POST` | `/api/v1/knowledge/chat/stream` | 对已验证范围执行 SSE 问答 | 已实现 |
 
 上传接口在文件安全落盘和数据库记录创建后返回 `202 Accepted`；解析、Embedding 和索引异步执行。重复幂等键返回同一个上传结果。错误响应继续使用稳定的 `code`、`message` 和可选 `details`，不得返回宿主机路径、原始 SQL、上游响应正文或其他租户信息。
 
@@ -251,14 +279,14 @@ collection_id 属于服务端已验证范围（若指定）
 
 ## 11. 实施顺序
 
-1. 新增个人知识库 v2 迁移、RLS、复合外键和配额字段；
-2. 实现安全上传、ZIP 预扫描、原子落盘、图片鉴权读取与删除清理；
-3. 实现 Markdown 解析、统一文档模型、父子切块和异步版本化索引；
-4. 将笔记创建、更新、恢复和软删除事件接入索引任务；
-5. 实现带 Principal 和授权集合的混合 Retriever，禁止复用无租户约束的菜谱检索 SQL；
-6. 接入 Reranker、LiteLLM、SSE、引用校验和来源持久化；
-7. 完成知识库前端页面、笔记入库设置和问答范围选择；
-8. 移除 HowToCook 产品入口、固定语料同步、菜谱推荐及相关配置，并更新 README、API、备份和部署文档。
+1. ✅ 新增个人知识库 v2 迁移、RLS、复合外键和配额字段；
+2. ✅ 实现安全上传、ZIP 预扫描、原子落盘、图片鉴权读取与删除清理；
+3. ✅ 实现 Markdown 解析、统一文档模型、父子切块和异步版本化索引；
+4. ⏳ 将笔记创建、更新、恢复和软删除事件接入索引任务（已提供 `PATCH /notes/{id}/knowledge` 开关，事件级增量接入待验证）；
+5. ✅ 实现带 Principal 和授权集合的混合 Retriever，禁止复用无租户约束的菜谱检索 SQL；
+6. ✅ 接入 Reranker、LiteLLM、SSE、引用校验和来源持久化；
+7. ⏳ 完成知识库前端页面（上传/列表/删除已上线）、笔记入库设置和问答范围选择；
+8. ✅ 移除 HowToCook 产品入口、固定语料同步、菜谱推荐及相关配置（菜谱接口与相关代码已一并删除），并更新 README、API、备份和部署文档。
 
 迁移期间不要让固定菜谱索引与个人知识索引共享表或默认检索范围。若需要短期并存，应使用独立路由和独立表，个人知识问答只能读取新知识表及当前租户笔记。
 

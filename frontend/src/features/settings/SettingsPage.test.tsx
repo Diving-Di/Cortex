@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
-import type { RecipePreferences } from '../../api/recipes';
+import type { Preferences } from '../../api/settings';
 import SettingsPage from './SettingsPage';
 
-const updateRecipePreferences = vi.fn(async (_token: string, value: RecipePreferences) => ({
+const updatePreferences = vi.fn(async (_token: string, value: Preferences) => ({
   ...value,
   version: value.version + 1,
 }));
@@ -12,15 +12,12 @@ vi.mock('../../app/theme', () => ({
   useTheme: () => ({ preference: 'system', setPreference: vi.fn() }),
 }));
 
-vi.mock('../../api/recipes', () => ({
-  getRecipePreferences: vi.fn(async () => ({
-    dietary_restrictions: ['花生'],
-    timezone: 'Asia/Shanghai',
+vi.mock('../../api/settings', () => ({
+  getPreferences: vi.fn(async () => ({
     marketplace_personalization: true,
     version: 1,
   })),
-  updateRecipePreferences: (...args: [string, RecipePreferences]) =>
-    updateRecipePreferences(...args),
+  updatePreferences: (...args: [string, Preferences]) => updatePreferences(...args),
 }));
 
 afterEach(() => {
@@ -28,21 +25,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-test('edits and saves dietary restrictions from settings', async () => {
+test('toggles marketplace personalization from settings', async () => {
   render(<SettingsPage token="token" />);
 
-  const input = await screen.findByLabelText('忌口食材');
-  expect(input).toHaveValue('花生');
-  fireEvent.change(input, { target: { value: '花生，香菜' } });
-  fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }));
+  const toggle = await screen.findByLabelText('个性化模板推荐');
+  expect(toggle).toBeChecked();
+  fireEvent.click(toggle);
 
   await waitFor(() =>
-    expect(updateRecipePreferences).toHaveBeenCalledWith('token', {
-      dietary_restrictions: ['花生', '香菜'],
-      timezone: 'Asia/Shanghai',
-      marketplace_personalization: true,
+    expect(updatePreferences).toHaveBeenCalledWith('token', {
+      marketplace_personalization: false,
       version: 1,
     }),
   );
-  expect(screen.getByText(/作为菜谱问答的系统约束/)).toBeInTheDocument();
 });

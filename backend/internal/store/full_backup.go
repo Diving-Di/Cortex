@@ -43,7 +43,6 @@ var backupTableSpecs = []backupTableSpec{
 	{name: "conversations", id: "id", userFields: []string{"user_id"}},
 	{name: "messages", id: "id", foreign: map[string]string{"conversation_id": "conversations"}},
 	{name: "message_sources", id: "id", foreign: map[string]string{"message_id": "messages", "note_id": "notes"}},
-	{name: "recipe_message_sources", id: "id", foreign: map[string]string{"message_id": "messages"}},
 	{name: "user_preferences", withoutID: true, userFields: []string{"user_id"}},
 	{name: "research_jobs", id: "id", userFields: []string{"created_by"}},
 	{name: "research_sources", id: "id", foreign: map[string]string{"job_id": "research_jobs"}},

@@ -1,13 +1,17 @@
 # Diary Listener RAG 具体链路与策略
 
-> 状态：当前实现说明  
-> 适用范围：HowToCook 菜谱问答与离线评测  
+> 状态：已移除的历史实现记录（2026-08-05）  
+> 适用范围：HowToCook 菜谱问答与离线评测（已随菜谱功能移除）  
 > 最后验证：2026-08-02  
 > 明确不包含：HyDE、Step-back Prompting、在线用户评价、外部向量数据库
 
+> 菜谱检索链路（`internal/recipe`、`cmd/rag-eval`、`testdata/rag`、`scripts/rag_eval.ps1`）
+> 已随菜谱功能于 2026-08-05 移除；本文保留为历史记录。个人知识库 v2 复用同一套 GTE
+> Embedding 与 BGE 精排，见文末第 12 节。
+
 ## 1. 目标与边界
 
-当前 RAG 用于从仓库内置的 HowToCook 菜谱语料中检索证据，并通过 LiteLLM 生成带来源约束的回答。设计重点是：
+本文记录的 RAG 曾用于从仓库内置的 HowToCook 菜谱语料中检索证据，并通过 LiteLLM 生成带来源约束的回答。设计重点是：
 
 1. 用 child chunk 做细粒度召回，用 parent chunk 为生成保留完整章节；
 2. 组合向量、标题、关键词三路召回，降低单一路径漏召；
@@ -45,7 +49,10 @@ flowchart LR
 
 ### 3.1 权威语料
 
-语料唯一来源是 `backend/resources/howtocook`。后端启动时由 `recipe.SyncCorpus` 扫描 dishes 和 tips 下的 Markdown，解析标题、分类、简介、食材、饮食标签、正文及内容 SHA-256。
+语料唯一来源曾是 `backend/resources/howtocook`。后端启动时由 `recipe.SyncCorpus` 扫描 dishes 和 tips 下的 Markdown，解析标题、分类、简介、食材、饮食标签、正文及内容 SHA-256。
+
+> 2026-08-05 起仓库不再包含 `resources/howtocook`，相关代码与评测工具也已删除：语料一次性
+> 迁移到用户 `Diving` 的运行时私有知识库。以下链路描述仅作为历史记录保留。
 
 Markdown 是系统语料的交换来源，索引数据写入：
 
@@ -225,7 +232,8 @@ Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候
 ### 8.2 运行与产物
 
 ```powershell
-.\backend\scripts\rag_eval.ps1 -Workers 4
+# 已随菜谱功能移除：rag_eval.ps1 / cmd/rag-eval / testdata/rag
+# .\backend\scripts\rag_eval.ps1 -Workers 4
 ```
 
 一次运行在 `artifacts/rag-eval/<timestamp>/` 生成：
@@ -263,6 +271,8 @@ Top-10 miss 从 24 条降至 6 条，修复 18 条。结果说明 Parent-Child�
 
 ## 10. 代码定位
 
+> 下列文件已随菜谱功能删除（2026-08-05），保留此表仅用于追溯；个人知识库对应代码见第 12 节。
+
 | 职责 | 文件 |
 |---|---|
 | Markdown 解析 | `backend/internal/recipe/parser.go` |
@@ -277,21 +287,53 @@ Top-10 miss 从 24 条降至 6 条，修复 18 条。结果说明 Parent-Child�
 | 指标、Judge 和报告 | `backend/internal/recipe/evaluation.go` |
 | v2 数据库迁移 | `backend/internal/migrations/sql/000016_recipe_retrieval_v2.up.sql` |
 
+个人知识库 v2 复用同一 Embedding/精排与父子切块思路，代码位于
+`backend/internal/knowledge`（chunker/archive）、`backend/internal/server/knowledge.go`
+（handlers）、`backend/internal/server/knowledge_worker.go`（索引 worker）、
+`backend/internal/store/knowledge*.go`（SQL 与检索），迁移为
+`backend/internal/migrations/sql/000017_personal_knowledge_v2.up.sql`。
+
 ## 11. 验证命令
 
 ```powershell
 Set-Location backend
-gofmt -w internal/recipe internal/store/recipes.go internal/config/config.go
 go vet ./...
 go test ./...
 go build ./cmd/server
-go build ./cmd/rag-eval
 
 Set-Location ..
 docker compose config --quiet
 .\backend\scripts\non_ai_smoke.ps1
 .\backend\scripts\ai_acceptance.ps1
-.\backend\scripts\rag_eval.ps1 -Workers 4
 ```
 
 索引验收还应确认：所有活动文档均使用目标版本、目标版本 child 数与 embedding 非空数一致、没有 queued/running/failed 的索引任务。
+
+> 注意：`rag_eval.ps1` 与 `recipe_eval_v1` 数据集针对旧菜谱检索链路；个人知识库 v2 尚无对应
+> 离线评测集，验收以 `KNOWLEDGE_*` 错误码、跨租户隔离、来源保存与 3 GiB 配额检查为准。
+
+## 12. 个人知识库 RAG（当前主线）
+
+个人知识库 v2 复用同一套 GTE Embedding（512 维）与 BGE CrossEncoder 精排，检索只针对当前租户：
+
+```mermaid
+flowchart LR
+    Doc["上传 .md/.zip 或个人笔记"] --> Chunk["父子切块"]
+    Chunk --> Embed["GTE Embedding"]
+    Embed --> DB[("knowledge_child_chunks<br/>pgvector + FTS")]
+    Query["已认证问题"] --> V["向量召回"]
+    Query --> F["全文召回"]
+    V --> RRF["RRF 融合"]
+    F --> RRF
+    RRF --> Rerank["BGE Rerank"]
+    Rerank --> Parent["Parent 展开 Top K"]
+    Parent --> Gen["LiteLLM SSE 生成"]
+    Gen --> Cite["引用保存到 knowledge_message_sources"]
+```
+
+- 检索入口 `POST /api/v1/knowledge/chat/stream`；`SearchKnowledge` 在同一个 `pgx.Tx` 内设置
+  RLS 上下文，并以 `tenant_id`、`collection_ids`、`knowledge_enabled`、`status='ready'`、
+  `index_version=active_index_version` 过滤。
+- 无当前租户证据返回 `KNOWLEDGE_NO_EVIDENCE`；Embedding / Reranker 不可用分别返回
+  `KNOWLEDGE_EMBEDDING_UNAVAILABLE` / `KNOWLEDGE_RERANK_UNAVAILABLE`。
+- 详细设计见 [PERSONAL_KNOWLEDGE_BASE_TECHNICAL_DESIGN.md](PERSONAL_KNOWLEDGE_BASE_TECHNICAL_DESIGN.md)。

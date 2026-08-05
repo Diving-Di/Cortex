@@ -58,10 +58,8 @@ type Config struct {
 	XHSAuthorizationTTL          time.Duration
 	XHSAuthorizationEnabled      bool
 	XHSChromePath                string
-	RecipeDefaultTimezone        string
-	RecipeIndexWorkers           int
-	RecipeIndexBatchSize         int
-	RecipeIndexPollSeconds       int
+	KnowledgeIndexBatchSize      int
+	KnowledgeIndexPollSeconds    int
 	KnowledgeMaxUploadBytes      int64
 	KnowledgeMaxExtractedBytes   int64
 	KnowledgeMaxFileBytes        int64
@@ -179,15 +177,11 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	recipeIndexWorkers, err := positiveInt("RECIPE_INDEX_WORKERS", 1)
+	knowledgeIndexBatchSize, err := positiveInt("KNOWLEDGE_INDEX_BATCH_SIZE", 16)
 	if err != nil {
 		return Config{}, err
 	}
-	recipeIndexBatchSize, err := positiveInt("RECIPE_INDEX_BATCH_SIZE", 16)
-	if err != nil {
-		return Config{}, err
-	}
-	recipeIndexPollSeconds, err := positiveInt("RECIPE_INDEX_POLL_SECONDS", 5)
+	knowledgeIndexPollSeconds, err := positiveInt("KNOWLEDGE_INDEX_POLL_SECONDS", 5)
 	if err != nil {
 		return Config{}, err
 	}
@@ -283,10 +277,8 @@ func Load() (Config, error) {
 		XHSAuthorizationTTL:          time.Duration(xhsAuthorizationTTLSeconds) * time.Second,
 		XHSAuthorizationEnabled:      parseBool(valueOrDefault("XHS_AUTHORIZATION_ENABLED", "false")),
 		XHSChromePath:                valueOrDefault("XHS_CHROME_PATH", "/usr/bin/chromium"),
-		RecipeDefaultTimezone:        valueOrDefault("RECIPE_DEFAULT_TIMEZONE", "Asia/Shanghai"),
-		RecipeIndexWorkers:           recipeIndexWorkers,
-		RecipeIndexBatchSize:         recipeIndexBatchSize,
-		RecipeIndexPollSeconds:       recipeIndexPollSeconds,
+		KnowledgeIndexBatchSize:      knowledgeIndexBatchSize,
+		KnowledgeIndexPollSeconds:    knowledgeIndexPollSeconds,
 		KnowledgeMaxUploadBytes:      int64(knowledgeMaxUploadBytes),
 		KnowledgeMaxExtractedBytes:   int64(knowledgeMaxExtractedBytes),
 		KnowledgeMaxFileBytes:        int64(knowledgeMaxFileBytes),

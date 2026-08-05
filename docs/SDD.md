@@ -3,15 +3,19 @@
 ## 1. 产品边界
 
 Cortex 是个人记录与回顾工作台，提供笔记、日报/周报/月报、标签、附件、历史版本、
-中文搜索、Dashboard、AI 整理、报告、回忆、研究和今日菜谱。
+中文搜索、Dashboard、AI 整理、报告、回忆、研究、模板广场、限量 AI 活动和
+个人知识库。
 
-知识库是只读的系统级 HowToCook 语料：
+知识库以个人知识库 v2 为当前主线：
 
-- 唯一来源为 `backend/resources/howtocook`。
-- 用户不能上传、编辑、删除或创建知识集合。
-- 研究结果、日报、周报、月报和个人笔记都不会写入知识库。
-- 不提供 `/knowledge` 页面或 `/api/v1/knowledge/*` API。
-- 迁移 `000012_remove_personal_knowledge` 永久删除旧个人知识表、历史数据和研究关联字段。
+- 用户上传单个 `.md` 或 Markdown `.zip`，可创建知识集合、开启个人笔记入库，并进行
+  带来源保存的混合问答；每租户容量上限 3 GiB。
+- 数据由迁移 `000017_personal_knowledge_v2` 的 `knowledge_*` 表承载，并启用 RLS。
+- `/knowledge` 是知识库入口；`/recipes` 与 `/assistant` 已重定向到 `/knowledge`。
+- HowToCook 固定语料已从仓库移除并一次性迁移到用户 `Diving` 的运行时私有知识库；
+  菜谱接口（`/api/v1/recipes/*`）与忌口、时区偏好已一并移除，前端 `/recipes`、
+  `/assistant` 重定向到 `/knowledge`。
+- 研究结果、日报、周报、月报和个人笔记不会写入个人知识库；研究内容与知识库检索相互隔离。
 
 ## 2. 技术架构
 
@@ -20,8 +24,8 @@ Cortex 是个人记录与回顾工作台，提供笔记、日报/周报/月报�
 - 数据库：PostgreSQL 16、RLS、pgvector。
 - AI：后端仅通过 LiteLLM 的 OpenAI 兼容接口访问逻辑模型。
 
-PostgreSQL 是个人笔记正文的唯一权威来源。Markdown 只用于笔记交换、导出和仓库内固定
-HowToCook 语料，不与数据库做双向同步。
+PostgreSQL 是个人笔记正文的唯一权威来源。Markdown 只用于笔记交换、导出以及个人知识库
+上传语料，不与数据库做双向同步。
 
 ## 3. 租户与数据安全
 
@@ -33,60 +37,64 @@ HowToCook 语料，不与数据库做双向同步。
 - 笔记更新使用乐观锁，正文更新和 AI 覆盖前创建 revision，删除默认软删除。
 - 附件和知识文件只保存 `CORTEX_DATA_DIR` 下的安全相对路径，不作为公开静态目录暴露；`DIARY_DATA_DIR` 仅为兼容别名。
 
-## 4. 静态 HowToCook 知识库
+## 4. 个人知识库
 
 ```mermaid
 flowchart LR
-    RESOURCE["resources/howtocook<br/>固定 revision Markdown"]
-    SYNC["启动同步<br/>Recipe Sync"]
-    DB[("recipe_documents<br/>recipe_parent_chunks<br/>recipe_child_chunks")]
-    INDEX["Recipe Indexer"]
-    EMBED["固定 Embedding 服务"]
-    API["/api/v1/recipes/*"]
-    UI["/recipes"]
-
-    RESOURCE --> SYNC --> DB
-    DB --> INDEX --> EMBED
+    UPLOAD["上传 .md / .zip"] --> PREPARE["安全校验与落盘"]
+    PREPARE --> DB[("knowledge_* 表<br/>RLS 隔离")]
+    NOTES["个人笔记知识开关"] --> DB
+    DB --> INDEX["Knowledge Indexer"]
+    EMBED["固定 Embedding 服务"] --> INDEX
     INDEX --> DB
-    DB --> API --> UI
+    API["/api/v1/knowledge/*"] --> DB
+    UI["/knowledge"] --> API
 ```
 
-服务启动时读取 `resources/howtocook/SOURCE.json` 的 revision，幂等同步菜谱与技巧 Markdown，
-并为变更内容排队生成向量。生产构建不得读取仓库外的 HowToCook 路径。
+- 上传经 `internal/knowledge` 校验类型、配额与 ZIP 路径安全后，保存到
+  `CORTEX_DATA_DIR/knowledge/{tenant_id}/...` 下的安全相对路径。
+- 后台 `RunKnowledgeIndexer` 对文档做父子切块，并使用 Compose 内部
+  `embedding-service`（`iic/nlp_gte_sentence-embedding_chinese-small`，512 维）生成向量。
+- 问答只检索当前租户 `knowledge_documents`（含开启知识问答的个人笔记），向量 + 全文混合召回，
+  经 `reranker-service`（`BAAI/bge-reranker-v2-m3`）精排后取前 `RAG_CONTEXT_PARENT_TOP_K` 个
+  parent；来源写入 `knowledge_message_sources`。无当前租户证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
 
-菜谱问答只检索 `recipe_documents` 和 `recipe_child_chunks`。无可靠来源时拒绝生成；
-保存的引用必须仍指向当前静态语料。个人笔记、周期报告、附件和研究内容不参与此检索。
-
-公开接口：
+主要接口：
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/v1/recipes/today` | 返回确定性的今日菜谱和三个建议问题 |
-| `POST` | `/api/v1/recipes/chat` | 基于 HowToCook 来源进行 SSE 问答 |
-| `GET` | `/api/v1/recipes/messages/{id}/sources` | 返回系统菜谱引用 |
-| `GET` / `PUT` | `/api/v1/settings/preferences` | 读取或更新忌口及时区 |
+| `POST` | `/api/v1/knowledge/uploads` | 上传 `.md` / `.zip`，安全落盘后返回 202 |
+| `GET` | `/api/v1/knowledge/documents` | 列出当前租户文档与 3 GiB 配额 |
+| `DELETE` | `/api/v1/knowledge/documents/{id}` | 删除文档并使其退出检索 |
+| `GET` / `POST` | `/api/v1/knowledge/collections` | 查询或创建知识集合 |
+| `POST` | `/api/v1/knowledge/chat/stream` | 混合检索、精排并 SSE 回答 |
+| `PATCH` | `/api/v1/notes/{id}/knowledge` | 开启或关闭笔记知识索引 |
 
 ## 5. 笔记、报告和回忆
 
-笔记、日报、周报和月报保存在租户业务表中，不进入静态知识库。报告必须先生成草稿，
-确认后写入，并保存当前租户的来源笔记。回忆问答只能使用可信 Principal 下检索到的个人笔记，
-与 HowToCook 菜谱检索相互隔离。
+笔记、日报、周报和月报保存在租户业务表中。报告必须先生成草稿，确认后写入，并保存当前
+租户的来源笔记。回忆问答只能使用可信 Principal 下检索到的个人笔记。用户可通过
+`PATCH /api/v1/notes/{id}/knowledge` 开启个人笔记参与个人知识库问答；知识库检索与回忆
+问答相互隔离。
 
 ## 6. 研究
 
 研究任务和来源受个人租户 RLS 隔离，可生成可编辑草稿、忽略或删除。研究内容不会保存到
-HowToCook 知识库，也不提供目标知识集合参数。图片资产保存在独立的 `research` 安全目录。
+个人知识库，也不提供目标知识集合参数。图片资产保存在独立的 `research` 安全目录。
 
 ## 7. AI 与降级
 
-AI 未配置或不可用时，认证、笔记、搜索、附件、导出、备份和静态菜谱浏览仍可用。
+AI 未配置或不可用时，认证、笔记、搜索、附件、导出、备份和知识库文件管理仍可用。
+个人知识库上传、删除不依赖 Embedding；Embedding 或 Reranker 不可用时，索引任务失败或
+问答返回稳定错误（`KNOWLEDGE_EMBEDDING_UNAVAILABLE` / `KNOWLEDGE_RERANK_UNAVAILABLE`）。
 后端只持有 LiteLLM 虚拟密钥；供应商真实 Key 不进入前端、业务数据库、日志或备份。
 流式响应已经输出内容后不得从头重试。
 
 ## 8. 部署与验证
 
 Compose 下数据库、LiteLLM、Embedding 和 Reranker 服务不暴露宿主机端口。
-`/healthz` 只反映进程存活，`/readyz` 只验证数据库可用。
+`/healthz` 只反映进程存活，`/readyz` 只验证数据库可用。新实例由 `backend/db/schema.sql`
+基线加版本化迁移初始化（当前共 57 张表）。
 
 ```powershell
 Set-Location backend
@@ -101,8 +109,14 @@ npm run build
 
 Set-Location ..
 docker compose config --quiet
-.\backend\scripts\recipe_sync_acceptance.ps1
+.\backend\scripts\non_ai_smoke.ps1
+.\backend\scripts\ai_acceptance.ps1
+.\backend\scripts\research_acceptance.ps1
+.\backend\scripts\template_ai_event_acceptance.ps1
+.\backend\scripts\backup_acceptance.ps1
 ```
+
+知识库验收覆盖上传、索引、混合问答、跨租户隔离与 3 GiB 配额。
 
 ## 9. 模板广场与限量 AI 活动
 

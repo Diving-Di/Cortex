@@ -8,6 +8,7 @@
 | 路由 | 页面组件 | 说明文档 | 状态 |
 | --- | --- | --- | --- |
 | `/research` | `features/research/ResearchPage.tsx` | [小红书研究页](RESEARCH_PAGE_ARCHITECTURE.md) | 已覆盖 |
+| `/knowledge` | `features/knowledge/KnowledgePage.tsx` | [个人知识库页](KNOWLEDGE_PAGE_ARCHITECTURE.md) | 已覆盖 |
 
 ## 尚未建立独立页面说明
 
@@ -18,10 +19,11 @@
 | `/login` | `features/auth/LoginPage.tsx` |
 | `/` | `features/dashboard/DashboardPage.tsx` |
 | `/notes/*` | `features/notes/NotesPage.tsx` |
-| `/recipes` | `features/recipes/TodayRecipePage.tsx` |
 | `/ai-events` | `features/aiEvents/AIEventsPage.tsx` |
 | `/reports` | `features/reports/ReportsPage.tsx` |
 | `/settings` | `features/settings/SettingsPage.tsx` |
+
+`/recipes` 与 `/assistant` 已在 `App.tsx` 中重定向到 `/knowledge`；菜谱前端组件已随功能删除。
 
 这些缺项不代表页面功能未实现，只表示尚无页面级专项说明。新增对应文档时，应至少包含：
 

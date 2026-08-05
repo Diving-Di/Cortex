@@ -1,16 +1,15 @@
 # Cortex Go Backend
 
 Cortex 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。Go module、环境变量、
-数据库角色与数据目录继续保留旧技术标识，兼容策略见
-[`docs/COMPATIBILITY.md`](../docs/COMPATIBILITY.md)。
+数据库角色与数据目录继续保留旧技术标识（`diary-*` / `CORTEX_DATA_DIR`）。
 
 主要能力：
 
 - 认证、个人租户与 PostgreSQL RLS；
 - 笔记、版本、标签、搜索和 dashboard；
 - 附件和 Markdown 导出；
-- LiteLLM Proxy 上的 SSE、AI 整理、报告、回忆与 HowToCook 菜谱问答；
-- `/api/v1` 菜谱推荐、问答、来源和 Prometheus 文本指标；
+- LiteLLM Proxy 上的 SSE、AI 整理、报告、回忆与个人知识库问答；
+- `/api/v1` 个人知识库上传、集合、文档与问答，以及 Prometheus 文本指标；
 - 并发安全的定时报表 scheduler。
 
 ## 本地验证
@@ -19,6 +18,7 @@ Cortex 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。Go module、
 go vet ./...
 go test ./...
 go build ./cmd/server
+go build ./cmd/migrate
 ```
 
 ## 版本化数据库迁移
@@ -73,36 +73,22 @@ RAG_FUSION_TOP_K=20
 RAG_CONTEXT_PARENT_TOP_K=5
 ```
 
-菜谱模型由 Compose 内部服务从 ModelScope 固定 revision 构建并离线运行；
+知识库模型由 Compose 内部服务从 ModelScope 固定 revision 构建并离线运行；
 Embedding 输出严格为 512 维，Reranker 使用 BGE CrossEncoder。
-检索索引 v2 按 Markdown 二级章节生成 parent context 和不超过 500 字的 child，
-原始/确定性扩展 query 分别进行向量召回，并与标题、中文关键词召回使用 RRF 融合；
-rerank 后按 parent 去重，同一文档最多保留两个 parent。索引重建期间旧版本继续服务，
-只有目标版本所有 child embedding 完整且模型一致时才会切换。
+个人知识库按 Markdown 标题切分 parent 与不超过 500 字的 child，向量与全文检索使用 RRF
+融合，rerank 后按 parent 展开供生成使用。
 
-个人知识库来源是当前租户上传资料与主动开启的笔记。历史内置语料已一次性迁移到用户
-`Diving` 的私有知识库，不再随应用镜像分发。运行时文件统一保存到
+个人知识库来源是当前租户上传资料与主动开启的笔记。历史 HowToCook 内置语料已一次性迁移到
+用户 `Diving` 的私有知识库，不再随应用镜像分发。运行时文件统一保存到
 `CORTEX_DATA_DIR/knowledge/<tenant-uuid>/<upload-uuid>/source`，
 并通过 `/api/v1/knowledge/*` 管理与问答接口访问。
 Compose 环境使用固定 revision 的
 `iic/nlp_gte_sentence-embedding_chinese-small` 和 `BAAI/bge-reranker-v2-m3`。
-完整环境就绪后运行 `scripts/recipe_sync_acceptance.ps1` 验证推荐稳定性、三个建议问题、
-偏好乐观锁和语料 revision。
+完整环境就绪后运行 `scripts/non_ai_smoke.ps1` 与 `scripts/ai_acceptance.ps1` 验证
+知识库上传、索引、问答与降级。
 
 ## RAG 离线评测
 
-`testdata/rag/recipe_eval_v1.jsonl` 包含 90 条由真实 HowToCook 资源整理的中文问题、
-完整参考答案和来源路径。评测命令复用当前 embedding、pgvector、reranker 和
-`AnswerKnowledge` 链路，计算 Hit@1/3/5/10、rerank 前后 MRR、Context Recall、
-Context Precision、Faithfulness 和 Answer Relevancy。
-
-配置数据库、LiteLLM、embedding 和 reranker 环境变量后执行：
-
-```powershell
-.\scripts\rag_eval.ps1
-```
-
-脚本构建包含离线二进制和评测集的 backend 镜像，并通过一次性
-`docker compose run` 使用 Compose 内部依赖；它不会创建常驻评测服务。结果写入
-仓库根目录的 `artifacts/rag-eval/<timestamp>/`，包含 `cases.jsonl`、
-`summary.json`、`config.json` 和 `report.md`，不会写入业务数据库。
+旧菜谱检索链路及其离线评测（`cmd/rag-eval`、`testdata/rag`、`scripts/rag_eval.ps1`）已随
+菜谱功能一并移除。个人知识库 v2 复用同一套 Embedding / Reranker 链路，目前通过
+`scripts/non_ai_smoke.ps1` 与 `scripts/ai_acceptance.ps1` 做在线验收；离线评测集待建立。
