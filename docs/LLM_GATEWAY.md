@@ -90,11 +90,11 @@ Cortex 后端
 
 | 逻辑模型 | 顺序 | 实际上游 | 用途 |
 | --- | ---: | --- | --- |
-| `diary-default` | 1 | Kimi `kimi-k2.5` | 主模型；已通过真实 SSE、整理、报告和回忆验收 |
-| `diary-deepseek-fallback` | 2 | DeepSeek `deepseek-chat` | 第一备用，由 LiteLLM 在主模型失败时调度 |
+| `diary-default` | 1 | DeepSeek `deepseek-chat` | 主模型；已通过真实 SSE、整理、报告和回忆验收 |
+| `diary-kimi-fallback` | 2 | Kimi `kimi-k2.5` | 第一备用，由 LiteLLM 在主模型失败时调度 |
 | `diary-openai-fallback` | 3 | OpenAI `gpt-5.6` | 第二备用；当前本地 OpenAI 账户为 `insufficient_quota` |
 
-LiteLLM 配置以 Kimi 为主路由，并依次将 DeepSeek、OpenAI 放入 fallback。OpenAI 额度恢复前，OpenAI fallback 只用于验证路由行为，不作为可用性保障。
+LiteLLM 配置以 DeepSeek 为主路由，并依次将 Kimi、OpenAI 放入 fallback。OpenAI 额度恢复前，OpenAI fallback 只用于验证路由行为，不作为可用性保障。
 
 ## 4. 配置规范
 
@@ -258,7 +258,7 @@ normalized_request_hash
 - [x] 选定并固定网关及镜像版本。
 - [x] 在 Docker Compose 中增加仅内部可访问的网关服务。
 - [x] 将后端 `AI_BASE_URL` 和 `AI_API_KEY` 切换为网关地址和本地网关密钥。
-- [x] 配置逻辑模型、Kimi 主路由与 OpenAI fallback，缓存保持关闭。
+- [x] 配置逻辑模型、DeepSeek 主路由、Kimi 与 OpenAI fallback，缓存保持关闭。
 - [x] 验证通用流式接口、AI 整理/报告/回忆/知识问答工作流。
 - [x] 验证定时报告通过网关成功生成。
 

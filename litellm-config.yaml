@@ -7,15 +7,15 @@ model_list:
       timeout: 60
   - model_name: diary-default
     litellm_params:
-      model: openai/kimi-k2.5
-      api_base: https://api.moonshot.cn/v1
-      api_key: os.environ/KIMI_API_KEY
-      timeout: 60
-  - model_name: diary-deepseek-fallback
-    litellm_params:
       model: deepseek/deepseek-chat
       api_base: https://api.deepseek.com/v1
       api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 60
+  - model_name: diary-kimi-fallback
+    litellm_params:
+      model: openai/kimi-k2.5
+      api_base: https://api.moonshot.cn/v1
+      api_key: os.environ/KIMI_API_KEY
       timeout: 60
   - model_name: diary-openai-fallback
     litellm_params:
@@ -31,7 +31,7 @@ litellm_settings:
   request_timeout: 60
   fallbacks:
     - diary-default:
-        - diary-deepseek-fallback
+        - diary-kimi-fallback
         - diary-openai-fallback
 
 general_settings:
