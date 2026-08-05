@@ -199,13 +199,13 @@ RRF Top 20 child 交给 `BAAI/bge-reranker-v2-m3`。reranker 返回的 index 必
 
 ## 8. 离线评测链路
 
-离线入口为 `backend/cmd/rag-eval`，它不是常驻服务，不注册 HTTP 路由。数据集 `backend/testdata/rag/recipe_eval_v1.jsonl` 包含 90 条基于真实资源整理的 query、完整参考答案、gold source path 和标签。
+离线入口为 `backend/cmd/rag-eval`，它不是常驻服务，不注册 HTTP 路由。数据集 `backend/testdata/rag/recipe_eval_v1.jsonl` 包含 90 条基于原 HowToCook 语料整理的 query、完整参考答案、gold source path 和标签。入口固定按用户名解析 `Diving` 的 Principal，并在其全部启用的 ready 知识文档上评测；不接收 `tenant_id`，也不限定知识集合。
 
 单条评测执行：
 
 ```mermaid
 flowchart LR
-    Case["Query + Reference Answer + Gold Sources"] --> Search["生产 Retriever.Search"]
+    Case["Query + Reference Answer + Gold Sources"] --> Search["生产 SearchKnowledge"]
     Search --> Before["保存 RRF 前/精排前候选"]
     Before --> Rerank["生产 Retriever.Rerank"]
     Rerank --> RetrievalMetrics["Hit@K / MRR"]
@@ -232,8 +232,8 @@ Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候
 ### 8.2 运行与产物
 
 ```powershell
-# 已随菜谱功能移除：rag_eval.ps1 / cmd/rag-eval / testdata/rag
-# .\backend\scripts\rag_eval.ps1 -Workers 4
+.\backend\scripts\rag_eval.ps1 -Workers 4
+# 可用 -CaseIDs "recipe-001,recipe-002" 做小样本检查
 ```
 
 一次运行在 `artifacts/rag-eval/<timestamp>/` 生成：
@@ -309,8 +309,9 @@ docker compose config --quiet
 
 索引验收还应确认：所有活动文档均使用目标版本、目标版本 child 数与 embedding 非空数一致、没有 queued/running/failed 的索引任务。
 
-> 注意：`rag_eval.ps1` 与 `recipe_eval_v1` 数据集针对旧菜谱检索链路；个人知识库 v2 尚无对应
-> 离线评测集，验收以 `KNOWLEDGE_*` 错误码、跨租户隔离、来源保存与 3 GiB 配额检查为准。
+> 2026-08-05 起 `recipe_eval_v1` 已迁移为个人知识库 v2 的离线回归集。评测入口固定解析
+> 用户 `Diving`，在其全部启用且 ready 的知识文档上复用生产检索链路；gold 按迁移前的文件名
+> 与数据库文档标题或 `stored_path` 匹配，不依赖知识集合唯一性。
 
 ## 12. 个人知识库 RAG（当前主线）
 
@@ -330,6 +331,16 @@ flowchart LR
     Parent --> Gen["LiteLLM SSE 生成"]
     Gen --> Cite["引用保存到 knowledge_message_sources"]
 ```
+
+### 12.1 检索 v3
+
+迁移 `000019_knowledge_retrieval_v3` 为全部启用且 ready 的文档排队下一索引版本。重建期间旧
+`active_index_version` 继续服务，新版本的 parent、child 和 embedding 全部写入成功后才原子切换。
+
+v3 切块不再为只有 heading、没有正文的章节创建 parent。召回包括全局向量、正文 FTS，以及标题
+命中文档内的向量章节召回；三路结果在 child 层 RRF 后按 parent 去重。CrossEncoder 精排输入包含
+标题、来源、完整 heading path 和正文。最终上下文先确定文档再选择章节：明确标题命中时只从目标
+文档选择，否则最多保留三个高分文档，并用剩余预算补充这些文档的相关章节。
 
 - 检索入口 `POST /api/v1/knowledge/chat/stream`；`SearchKnowledge` 在同一个 `pgx.Tx` 内设置
   RLS 上下文，并以 `tenant_id`、`collection_ids`、`knowledge_enabled`、`status='ready'`、

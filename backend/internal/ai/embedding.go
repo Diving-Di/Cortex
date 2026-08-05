@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+func FormatRerankDocument(title, sourceType string, heading []string, content string) string {
+	return fmt.Sprintf("标题：%s\n来源：%s\n章节：%s\n内容：%s",
+		strings.TrimSpace(title), strings.TrimSpace(sourceType), strings.Join(heading, " / "), strings.TrimSpace(content))
+}
+
 type EmbeddingClient interface {
 	Embed(ctx context.Context, inputs []string) ([][]float32, error)
 }

@@ -253,7 +253,8 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_EMBEDDING_UNAVAILABLE", "知识检索服务暂时不可用", 503))
 		return
 	}
-	candidates, err := s.store.SearchKnowledge(r.Context(), p, req.Question, vectors[0], s.cfg.EmbeddingModel, req.CollectionIDs, s.cfg.RAGFusionTopK)
+	candidates, err := s.store.SearchKnowledge(r.Context(), p, req.Question, vectors[0], s.cfg.EmbeddingModel, req.CollectionIDs,
+		s.cfg.RAGVectorTopK, s.cfg.RAGTitleTopK, s.cfg.RAGKeywordTopK, s.cfg.RAGFusionTopK)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -264,7 +265,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 	}
 	documents := make([]string, len(candidates))
 	for i := range candidates {
-		documents[i] = candidates[i].Content
+		documents[i] = ai.FormatRerankDocument(candidates[i].Title, candidates[i].SourceType, candidates[i].Heading, candidates[i].Content)
 	}
 	reranker := ai.LocalRerankClient{BaseURL: s.cfg.RerankBaseURL, Model: s.cfg.RerankModel, MaxDocuments: s.cfg.RAGFusionTopK}
 	scores, err := reranker.Rerank(r.Context(), req.Question, documents)
@@ -276,9 +277,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		candidates[i].Score = scores[i]
 	}
 	sortKnowledgeCandidates(candidates)
-	if len(candidates) > s.cfg.RAGContextTopK {
-		candidates = candidates[:s.cfg.RAGContextTopK]
-	}
+	candidates = store.SelectKnowledgeContexts(req.Question, candidates, s.cfg.RAGContextTopK)
 	evidence := make([]ai.KnowledgeEvidence, len(candidates))
 	sources := make([]map[string]any, len(candidates))
 	for i := range candidates {

@@ -28,6 +28,11 @@ func Chunk(title, sourceType, markdown string) []ParentChunk {
 			body = nil
 			return
 		}
+		lines := strings.Split(content, "\n")
+		if len(lines) == 1 && headingPattern.MatchString(strings.TrimSpace(lines[0])) {
+			body = nil
+			return
+		}
 		p := ParentChunk{Heading: append([]string(nil), path...), Content: content}
 		p.Hash = hash("parent-v1\n" + strings.Join(path, "/") + "\n" + content)
 		for _, piece := range split(content, 500) {

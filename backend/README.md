@@ -89,6 +89,25 @@ Compose 环境使用固定 revision 的
 
 ## RAG 离线评测
 
-旧菜谱检索链路及其离线评测（`cmd/rag-eval`、`testdata/rag`、`scripts/rag_eval.ps1`）已随
-菜谱功能一并移除。个人知识库 v2 复用同一套 Embedding / Reranker 链路，目前通过
-`scripts/non_ai_smoke.ps1` 与 `scripts/ai_acceptance.ps1` 做在线验收；离线评测集待建立。
+个人知识库 v2 提供离线入口 `cmd/rag-eval`。它固定解析用户 `Diving` 的服务端 Principal，
+在该用户全部启用的 ready 文档上运行生产 `SearchKnowledge`、Embedding、Reranker 和
+`AnswerKnowledge` 链路，不接受客户端或命令行传入的 `tenant_id`，也不要求文档属于唯一集合。
+
+评测复用 `testdata/rag/recipe_eval_v1.jsonl` 的 90 条问题、参考答案和 gold 文件名。启动前会确认
+每个 gold 文件在 Diving 的知识库中存在、索引版本有效且至少有一个 embedding；同名文档均视为
+有效 gold。运行：
+
+```powershell
+.\scripts\rag_eval.ps1 -Workers 4
+# 快速检查指定样本
+.\scripts\rag_eval.ps1 -CaseIDs "recipe-001,recipe-002"
+```
+
+结果写入 `artifacts/rag-eval/<timestamp>/`。候选正文只在进程内用于生成与 Judge，trace 默认只保存
+文档 ID、标题、章节、索引版本、排名和分数，不写入完整检索正文。
+
+个人知识库检索 v3 会跳过只有 Markdown heading、没有正文的 parent，并通过迁移
+`000019_knowledge_retrieval_v3` 为现有 ready 文档排队 `active_index_version + 1`；旧索引会持续服务，
+直到 worker 在同一事务中写完新 parent/child 和 embedding 后才切换。检索使用向量、正文 FTS、
+标题命中文档内向量召回三条通道，在 parent 层去重并 RRF；rerank 后先确定文档，再选该文档内章节。
+如果问题明确包含第一名文档的规范化标题，最终上下文只从该文档选择；否则最多保留三个文档。

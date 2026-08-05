@@ -13,11 +13,59 @@ import (
 
 type KnowledgeCandidate struct {
 	DocumentID                 uuid.UUID `json:"document_id"`
+	ParentID                   uuid.UUID `json:"-"`
 	NoteID                     *int32    `json:"note_id,omitempty"`
 	SourceType, Title, Content string
+	SourcePath                 string
 	Heading                    []string
 	IndexVersion, Rank         int
 	Score                      float64
+	RerankScore                *float64
+}
+
+// ResolveKnowledgeEvaluationPrincipal resolves an offline evaluator identity by
+// server-owned username. Callers never supply or select a tenant ID.
+func (s *Store) ResolveKnowledgeEvaluationPrincipal(ctx context.Context, username string) (domain.Principal, error) {
+	var p domain.Principal
+	err := s.Pool.QueryRow(ctx, `SELECT u.id,u.username,t.id,(t.status='active' AND t.deleted_at IS NULL)
+		FROM users u JOIN tenants t ON t.user_id=u.id WHERE u.username=$1`, username).
+		Scan(&p.UserID, &p.Username, &p.TenantID, &p.TenantActive)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Principal{}, apierror.New("RAG_EVAL_USER_NOT_FOUND", "评测用户不存在", 404)
+	}
+	if err != nil {
+		return domain.Principal{}, err
+	}
+	if !p.TenantActive {
+		return domain.Principal{}, apierror.New("RAG_EVAL_TENANT_INACTIVE", "评测用户的个人空间不可用", 403)
+	}
+	return p, nil
+}
+
+func (s *Store) ValidateKnowledgeEvaluationTitles(ctx context.Context, p domain.Principal, titles []string) ([]string, error) {
+	missing := make([]string, 0)
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, p); err != nil {
+			return err
+		}
+		for _, title := range titles {
+			var exists bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM knowledge_documents d
+				WHERE d.tenant_id=$1 AND (d.title=$2 OR split_part(regexp_replace(coalesce(d.stored_path,''),'^.*/',''),'.',1)=$2)
+				AND d.status='ready' AND d.deleted_at IS NULL
+				AND d.knowledge_enabled AND d.active_index_version>0
+				AND EXISTS(SELECT 1 FROM knowledge_child_chunks c WHERE c.tenant_id=d.tenant_id
+					AND c.document_id=d.id AND c.index_version=d.active_index_version AND c.embedding IS NOT NULL))`,
+				p.TenantID, title).Scan(&exists); err != nil {
+				return err
+			}
+			if !exists {
+				missing = append(missing, title)
+			}
+		}
+		return nil
+	})
+	return missing, err
 }
 
 func (s *Store) ValidateKnowledgeCollections(ctx context.Context, p domain.Principal, ids []uuid.UUID) error {
@@ -38,31 +86,46 @@ func (s *Store) ValidateKnowledgeCollections(ctx context.Context, p domain.Princ
 		return nil
 	})
 }
-func (s *Store) SearchKnowledge(ctx context.Context, p domain.Principal, query string, embedding []float32, model string, collections []uuid.UUID, limit int) ([]KnowledgeCandidate, error) {
+func (s *Store) SearchKnowledge(ctx context.Context, p domain.Principal, query string, embedding []float32, model string, collections []uuid.UUID, vectorLimit, titleLimit, keywordLimit, fusionLimit int) ([]KnowledgeCandidate, error) {
 	var out []KnowledgeCandidate
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, p); err != nil {
 			return err
 		}
 		rows, err := tx.Query(ctx, `WITH eligible AS (
-SELECT c.id,c.parent_id,c.document_id,c.index_version,c.embedding_text,c.embedding,d.title,d.source_type,d.note_id
+SELECT c.id,c.parent_id,c.document_id,c.index_version,c.embedding_text,c.embedding,d.title,d.source_type,d.note_id,d.stored_path
 FROM knowledge_child_chunks c JOIN knowledge_documents d ON d.tenant_id=c.tenant_id AND d.id=c.document_id
 LEFT JOIN notes n ON n.tenant_id=d.tenant_id AND n.id=d.note_id
 WHERE c.tenant_id=$1 AND d.status='ready' AND d.deleted_at IS NULL AND d.knowledge_enabled
 AND c.index_version=d.active_index_version AND c.embedding_model=$4 AND c.embedding IS NOT NULL
 AND (coalesce(cardinality($3::uuid[]),0)=0 OR d.collection_id=ANY($3)) AND (d.source_type<>'note' OR n.deleted_at IS NULL)),
-v AS (SELECT id,row_number() OVER(ORDER BY embedding <=> $2::vector) rank FROM eligible LIMIT 20),
-f AS (SELECT id,row_number() OVER(ORDER BY ts_rank_cd(to_tsvector('simple',embedding_text),plainto_tsquery('simple',$5)) DESC) rank FROM eligible WHERE to_tsvector('simple',embedding_text) @@ plainto_tsquery('simple',$5) LIMIT 20),
-score AS (SELECT id,sum(value) score FROM (SELECT id,1.0/(60+rank) value FROM v UNION ALL SELECT id,1.0/(60+rank) FROM f)x GROUP BY id ORDER BY score DESC LIMIT $6)
-SELECT e.document_id,e.note_id,e.source_type,e.title,p.content,p.heading_path,e.index_version,score.score
-FROM score JOIN eligible e ON e.id=score.id JOIN knowledge_parent_chunks p ON p.tenant_id=$1 AND p.id=e.parent_id ORDER BY score.score DESC`, p.TenantID, vectorLiteral(embedding), collections, model, query, limit)
+v AS (SELECT id,parent_id,row_number() OVER(ORDER BY embedding <=> $2::vector) rank FROM eligible LIMIT $6),
+f AS (SELECT id,parent_id,row_number() OVER(ORDER BY ts_rank_cd(to_tsvector('simple',embedding_text),plainto_tsquery('simple',$5)) DESC) rank FROM eligible WHERE to_tsvector('simple',embedding_text) @@ plainto_tsquery('simple',$5) LIMIT $7),
+title_docs AS (
+  SELECT DISTINCT document_id FROM eligible
+  WHERE position(replace(replace(lower(title),'的做法',''),' ','') in replace(lower($5),' ','')) > 0
+     OR position(replace(lower($5),' ','') in replace(replace(lower(title),'的做法',''),' ','')) > 0
+  LIMIT 5
+),
+t AS (SELECT id,parent_id,row_number() OVER(ORDER BY embedding <=> $2::vector) rank FROM eligible WHERE document_id IN (SELECT document_id FROM title_docs) LIMIT $8),
+child_score AS (
+  SELECT id,parent_id,sum(value) score FROM (
+    SELECT id,parent_id,1.0/(60+rank) value FROM v
+    UNION ALL SELECT id,parent_id,1.0/(60+rank) FROM f
+    UNION ALL SELECT id,parent_id,1.0/(60+rank) FROM t
+  ) routes GROUP BY id,parent_id
+),
+score AS (SELECT parent_id,max(score) score FROM child_score GROUP BY parent_id ORDER BY score DESC LIMIT $9),
+parent_meta AS (SELECT DISTINCT ON (parent_id) parent_id,document_id,note_id,source_type,title,index_version,stored_path FROM eligible ORDER BY parent_id,id)
+SELECT e.document_id,score.parent_id,e.note_id,e.source_type,e.title,p.content,p.heading_path,e.index_version,score.score,coalesce(e.stored_path,'')
+FROM score JOIN parent_meta e ON e.parent_id=score.parent_id JOIN knowledge_parent_chunks p ON p.tenant_id=$1 AND p.id=score.parent_id ORDER BY score.score DESC`, p.TenantID, vectorLiteral(embedding), collections, model, query, vectorLimit, keywordLimit, titleLimit, fusionLimit)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var c KnowledgeCandidate
-			if err := rows.Scan(&c.DocumentID, &c.NoteID, &c.SourceType, &c.Title, &c.Content, &c.Heading, &c.IndexVersion, &c.Score); err != nil {
+			if err := rows.Scan(&c.DocumentID, &c.ParentID, &c.NoteID, &c.SourceType, &c.Title, &c.Content, &c.Heading, &c.IndexVersion, &c.Score, &c.SourcePath); err != nil {
 				return err
 			}
 			c.Rank = len(out) + 1
@@ -71,6 +134,65 @@ FROM score JOIN eligible e ON e.id=score.id JOIN knowledge_parent_chunks p ON p.
 		return rows.Err()
 	})
 	return out, err
+}
+
+// SelectKnowledgeContexts first selects the strongest documents, then fills
+// the context budget with their best distinct parent sections.
+func SelectKnowledgeContexts(query string, items []KnowledgeCandidate, limit int) []KnowledgeCandidate {
+	if limit <= 0 || len(items) == 0 {
+		return nil
+	}
+	docLimit := min(3, limit)
+	queryKey := normalizeKnowledgeTitle(query)
+	if titleKey := normalizeKnowledgeTitle(items[0].Title); titleKey != "" && strings.Contains(queryKey, titleKey) {
+		docLimit = 1
+	}
+	documents := make([]uuid.UUID, 0, docLimit)
+	selectedDocs := make(map[uuid.UUID]bool, docLimit)
+	seenParents := make(map[uuid.UUID]bool, len(items))
+	unique := make([]KnowledgeCandidate, 0, len(items))
+	for _, item := range items {
+		if item.ParentID != uuid.Nil && seenParents[item.ParentID] {
+			continue
+		}
+		seenParents[item.ParentID] = true
+		unique = append(unique, item)
+		if len(documents) < docLimit && !selectedDocs[item.DocumentID] {
+			documents = append(documents, item.DocumentID)
+			selectedDocs[item.DocumentID] = true
+		}
+	}
+	result := make([]KnowledgeCandidate, 0, min(limit, len(unique)))
+	usedParents := make(map[uuid.UUID]bool, limit)
+	for _, documentID := range documents {
+		for _, item := range unique {
+			if item.DocumentID == documentID {
+				result = append(result, item)
+				usedParents[item.ParentID] = true
+				break
+			}
+		}
+	}
+	for _, item := range unique {
+		if len(result) >= limit {
+			break
+		}
+		if selectedDocs[item.DocumentID] && !usedParents[item.ParentID] {
+			result = append(result, item)
+			usedParents[item.ParentID] = true
+		}
+	}
+	for i := range result {
+		result[i].Rank = i + 1
+	}
+	return result
+}
+
+func normalizeKnowledgeTitle(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimSuffix(value, ".md")
+	value = strings.TrimSuffix(value, "的做法")
+	return strings.ReplaceAll(value, " ", "")
 }
 func (s *Store) SaveKnowledgeAnswer(ctx context.Context, p domain.Principal, conversationID *int32, requestID, question, answer string, sources []KnowledgeCandidate) (int32, int32, error) {
 	var messageID, savedConversationID int32
