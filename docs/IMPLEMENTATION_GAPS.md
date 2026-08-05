@@ -23,7 +23,7 @@
   `template_ai_event_acceptance.ps1`、`backup_acceptance.ps1`。
 - 验证个人知识库：上传 `.md` / `.zip`、配额与并发预占、文档删除后退出检索、笔记知识开关、
   混合问答的来源保存与 `KNOWLEDGE_NO_EVIDENCE`、跨租户 404 隔离。
-- 确认新实例能由 `backend/db/schema.sql` 基线加版本化迁移完成初始化（当前共 57 张表），
+- 确认新实例能由 `backend/db/schema.sql` 基线加版本化迁移完成初始化（当前共 51 张表），
   且 `/recipes`、`/assistant` 均重定向到 `/knowledge`。
 - 确认仓库不再包含 `/api/v1/recipes/*` 路由与忌口、时区偏好字段。
 

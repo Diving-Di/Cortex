@@ -94,7 +94,7 @@ AI 未配置或不可用时，认证、笔记、搜索、附件、导出、备�
 
 Compose 下数据库、LiteLLM、Embedding 和 Reranker 服务不暴露宿主机端口。
 `/healthz` 只反映进程存活，`/readyz` 只验证数据库可用。新实例由 `backend/db/schema.sql`
-基线加版本化迁移初始化（当前共 57 张表）。
+基线加版本化迁移初始化（当前共 51 张表）。
 
 ```powershell
 Set-Location backend

@@ -6,8 +6,8 @@
 > 明确不包含：HyDE、Step-back Prompting、在线用户评价、外部向量数据库
 
 > 菜谱检索链路（`internal/recipe`、`cmd/rag-eval`、`testdata/rag`、`scripts/rag_eval.ps1`）
-> 已随菜谱功能于 2026-08-05 移除；本文保留为历史记录。个人知识库 v2 复用同一套 GTE
-> Embedding 与 BGE 精排，见文末第 12 节。
+> 已随菜谱功能于 2026-08-05 移除，菜谱数据表由迁移 `000018_drop_recipe_tables` 删除；
+> 本文保留为历史记录。个人知识库 v2 复用同一套 GTE Embedding 与 BGE 精排，见文末第 12 节。
 
 ## 1. 目标与边界
 
