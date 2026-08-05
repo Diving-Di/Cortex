@@ -336,4 +336,4 @@ flowchart LR
   `index_version=active_index_version` 过滤。
 - 无当前租户证据返回 `KNOWLEDGE_NO_EVIDENCE`；Embedding / Reranker 不可用分别返回
   `KNOWLEDGE_EMBEDDING_UNAVAILABLE` / `KNOWLEDGE_RERANK_UNAVAILABLE`。
-- 详细设计见 [PERSONAL_KNOWLEDGE_BASE_TECHNICAL_DESIGN.md](PERSONAL_KNOWLEDGE_BASE_TECHNICAL_DESIGN.md)。
+- 页面与实现细节见 [个人知识库页](page/KNOWLEDGE_PAGE_ARCHITECTURE.md)。

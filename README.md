@@ -266,6 +266,7 @@ docker compose config --quiet
 - [软件设计说明书](docs/SDD.md)：当前已实现的系统架构、数据、知识库、RAG、AI 工作流和部署设计
 - [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)：未实现、部分实现、待验证事项和发布阻断
 - [大模型网关规范](docs/LLM_GATEWAY.md)：LiteLLM 路由、密钥、隐私和用量治理
-- [个人知识库技术方案](docs/PERSONAL_KNOWLEDGE_BASE_TECHNICAL_DESIGN.md)：上传、索引、检索与配额设计
-- [小红书研究页](docs/page/RESEARCH_PAGE_ARCHITECTURE.md)：研究采集、整理、保存、授权和验收说明
 - [个人知识库页](docs/page/KNOWLEDGE_PAGE_ARCHITECTURE.md)：上传、配额、文档管理与降级说明
+- [模板广场页](docs/page/TEMPLATES_PAGE_ARCHITECTURE.md)：私有模板、公开快照、榜单与使用流程
+- [AI 限量活动页](docs/page/AI_EVENTS_PAGE_ARCHITECTURE.md)：活动倒计时、资格、点数与领取
+- [小红书研究页](docs/page/RESEARCH_PAGE_ARCHITECTURE.md)：研究采集、整理、保存、授权和验收说明

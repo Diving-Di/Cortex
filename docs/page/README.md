@@ -9,6 +9,8 @@
 | --- | --- | --- | --- |
 | `/research` | `features/research/ResearchPage.tsx` | [小红书研究页](RESEARCH_PAGE_ARCHITECTURE.md) | 已覆盖 |
 | `/knowledge` | `features/knowledge/KnowledgePage.tsx` | [个人知识库页](KNOWLEDGE_PAGE_ARCHITECTURE.md) | 已覆盖 |
+| `/notes/*` | `features/notes/NotesPage.tsx` → `features/templates/TemplatesPage.tsx` | [模板广场页](TEMPLATES_PAGE_ARCHITECTURE.md) | 已覆盖 |
+| `/ai-events` | `features/aiEvents/AIEventsPage.tsx` | [AI 限量活动页](AI_EVENTS_PAGE_ARCHITECTURE.md) | 已覆盖 |
 
 ## 尚未建立独立页面说明
 
@@ -18,8 +20,6 @@
 | --- | --- |
 | `/login` | `features/auth/LoginPage.tsx` |
 | `/` | `features/dashboard/DashboardPage.tsx` |
-| `/notes/*` | `features/notes/NotesPage.tsx` |
-| `/ai-events` | `features/aiEvents/AIEventsPage.tsx` |
 | `/reports` | `features/reports/ReportsPage.tsx` |
 | `/settings` | `features/settings/SettingsPage.tsx` |
 
