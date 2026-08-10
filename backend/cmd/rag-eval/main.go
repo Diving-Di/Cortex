@@ -66,7 +66,7 @@ func (r knowledgeRetriever) Rerank(ctx context.Context, query string, items []st
 func main() {
 	var dataset, outputRoot, caseIDs string
 	var workers, searchLimit, contextTopK int
-	flag.StringVar(&dataset, "dataset", "testdata/rag/recipe_eval_v1.jsonl", "JSONL evaluation dataset")
+	flag.StringVar(&dataset, "dataset", "testdata/rag/knowledge_eval_v2.jsonl", "JSONL evaluation dataset")
 	flag.StringVar(&outputRoot, "output", "../artifacts/rag-eval", "artifact output root")
 	flag.IntVar(&workers, "workers", 1, "parallel case workers")
 	flag.IntVar(&searchLimit, "search-limit", 20, "retrieval candidate count")

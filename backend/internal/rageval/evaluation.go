@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"math"
 	"os"
@@ -38,14 +39,15 @@ type Config struct {
 }
 
 type CandidateTrace struct {
-	Rank           int      `json:"rank"`
-	DocumentID     string   `json:"document_id"`
-	Title          string   `json:"title"`
-	SourceType     string   `json:"source_type"`
-	Heading        []string `json:"heading,omitempty"`
-	IndexVersion   int      `json:"index_version"`
-	RetrievalScore float64  `json:"retrieval_score"`
-	RerankScore    *float64 `json:"rerank_score,omitempty"`
+	Rank            int      `json:"rank"`
+	DocumentID      string   `json:"document_id"`
+	Title           string   `json:"title"`
+	SourceType      string   `json:"source_type"`
+	Heading         []string `json:"heading,omitempty"`
+	IndexVersion    int      `json:"index_version"`
+	RetrievalScore  float64  `json:"retrieval_score"`
+	RerankScore     *float64 `json:"rerank_score,omitempty"`
+	RouteProvenance int      `json:"route_provenance"`
 }
 
 type Latencies struct {
@@ -67,6 +69,28 @@ type Metrics struct {
 	Faithfulness     float64 `json:"faithfulness"`
 	AnswerRelevancy  float64 `json:"answer_relevancy"`
 }
+
+// RouteMetrics captures per-route recall statistics.
+type RouteMetrics struct {
+	// Hit@10 per individual route (vector, fulltext, title).
+	VectorHitAt10   float64 `json:"vector_hit_at_10"`
+	FulltextHitAt10 float64 `json:"fulltext_hit_at_10"`
+	TitleHitAt10    float64 `json:"title_hit_at_10"`
+	// Incremental: how many cases are newly covered when adding routes.
+	VectorOnlyHitAt10   float64 `json:"vector_only_hit_at_10"`
+	FulltextIncremental float64 `json:"fulltext_incremental"`
+	TitleIncremental    float64 `json:"title_incremental"`
+	// Route synergy: cases covered by multiple routes.
+	VectorAndFulltext float64 `json:"vector_and_fulltext"`
+	VectorAndTitle    float64 `json:"vector_and_title"`
+	AllThree          float64 `json:"all_three"`
+}
+
+const (
+	routeVector   = 1
+	routeFulltext = 2
+	routeTitle    = 4
+)
 
 type Result struct {
 	ID              string           `json:"id"`
@@ -217,7 +241,7 @@ func traces(items []store.KnowledgeCandidate) []CandidateTrace {
 			v := *c.RerankScore
 			rerank = &v
 		}
-		out = append(out, CandidateTrace{Rank: i + 1, DocumentID: c.DocumentID.String(), Title: c.Title, SourceType: c.SourceType, Heading: c.Heading, IndexVersion: c.IndexVersion, RetrievalScore: c.Score, RerankScore: rerank})
+		out = append(out, CandidateTrace{Rank: i + 1, DocumentID: c.DocumentID.String(), Title: c.Title, SourceType: c.SourceType, Heading: c.Heading, IndexVersion: c.IndexVersion, RetrievalScore: c.Score, RerankScore: rerank, RouteProvenance: c.RouteProvenance})
 	}
 	return out
 }
@@ -242,6 +266,29 @@ func firstRank(gold []string, items []store.KnowledgeCandidate, k int) int {
 	}
 	return 0
 }
+
+// firstRankByRoute checks whether any gold document appears in items filtered
+// to only include candidates from a specific route within top-K.
+func firstRankByRoute(gold []string, items []store.KnowledgeCandidate, k int, routeFlag int) int {
+	set := map[string]bool{}
+	for _, p := range gold {
+		set[goldTitle(p)] = true
+	}
+	for i := 0; i < min(k, len(items)); i++ {
+		if items[i].RouteProvenance&routeFlag == 0 {
+			continue
+		}
+		candidateTitle := strings.TrimSpace(strings.TrimSuffix(items[i].Title, filepath.Ext(items[i].Title)))
+		if items[i].SourcePath != "" {
+			candidateTitle = goldTitle(items[i].SourcePath)
+		}
+		if set[candidateTitle] {
+			return i + 1
+		}
+	}
+	return 0
+}
+
 func retrievalMetrics(gold []string, before, after []store.KnowledgeCandidate) Metrics {
 	rank := func(items []store.KnowledgeCandidate, k int) float64 {
 		v := firstRank(gold, items, k)
@@ -258,6 +305,85 @@ func retrievalMetrics(gold []string, before, after []store.KnowledgeCandidate) M
 	}
 	return Metrics{HitAt1: hit(1), HitAt3: hit(3), HitAt5: hit(5), HitAt10: hit(10), MRRBefore: rank(before, 10), MRRAfter: rank(after, 10)}
 }
+
+// ComputeRouteMetrics calculates per-route recall statistics across all results.
+func ComputeRouteMetrics(results []Result) RouteMetrics {
+	var rm RouteMetrics
+	var evaluated int
+	for _, r := range results {
+		if len(r.BeforeRerank) == 0 {
+			continue
+		}
+		evaluated++
+		gold := r.SourcePaths
+		// Individual route hit@10 on before-rerank candidates.
+		// We need the candidate-level route provenance (before rerank).
+		// Build set from traces.
+		beforeItems := make([]store.KnowledgeCandidate, len(r.BeforeRerank))
+		for i, tr := range r.BeforeRerank {
+			beforeItems[i] = store.KnowledgeCandidate{
+				DocumentID:      uuidFromStringFallback(tr.DocumentID),
+				Title:           tr.Title,
+				SourcePath:      r.SourcePaths[0], // won't be used for match, goldTitle uses the source path from gold
+				RouteProvenance: tr.RouteProvenance,
+			}
+		}
+		if firstRankByRoute(gold, beforeItems, 10, routeVector) > 0 {
+			rm.VectorHitAt10++
+		}
+		if firstRankByRoute(gold, beforeItems, 10, routeFulltext) > 0 {
+			rm.FulltextHitAt10++
+		}
+		if firstRankByRoute(gold, beforeItems, 10, routeTitle) > 0 {
+			rm.TitleHitAt10++
+		}
+		// Incremental analysis
+		vh := firstRankByRoute(gold, beforeItems, 10, routeVector) > 0
+		fh := firstRankByRoute(gold, beforeItems, 10, routeFulltext) > 0
+		th := firstRankByRoute(gold, beforeItems, 10, routeTitle) > 0
+		if vh && !fh && !th {
+			rm.VectorOnlyHitAt10++
+		}
+		if fh && !vh && !th {
+			rm.FulltextIncremental++
+		}
+		if th && !vh && !fh {
+			rm.TitleIncremental++
+		}
+		// Synergy
+		if vh && fh && !th {
+			rm.VectorAndFulltext++
+		}
+		if vh && th && !fh {
+			rm.VectorAndTitle++
+		}
+		if vh && fh && th {
+			rm.AllThree++
+		}
+	}
+	if evaluated > 0 {
+		n := float64(evaluated)
+		rm.VectorHitAt10 /= n
+		rm.FulltextHitAt10 /= n
+		rm.TitleHitAt10 /= n
+		rm.VectorOnlyHitAt10 /= n
+		rm.FulltextIncremental /= n
+		rm.TitleIncremental /= n
+		rm.VectorAndFulltext /= n
+		rm.VectorAndTitle /= n
+		rm.AllThree /= n
+	}
+	return rm
+}
+
+func uuidFromStringFallback(s string) uuid.UUID {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return uuid.Nil
+	}
+	return id
+}
+
 func collect(ctx context.Context, ch <-chan ai.StreamEvent) (string, error) {
 	var b strings.Builder
 	for {
@@ -416,15 +542,16 @@ func averagePrecision(items []ContextJudgment) float64 {
 }
 
 type Summary struct {
-	Dataset             string    `json:"dataset"`
-	Total               int       `json:"total"`
-	Succeeded           int       `json:"succeeded"`
-	Failed              int       `json:"failed"`
-	RetrievalEvaluated  int       `json:"retrieval_evaluated"`
-	GenerationEvaluated int       `json:"generation_evaluated"`
-	Metrics             Metrics   `json:"metrics"`
-	LatencyP50          Latencies `json:"latency_p50"`
-	LatencyP95          Latencies `json:"latency_p95"`
+	Dataset             string       `json:"dataset"`
+	Total               int          `json:"total"`
+	Succeeded           int          `json:"succeeded"`
+	Failed              int          `json:"failed"`
+	RetrievalEvaluated  int          `json:"retrieval_evaluated"`
+	GenerationEvaluated int          `json:"generation_evaluated"`
+	Metrics             Metrics      `json:"metrics"`
+	RouteMetrics        RouteMetrics `json:"route_metrics"`
+	LatencyP50          Latencies    `json:"latency_p50"`
+	LatencyP95          Latencies    `json:"latency_p95"`
 }
 
 func Summarize(dataset string, results []Result) Summary {
@@ -462,6 +589,7 @@ func Summarize(dataset string, results []Result) Summary {
 		s.Metrics.MRRBefore = retrieval.MRRBefore / n
 		s.Metrics.MRRAfter = retrieval.MRRAfter / n
 	}
+	s.RouteMetrics = ComputeRouteMetrics(results)
 	if s.GenerationEvaluated > 0 {
 		n := float64(s.GenerationEvaluated)
 		s.Metrics.ContextRecall = generation.ContextRecall / n
@@ -523,6 +651,7 @@ func writeJSON(path string, v any) error {
 func report(s Summary, results []Result) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# RAG 离线评测报告\n\n数据集：`%s`  \n样本：%d，成功：%d，失败：%d\n\n", s.Dataset, s.Total, s.Succeeded, s.Failed)
+	b.WriteString("## 核心指标\n\n")
 	b.WriteString("| 指标 | 分数 |\n|---|---:|\n")
 	for _, v := range []struct {
 		n string
@@ -530,5 +659,24 @@ func report(s Summary, results []Result) string {
 	}{{"Hit@1", s.Metrics.HitAt1}, {"Hit@3", s.Metrics.HitAt3}, {"Hit@5", s.Metrics.HitAt5}, {"Hit@10", s.Metrics.HitAt10}, {"MRR（rerank 前）", s.Metrics.MRRBefore}, {"MRR（rerank 后）", s.Metrics.MRRAfter}, {"Context Recall", s.Metrics.ContextRecall}, {"Context Precision", s.Metrics.ContextPrecision}, {"Faithfulness", s.Metrics.Faithfulness}, {"Answer Relevancy", s.Metrics.AnswerRelevancy}} {
 		fmt.Fprintf(&b, "| %s | %.4f |\n", v.n, v.v)
 	}
+
+	b.WriteString("\n## 分通道召回命中率\n\n")
+	b.WriteString("| 通道 | Hit@10 |\n|---|---:|\n")
+	for _, v := range []struct {
+		n string
+		v float64
+	}{{"向量召回（Vector）", s.RouteMetrics.VectorHitAt10}, {"全文召回（Fulltext）", s.RouteMetrics.FulltextHitAt10}, {"标题召回（Title）", s.RouteMetrics.TitleHitAt10}} {
+		fmt.Fprintf(&b, "| %s | %.4f |\n", v.n, v.v)
+	}
+
+	b.WriteString("\n## 通道增量与协同\n\n")
+	b.WriteString("| 分析维度 | 比例 |\n|---|---:|\n")
+	for _, v := range []struct {
+		n string
+		v float64
+	}{{"仅向量召回命中", s.RouteMetrics.VectorOnlyHitAt10}, {"全文召回增量（仅全文命中）", s.RouteMetrics.FulltextIncremental}, {"标题召回增量（仅标题命中）", s.RouteMetrics.TitleIncremental}, {"向量+全文同时命中", s.RouteMetrics.VectorAndFulltext}, {"向量+标题同时命中", s.RouteMetrics.VectorAndTitle}, {"三路同时命中", s.RouteMetrics.AllThree}} {
+		fmt.Fprintf(&b, "| %s | %.4f |\n", v.n, v.v)
+	}
+
 	return b.String()
 }

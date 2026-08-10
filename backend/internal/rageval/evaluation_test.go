@@ -13,12 +13,57 @@ import (
 
 func TestRetrievalMetricsMatchesStoredPathWithoutCollection(t *testing.T) {
 	items := []store.KnowledgeCandidate{
-		{DocumentID: uuid.New(), Title: "其他", SourcePath: "knowledge/t/u/source/其他.md"},
-		{DocumentID: uuid.New(), Title: "酸辣土豆丝", SourcePath: `knowledge\t\u\source\dishes\酸辣土豆丝.md`},
+		{DocumentID: uuid.New(), Title: "其他", SourcePath: "knowledge/t/u/source/其他.md", RouteProvenance: 1},
+		{DocumentID: uuid.New(), Title: "酸辣土豆丝", SourcePath: `knowledge\t\u\source\dishes\酸辣土豆丝.md`, RouteProvenance: 7},
 	}
 	m := retrievalMetrics([]string{"backend/resources/howtocook/dishes/酸辣土豆丝.md"}, items, items)
 	if m.HitAt1 != 0 || m.HitAt3 != 1 || m.MRRAfter != .5 {
 		t.Fatalf("unexpected metrics: %#v", m)
+	}
+}
+
+func TestRouteMetrics(t *testing.T) {
+	items := []store.KnowledgeCandidate{
+		{DocumentID: uuid.New(), Title: "gold", SourcePath: "test/gold.md", RouteProvenance: 1}, // vector only
+	}
+	rm := ComputeRouteMetrics([]Result{{
+		SourcePaths: []string{"test/gold.md"},
+		BeforeRerank: []CandidateTrace{
+			{DocumentID: items[0].DocumentID.String(), Title: "gold", RouteProvenance: 1},
+		},
+	}})
+	if rm.VectorHitAt10 < 0.99 || rm.FulltextHitAt10 > 0.01 || rm.VectorOnlyHitAt10 < 0.99 {
+		t.Fatalf("expected vector-only hit: %#v", rm)
+	}
+}
+
+func TestRouteMetricsFulltextIncremental(t *testing.T) {
+	items := []store.KnowledgeCandidate{
+		{DocumentID: uuid.New(), Title: "gold", SourcePath: "test/gold.md", RouteProvenance: 2}, // fulltext only
+	}
+	rm := ComputeRouteMetrics([]Result{{
+		SourcePaths: []string{"test/gold.md"},
+		BeforeRerank: []CandidateTrace{
+			{DocumentID: items[0].DocumentID.String(), Title: "gold", RouteProvenance: 2},
+		},
+	}})
+	if rm.FulltextHitAt10 < 0.99 || rm.FulltextIncremental < 0.99 {
+		t.Fatalf("expected fulltext incremental: %#v", rm)
+	}
+}
+
+func TestRouteMetricsAllThree(t *testing.T) {
+	items := []store.KnowledgeCandidate{
+		{DocumentID: uuid.New(), Title: "gold", SourcePath: "test/gold.md", RouteProvenance: 7}, // all three
+	}
+	rm := ComputeRouteMetrics([]Result{{
+		SourcePaths: []string{"test/gold.md"},
+		BeforeRerank: []CandidateTrace{
+			{DocumentID: items[0].DocumentID.String(), Title: "gold", RouteProvenance: 7},
+		},
+	}})
+	if rm.VectorHitAt10 < 0.99 || rm.FulltextHitAt10 < 0.99 || rm.TitleHitAt10 < 0.99 || rm.AllThree < 0.99 {
+		t.Fatalf("expected all-three hit: %#v", rm)
 	}
 }
 
@@ -33,7 +78,7 @@ func TestAveragePrecision(t *testing.T) {
 type fakeRetriever struct{}
 
 func (fakeRetriever) Search(context.Context, string, int) ([]store.KnowledgeCandidate, error) {
-	return []store.KnowledgeCandidate{{DocumentID: uuid.New(), Title: "noise", Content: "无关"}, {DocumentID: uuid.New(), Title: "gold", Content: "依据"}}, nil
+	return []store.KnowledgeCandidate{{DocumentID: uuid.New(), Title: "noise", Content: "无关", RouteProvenance: 1}, {DocumentID: uuid.New(), Title: "gold", Content: "依据", RouteProvenance: 7}}, nil
 }
 func (fakeRetriever) Rerank(_ context.Context, _ string, v []store.KnowledgeCandidate) ([]store.KnowledgeCandidate, error) {
 	score := .9
@@ -64,5 +109,16 @@ func TestRunnerUsesKnowledgePipeline(t *testing.T) {
 	got := r.RunCase(context.Background(), Case{ID: "1", Query: "问题", ReferenceAnswer: "依据", SourcePaths: []string{"gold.md"}})
 	if got.Status != "success" || got.Metrics.MRRAfter != 1 || got.Metrics.Faithfulness != 1 {
 		t.Fatalf("unexpected result: %#v", got)
+	}
+}
+
+func TestGoldTitleFromNonRecipePaths(t *testing.T) {
+	path := "backend/testdata/rag/non_recipe_notes/Go并发模式学习笔记.md"
+	if got := goldTitle(path); got != "Go并发模式学习笔记" {
+		t.Fatalf("goldTitle(%q) = %q, want %q", path, got, "Go并发模式学习笔记")
+	}
+	path2 := "backend/testdata/rag/non_recipe_notes/2025年度工作总结.md"
+	if got := goldTitle(path2); got != "2025年度工作总结" {
+		t.Fatalf("goldTitle(%q) = %q, want %q", path2, got, "2025年度工作总结")
 	}
 }

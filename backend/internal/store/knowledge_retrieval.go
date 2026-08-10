@@ -21,6 +21,9 @@ type KnowledgeCandidate struct {
 	IndexVersion, Rank         int
 	Score                      float64
 	RerankScore                *float64
+	// RouteProvenance tracks which recall routes hit this candidate.
+	// Bit flags: 1 = vector, 2 = fulltext, 4 = title.
+	RouteProvenance int `json:"route_provenance"`
 }
 
 // ResolveKnowledgeEvaluationPrincipal resolves an offline evaluator identity by
@@ -109,15 +112,15 @@ title_docs AS (
 ),
 t AS (SELECT id,parent_id,row_number() OVER(ORDER BY embedding <=> $2::vector) rank FROM eligible WHERE document_id IN (SELECT document_id FROM title_docs) LIMIT $8),
 child_score AS (
-  SELECT id,parent_id,sum(value) score FROM (
-    SELECT id,parent_id,1.0/(60+rank) value FROM v
-    UNION ALL SELECT id,parent_id,1.0/(60+rank) FROM f
-    UNION ALL SELECT id,parent_id,1.0/(60+rank) FROM t
+  SELECT id,parent_id,sum(value) score,sum(route) route_mask FROM (
+    SELECT id,parent_id,1.0/(60+rank) value,1 route FROM v
+    UNION ALL SELECT id,parent_id,1.0/(60+rank),2 FROM f
+    UNION ALL SELECT id,parent_id,1.0/(60+rank),4 FROM t
   ) routes GROUP BY id,parent_id
 ),
-score AS (SELECT parent_id,max(score) score FROM child_score GROUP BY parent_id ORDER BY score DESC LIMIT $9),
+score AS (SELECT parent_id,max(score) score,max(route_mask) route_mask FROM child_score GROUP BY parent_id ORDER BY score DESC LIMIT $9),
 parent_meta AS (SELECT DISTINCT ON (parent_id) parent_id,document_id,note_id,source_type,title,index_version,stored_path FROM eligible ORDER BY parent_id,id)
-SELECT e.document_id,score.parent_id,e.note_id,e.source_type,e.title,p.content,p.heading_path,e.index_version,score.score,coalesce(e.stored_path,'')
+SELECT e.document_id,score.parent_id,e.note_id,e.source_type,e.title,p.content,p.heading_path,e.index_version,score.score,coalesce(e.stored_path,''),coalesce(score.route_mask,0)
 FROM score JOIN parent_meta e ON e.parent_id=score.parent_id JOIN knowledge_parent_chunks p ON p.tenant_id=$1 AND p.id=score.parent_id ORDER BY score.score DESC`, p.TenantID, vectorLiteral(embedding), collections, model, query, vectorLimit, keywordLimit, titleLimit, fusionLimit)
 		if err != nil {
 			return err
@@ -125,7 +128,7 @@ FROM score JOIN parent_meta e ON e.parent_id=score.parent_id JOIN knowledge_pare
 		defer rows.Close()
 		for rows.Next() {
 			var c KnowledgeCandidate
-			if err := rows.Scan(&c.DocumentID, &c.ParentID, &c.NoteID, &c.SourceType, &c.Title, &c.Content, &c.Heading, &c.IndexVersion, &c.Score, &c.SourcePath); err != nil {
+			if err := rows.Scan(&c.DocumentID, &c.ParentID, &c.NoteID, &c.SourceType, &c.Title, &c.Content, &c.Heading, &c.IndexVersion, &c.Score, &c.SourcePath, &c.RouteProvenance); err != nil {
 				return err
 			}
 			c.Rank = len(out) + 1

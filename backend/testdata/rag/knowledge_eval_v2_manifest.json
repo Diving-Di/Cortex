@@ -1,0 +1,25 @@
+{
+  "name": "knowledge_eval_v2",
+  "description": "Cortex knowledge base evaluation dataset v2 — mixed recipe and non-recipe queries",
+  "version": "2.0.0",
+  "language": "zh",
+  "case_count": 45,
+  "source_documents": 10,
+  "tags": [
+    "technical",
+    "career",
+    "reading",
+    "ops",
+    "personal",
+    "cross-document",
+    "analysis",
+    "code",
+    "table"
+  ],
+  "difficulty_distribution": {
+    "easy": 15,
+    "medium": 23,
+    "hard": 7
+  },
+  "prior_version": "recipe_eval_v1"
+}

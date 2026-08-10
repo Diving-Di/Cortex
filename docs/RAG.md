@@ -1,8 +1,8 @@
 # Cortex RAG 具体链路与策略
 
-> 状态：当前实现（2026-08-06）  
-> 适用范围：个人知识库问答（`POST /api/v1/knowledge/chat/stream`）与离线评测  
-> 最后验证：2026-08-05（RAG v3 全量 90 条回归）  
+> 状态：当前实现（2026-08-06）
+> 适用范围：个人知识库问答（`POST /api/v1/knowledge/chat/stream`）与离线评测
+> 最后验证：2026-08-06（164 条全量：90 菜谱 + 74 非菜谱，含分通道召回统计）
 > 明确不包含：HyDE、Step-back Prompting、在线用户评价、外部向量数据库、跨租户共享 Prompt/响应缓存
 
 > 历史沿革：本项目的 RAG 最初服务于旧项目名时代的内置 HowToCook 菜谱问答
@@ -212,7 +212,7 @@ SSE 事件序列为 `retrieval → delta* → sources → done`；回答与来�
 
 ### 8.1 数据集与评测范围
 
-- 数据集 `backend/testdata/rag/recipe_eval_v1.jsonl` 包含 90 条 query、完整参考答案、gold
+- 主数据集 `backend/testdata/rag/knowledge_eval_v2.jsonl` 包含 45 条非菜谱查询（v2），另有 `recipe_eval_v1.jsonl` 包含 90 条菜谱查询（v1 回归用）、完整参考答案、gold
   source path 和标签；文件名保留历史命名（语料来自已迁移的 HowToCook 菜谱），配套清单见
   `backend/testdata/rag/recipe_eval_v1_manifest.json`。
 - gold 按迁移前的文件名与数据库文档标题或 `stored_path` 匹配，不依赖知识集合唯一性。
@@ -243,10 +243,16 @@ flowchart LR
 |---|---|
 | Hit@K | Top-K 中是否出现 gold source/chunk，取全体均值 |
 | MRR | 第一个 gold 命中的倒数排名均值；分别统计 rerank 前后 |
+| **Route Hit@10** | 按召回通道（向量/全文/标题）独立统计 Top-10 命中率 |
+| **Route Incremental** | 各通道独有命中比例（仅该通道命中、多通道协同） |
 | Context Recall | 最终 context 支持的 reference facts / 全部 reference facts |
 | Context Precision | Judge 标记的相关 context 按排名计算 Average Precision |
 | Faithfulness | 生成答案中有 context 支持的原子 claims / 全部 claims |
 | Answer Relevancy | 答案对 query 意图的覆盖和聚焦程度 |
+
+> 通道来源追踪自 2026-08-06 通过 `child_score` CTE 中 `route_mask` bit flags 实现：
+> `1 = vector, 2 = fulltext, 4 = title`。`ComputeRouteMetrics` 在 rerank 前的候选集上
+> 统计各通道的独立命中与协同关系，帮助定位召回短板。
 
 Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候选、生成答案、Judge 判断和阶段
 耗时，便于区分粗召回、rerank、上下文选择与生成问题。
@@ -258,7 +264,7 @@ Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候
 # 可用 -CaseIDs "recipe-001,recipe-002" 做小样本检查
 ```
 
-> 全量评测默认使用单 worker：多 worker 会触发 LiteLLM 限流（见第 9.5 节）。
+> 全量评测默认使用单 worker：多 worker 会触发 LiteLLM 限流（见第 12.5 节）。
 
 一次运行在 `artifacts/rag-eval/<timestamp>/` 生成：
 
@@ -267,7 +273,26 @@ Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候
 - `summary.json`：聚合指标与 p50/p95 延迟；
 - `report.md`：可读报告。
 
-## 9. 评测结果对照分析（2026-08-05）
+> **运行环境注意（2026-08-06 实测）**：
+> - `PATCH /api/v1/notes/{id}/knowledge` 使用 `digest(...,'sha256')`（pgcrypto）计算
+>   `content_hash`，但 `backend/db/schema.sql` 基线尚未创建 `pgcrypto` 扩展。新库初始化后
+>   首次为笔记启用知识索引会报 `function digest(bytea, unknown) does not exist
+>   (SQLSTATE 42883)`；**应在 `schema.sql` 基线补充 `CREATE EXTENSION IF NOT EXISTS
+>   pgcrypto;`**，已部署库手动执行一次即可。
+> - 评测固定按用户名解析 `Diving`；需要上传评测 fixture 时，口令仅通过
+>   `CORTEX_EVAL_DIVING_PASSWORD` 或脚本参数注入。其租户下必须已上传并
+>   索引评测集引用的全部文档，含 `backend/testdata/rag/non_recipe_notes/` 的 10 篇非菜谱笔记。
+
+完整流水线（上传非菜谱笔记 → 等待索引完成 → 运行 164 条合并集 → 与基线对比并输出分通道报告）：
+
+```powershell
+# 首次（自动上传非菜谱笔记并启用索引）
+.\backend\scripts\run_full_eval.ps1 -Workers 2
+# 已入库后跳过上传
+.\backend\scripts\run_full_eval.ps1 -Workers 2 -SkipUpload
+```
+
+## 9. 评测结果对照分析（2026-08-05 / 2026-08-06）
 
 评测环境：用户 `Diving`，数据集 90 条，`search_limit=20`、`context_top_k=5`，Embedding
 `iic/nlp_gte_sentence-embedding_chinese-small`，Reranker `BAAI/bge-reranker-v2-m3`，生成与
@@ -331,6 +356,43 @@ Judge 均走 LiteLLM。以下按运行目录演进对照。
    当前主要剩余问题从“gold 文档找不到”转向“最终 Top-5 上下文对参考事实的覆盖仍差约 10%”
    以及低分案例的章节选择。
 
+### 9.5 分通道召回评测（2026-08-06，164 条合并集）
+
+评测环境：用户 `Diving`，`knowledge_eval_merged.jsonl` = 90 条菜谱（v1）+ 74 条非菜谱（v2 45 条
++ extra 29 条），`search_limit=20`、`context_top_k=5`，Embedding/Reranker/生成/Judge 与 9.2
+一致。运行目录 `20260806-132544`（`rag_eval.ps1` 直跑）与 `20260806-134152`
+（`run_full_eval.ps1` 全流程，含基线对比报告）。
+
+| 指标 | 20260806-134152 |
+|---|---:|
+| Hit@1 | 0.9939 |
+| Hit@3 / Hit@5 / Hit@10 | 1.0000 |
+| MRR（rerank 前 / 后） | 0.9407 / 0.9959 |
+| Context Recall | 0.8538 |
+| Context Precision | 0.9032 |
+| Faithfulness | 0.9479 |
+| Answer Relevancy | 0.9275 |
+| 总耗时 p50 / p95（ms） | 7,485 / 10,863 |
+
+分通道 Hit@10（rerank 前）：
+
+| 通道 | Hit@10 | 说明 |
+|---|---:|---|
+| 向量召回（Vector） | 1.0000 | 唯一能独立覆盖全部 gold 的通道 |
+| 全文召回（Fulltext） | 0.0000 | 对中文查询**零命中**，增量与协同均为 0 |
+| 标题召回（Title） | 0.4756 | 命中必然同时被向量命中，无独立增量 |
+
+> **关键结论（通道来源追踪的首次量化结果）**：164 条用例的 rerank 前候选中没有任何一条带
+> `route=2`（全文）标记。根因是 `to_tsvector('simple')` / `plainto_tsquery('simple')` 对
+> 无空格中文整句不做分词：查询词被整体视为单个 token，与 chunk 文本中的整句 token 无法命中。
+> 全文通道当前是**零贡献通道**，向量 + 标题两路已覆盖全部 gold（Hit@10 = 1.0）。建议结合
+> 第 12.2 节在 `simple` 之外引入中文分词（如 `zhparser`）或 2-gram 确定性切词后再评估是否保留
+> 该通道；在引入中文分词前该通道不参与命中，但也不影响召回上限（由向量/标题兜底）。
+>
+> 两次运行（132544 / 134152）的检索类指标完全一致（Hit@K、MRR、分通道统计），生成类指标
+> （Context Recall / Precision / Faithfulness / Answer Relevancy）因 LLM 非确定性存在
+> ±1～2 个百分点抖动，对比时应使用同一次运行内的口径。
+
 ## 10. 代码定位
 
 | 职责 | 文件 |
@@ -377,10 +439,20 @@ docker compose config --quiet
 以下按“预期收益 / 改动成本”排序，均在现有边界内（不引入 HyDE、Step-back、外部向量库或
 在线评测），每条都建议先用离线评测验证再上线。
 
-### 12.1 评测集分层与覆盖扩展（高优先）
+### 12.1 评测集分层与覆盖扩展（高优先）✅ 已实现
 
 - **现状**：90 条全部来自已迁移的菜谱语料，标签只有 `ingredients/steps/tips` 和难度，无法
   反映上传 PDF/长文档、个人笔记、日常记录等真实知识问答形态。
+- **2026-08-06 实现**：
+  1. 新增 `knowledge_eval_v2.jsonl`（45 条非菜谱用例），覆盖技术笔记、工作总结、读书笔记、
+     个人日记、部署手册、分析文章等 10 篇多类型文档；
+  2. 数据集重命名为 `knowledge_eval_v2`，默认路径从 `testdata/rag/recipe_eval_v1.jsonl`
+     改为 `testdata/rag/knowledge_eval_v2.jsonl`；
+  3. 为 `SearchKnowledge` SQL 引入通道来源追踪（route provenance bit flags：1=vector,
+     2=fulltext, 4=title），`CandidateTrace` 新增 `route_provenance` 字段；
+  4. 新增 `ComputeRouteMetrics` 实现分通道命中率统计：向量/全文/标题独立 Hit@10、增量覆盖
+     （各通道独有命中率）、协同覆盖（多通道同时命中比例）；
+  5. 评测报告 `report.md` 增加「分通道召回命中率」与「通道增量与协同」两张表格。
 - **建议**：
   1. 将数据集重命名为 `knowledge_eval_v1`（同步 manifest、`cmd/rag-eval` 默认路径与
      `scripts/rag_eval.ps1`），消除“recipe”历史命名；
@@ -390,13 +462,18 @@ docker compose config --quiet
      定位是哪一路在漏召；
   4. 为低分 query 建立“命中 child → 最终 parent”的逐案例人工核查样本。
 
-### 12.2 中文检索能力（高优先）
+### 12.2 中文检索能力（高优先，2026-08-06 已量化）
 
-- **现状**：全文召回使用 `to_tsvector('simple')`，对中文不做分词，长 query 匹配粒度粗；
-  向量召回对“精确数字/配料用量”类问题不够敏感（历史案例：蛋炒饭材料与用量）。
-- **建议**：在 `embedding_text` 上实验 `pg_trgm` 相似度作为第四条召回通道，或在应用层做
-  确定性的 2-gram 切词后走 `simple` FTS；用离线评测比较加入前后 Hit@1 与 MRR，同时控制
-  索引体积与查询延迟。
+- **现状**：全文召回使用 `to_tsvector('simple')`，对中文不做分词，长 query 匹配粒度粗。
+  **2026-08-06 分通道评测量化**：164 条用例中全文通道 Hit@10 = 0、独立增量 = 0、协同命中 = 0，
+  rerank 前候选中无任何 `route=2` 候选；根因是 `simple` 分词把无空格中文整句当作单个 token，
+  与 `plainto_tsquery('simple', query)` 无法命中。向量通道单独已覆盖 100% gold，标题通道
+  47.56%（无独立增量）。向量召回对“精确数字/配料用量”类问题不够敏感（历史案例：蛋炒饭材料
+  与用量）。
+- **建议**：优先解决中文分词——在 `embedding_text` 上引入 `zhparser`/`pg_jieba` 扩展，或应用层
+  确定性 2-gram 切词后走 FTS，用 9.5 的分通道指标复测：目标是把 Fulltext Hit@10 从 0% 提升到
+  出现实际增量（Fulltext Incremental > 0），再决定保留或下线该通道；同时可实验 `pg_trgm` 相似度
+  作为补充通道，并控制索引体积与查询延迟。
 
 ### 12.3 上下文选择策略调优（中优先）
 
@@ -432,5 +509,7 @@ docker compose config --quiet
   3. 语料规模扩大后，监控 pgvector 索引膨胀与 `RAG_FUSION_TOP_K` 的扫描成本。
 
 总体原则：**不通过无上限增加上下文来掩盖召回问题**；任何改动都必须先在
-`artifacts/rag-eval` 上跑出不低于当前基线（Hit@5/10 = 1.0、Context Recall ≥ 0.8998、
-Context Precision ≥ 0.9335）的对照结果再合入。
+`artifacts/rag-eval` 上跑出不低于当前基线的对照结果再合入。菜谱 90 条基线（2026-08-05）：
+Hit@5/10 = 1.0、Context Recall ≥ 0.8998、Context Precision ≥ 0.9335；合并集 164 条基线
+（2026-08-06，`20260806-134152`）：Hit@5/10 = 1.0、Context Recall ≥ 0.8538、Context
+Precision ≥ 0.9032，**同一数据集内对比**。
