@@ -37,6 +37,18 @@ func TestRouteMetrics(t *testing.T) {
 	}
 }
 
+func TestRouteMetricsDoesNotTreatNonGoldCandidateAsHit(t *testing.T) {
+	rm := ComputeRouteMetrics([]Result{{
+		SourcePaths: []string{"test/gold.md"},
+		BeforeRerank: []CandidateTrace{{
+			DocumentID: uuid.NewString(), Title: "noise", RouteProvenance: 7,
+		}},
+	}})
+	if rm.VectorHitAt10 != 0 || rm.FulltextHitAt10 != 0 || rm.TitleHitAt10 != 0 || rm.AllThree != 0 {
+		t.Fatalf("non-gold candidate was counted as a route hit: %#v", rm)
+	}
+}
+
 func TestRouteMetricsFulltextIncremental(t *testing.T) {
 	items := []store.KnowledgeCandidate{
 		{DocumentID: uuid.New(), Title: "gold", SourcePath: "test/gold.md", RouteProvenance: 2}, // fulltext only
@@ -72,6 +84,17 @@ func TestAveragePrecision(t *testing.T) {
 	want := (1.0 + 2.0/3.0) / 2.0
 	if math.Abs(got-want) > 1e-12 {
 		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+func TestValidateSummary(t *testing.T) {
+	summary := Summary{Failed: 1, Metrics: Metrics{HitAt10: .9, ContextRecall: .7}}
+	err := ValidateSummary(summary, Thresholds{MaxFailed: 0, HitAt10: .95, ContextRecall: .8})
+	if err == nil {
+		t.Fatal("expected threshold failure")
+	}
+	if err := ValidateSummary(summary, Thresholds{MaxFailed: 1, HitAt10: .9, ContextRecall: .7}); err != nil {
+		t.Fatalf("expected thresholds to pass: %v", err)
 	}
 }
 

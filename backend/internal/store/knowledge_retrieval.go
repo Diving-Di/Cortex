@@ -45,30 +45,33 @@ func (s *Store) ResolveKnowledgeEvaluationPrincipal(ctx context.Context, usernam
 	return p, nil
 }
 
-func (s *Store) ValidateKnowledgeEvaluationTitles(ctx context.Context, p domain.Principal, titles []string) ([]string, error) {
-	missing := make([]string, 0)
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+func (s *Store) ValidateKnowledgeEvaluationTitles(ctx context.Context, p domain.Principal, titles []string) (missing, ambiguous []string, err error) {
+	missing = make([]string, 0)
+	ambiguous = make([]string, 0)
+	err = s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, p); err != nil {
 			return err
 		}
 		for _, title := range titles {
-			var exists bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM knowledge_documents d
+			var count int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM knowledge_documents d
 				WHERE d.tenant_id=$1 AND (d.title=$2 OR split_part(regexp_replace(coalesce(d.stored_path,''),'^.*/',''),'.',1)=$2)
 				AND d.status='ready' AND d.deleted_at IS NULL
 				AND d.knowledge_enabled AND d.active_index_version>0
 				AND EXISTS(SELECT 1 FROM knowledge_child_chunks c WHERE c.tenant_id=d.tenant_id
-					AND c.document_id=d.id AND c.index_version=d.active_index_version AND c.embedding IS NOT NULL))`,
-				p.TenantID, title).Scan(&exists); err != nil {
+					AND c.document_id=d.id AND c.index_version=d.active_index_version AND c.embedding IS NOT NULL)`,
+				p.TenantID, title).Scan(&count); err != nil {
 				return err
 			}
-			if !exists {
+			if count == 0 {
 				missing = append(missing, title)
+			} else if count > 1 {
+				ambiguous = append(ambiguous, title)
 			}
 		}
 		return nil
 	})
-	return missing, err
+	return missing, ambiguous, err
 }
 
 func (s *Store) ValidateKnowledgeCollections(ctx context.Context, p domain.Principal, ids []uuid.UUID) error {

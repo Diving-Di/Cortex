@@ -1,5 +1,5 @@
 param(
-    [string]$Dataset = "/app/testdata/rag/knowledge_eval_v2.jsonl",
+    [string]$Dataset = "/app/testdata/rag/knowledge_eval_merged.jsonl",
     [string]$Output = "artifacts/rag-eval",
     [ValidateRange(1, 4)]
     [int]$Workers = 1,

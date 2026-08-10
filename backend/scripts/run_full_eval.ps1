@@ -36,6 +36,8 @@ finally { Pop-Location }
 $ok = docker compose -f "$repoDir\docker-compose.yml" ps backend 2>&1 | Select-String "healthy"
 if (-not $ok) { throw "Backend 服务不健康。运行 docker compose up -d 启动所有服务。" }
 Write-Host "  所有 Docker 服务健康。" -ForegroundColor Green
+docker compose -f "$repoDir\docker-compose.yml" build backend | Select-Object -Last 3
+if ($LASTEXITCODE -ne 0) { throw "构建 backend 评测镜像失败" }
 
 # ═══════════════════════════════════════════════
 # Step 1: Upload non-recipe notes to Diving
@@ -49,26 +51,33 @@ if (-not $SkipUpload) {
     $token = (Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/login" -Method POST -ContentType "application/json" -Body $login).token
     $headers = @{Authorization="Bearer $token";"Content-Type"="application/json"}
     
+    $allNotes = @()
+    $page = 1
+    do {
+        $response = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/notes?page=$page&page_size=100" -Method GET -Headers $headers
+        $allNotes += @($response.items)
+        $page++
+    } while ($allNotes.Count -lt $response.total)
+
     Get-ChildItem "$testdataDir\non_recipe_notes" -Filter "*.md" | ForEach-Object {
         $title = [IO.Path]::GetFileNameWithoutExtension($_.Name)
         $content = Get-Content $_.FullName -Raw -Encoding UTF8
-        $note = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/notes" -Method POST -Headers $headers -Body (@{title=$title;content=$content;note_date=(Get-Date -Format "yyyy-MM-dd")} | ConvertTo-Json -Depth 1)
-        Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/notes/$($note.id)/knowledge" -Method PATCH -Headers $headers -Body '{"enabled":true}' | Out-Null
-        Write-Host "  ✓ $title" -ForegroundColor Gray
-    }
-
-    # Also enable indexing for existing Diving notes
-    Write-Host "  为 Diving 现有笔记启用知识索引..." -ForegroundColor Gray
-    docker compose -f "$repoDir\docker-compose.yml" exec -T db psql -U diary_migrator -d diary_listener -t -A -c @"
-        SELECT n.id FROM notes n JOIN users u ON u.id=n.user_id 
-        WHERE u.username='Diving' AND n.id NOT IN (
-            SELECT d.note_id FROM knowledge_documents d WHERE d.source_type='note' AND d.deleted_at IS NULL
-        );
-"@ | ForEach-Object {
-        $nid = $_.Trim()
-        if ($nid) {
-            try { Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/notes/$nid/knowledge" -Method PATCH -Headers $headers -Body '{"enabled":true}' | Out-Null; Write-Host "    ✓ note $nid" -ForegroundColor Gray }
-            catch { Write-Host "    ✗ note $nid" -ForegroundColor Red }
+        $matches = @($allNotes | Where-Object { $_.title -eq $title })
+        if ($matches.Count -gt 1) { throw "Diving 中存在多个同名评测笔记，无法安全更新: $title" }
+        if ($matches.Count -eq 1) {
+            $note = $matches[0]
+            if ($note.content -ne $content) {
+                $note = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/notes/$($note.id)" -Method PATCH -Headers $headers -Body (@{title=$title;content=$content;expected_updated_at=$note.updated_at} | ConvertTo-Json)
+                Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/notes/$($note.id)/knowledge" -Method PATCH -Headers $headers -Body '{"enabled":true}' | Out-Null
+                Write-Host "  ↻ $title" -ForegroundColor Gray
+            } else {
+                Write-Host "  = $title" -ForegroundColor DarkGray
+            }
+        } else {
+            $note = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/notes" -Method POST -Headers $headers -Body (@{title=$title;content=$content;note_date=(Get-Date -Format "yyyy-MM-dd")} | ConvertTo-Json)
+            $allNotes += $note
+            Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/notes/$($note.id)/knowledge" -Method PATCH -Headers $headers -Body '{"enabled":true}' | Out-Null
+            Write-Host "  + $title" -ForegroundColor Gray
         }
     }
 }
@@ -80,15 +89,12 @@ Write-Host "[2/4] 等待知识索引完成..." -ForegroundColor Yellow
 $waited = 0
 do {
     Start-Sleep -Seconds 10; $waited += 10
-    $pending = docker compose -f "$repoDir\docker-compose.yml" exec -T db psql -U diary_migrator -d diary_listener -t -A -c "SELECT count(*) FROM knowledge_documents d JOIN tenants t ON t.id=d.tenant_id JOIN users u ON u.id=t.user_id WHERE u.username='Diving' AND d.status NOT IN ('ready','failed') AND d.deleted_at IS NULL;" 2>&1
-    $pending = $pending.Trim()
-    if ($pending -ne "0") { Write-Host "  等待中... $pending 文档待索引 (${waited}s)" -ForegroundColor Gray }
-    if ($waited -ge 600) { Write-Host "  超时，继续执行。" -ForegroundColor Yellow; break }
-} while ($pending -ne "0")
-
-# Show status
-Write-Host "  索引状态:" -ForegroundColor Green
-docker compose -f "$repoDir\docker-compose.yml" exec -T db psql -U diary_migrator -d diary_listener -t -A -c "SELECT d.title, d.source_type, d.status FROM knowledge_documents d JOIN tenants t ON t.id=d.tenant_id JOIN users u ON u.id=t.user_id WHERE u.username='Diving' AND d.deleted_at IS NULL ORDER BY d.title;" 2>&1 | ForEach-Object { if ($_.Trim()) { Write-Host "    $_" -ForegroundColor Gray } }
+    docker compose -f "$repoDir\docker-compose.yml" run --rm --no-deps --entrypoint /app/rag-eval backend --dataset "/app/testdata/rag/knowledge_eval_merged.jsonl" --preflight-only 2>&1 | Out-Null
+    $ready = ($LASTEXITCODE -eq 0)
+    if (-not $ready) { Write-Host "  等待评测文档完成索引 (${waited}s)" -ForegroundColor Gray }
+    if ($waited -ge 600 -and -not $ready) { throw "等待评测文档索引超时" }
+} while (-not $ready)
+Write-Host "  Diving 评测文档预检通过。" -ForegroundColor Green
 
 # ═══════════════════════════════════════════════
 # Step 3: Run evaluation
@@ -100,8 +106,7 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 Push-Location $repoDir
 try {
     Write-Host "  编译并运行评测 (${Workers} worker)..." -ForegroundColor Gray
-    docker compose build backend 2>&1 | Select-Object -Last 3
-    docker compose run --rm --no-deps --volume "${outputDir}:/artifacts" --entrypoint /app/rag-eval backend --dataset "/app/testdata/rag/knowledge_eval_merged.jsonl" --output "/artifacts" --workers $Workers 2>&1
+    docker compose run --rm --no-deps --volume "${outputDir}:/artifacts" --entrypoint /app/rag-eval backend --dataset "/app/testdata/rag/knowledge_eval_merged.jsonl" --output "/artifacts" --workers $Workers --min-hit-at-10 0.99 --min-context-recall 0.80 --min-context-precision 0.85 --min-faithfulness 0.90 --min-answer-relevancy 0.88 --max-failed 0 2>&1
     if ($LASTEXITCODE -ne 0) { throw "评测执行失败，exit code: $LASTEXITCODE" }
 }
 finally { Pop-Location }

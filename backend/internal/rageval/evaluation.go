@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"math"
 	"os"
@@ -17,6 +16,7 @@ import (
 
 	"diary-listener/backend/internal/ai"
 	"diary-listener/backend/internal/store"
+	"github.com/google/uuid"
 )
 
 type Case struct {
@@ -324,7 +324,6 @@ func ComputeRouteMetrics(results []Result) RouteMetrics {
 			beforeItems[i] = store.KnowledgeCandidate{
 				DocumentID:      uuidFromStringFallback(tr.DocumentID),
 				Title:           tr.Title,
-				SourcePath:      r.SourcePaths[0], // won't be used for match, goldTitle uses the source path from gold
 				RouteProvenance: tr.RouteProvenance,
 			}
 		}
@@ -552,6 +551,38 @@ type Summary struct {
 	RouteMetrics        RouteMetrics `json:"route_metrics"`
 	LatencyP50          Latencies    `json:"latency_p50"`
 	LatencyP95          Latencies    `json:"latency_p95"`
+}
+
+type Thresholds struct {
+	HitAt10, ContextRecall, ContextPrecision, Faithfulness, AnswerRelevancy float64
+	MaxFailed                                                               int
+}
+
+func ValidateSummary(summary Summary, thresholds Thresholds) error {
+	failures := make([]string, 0)
+	if summary.Failed > thresholds.MaxFailed {
+		failures = append(failures, fmt.Sprintf("failed=%d > %d", summary.Failed, thresholds.MaxFailed))
+	}
+	checks := []struct {
+		name string
+		got  float64
+		min  float64
+	}{
+		{"hit_at_10", summary.Metrics.HitAt10, thresholds.HitAt10},
+		{"context_recall", summary.Metrics.ContextRecall, thresholds.ContextRecall},
+		{"context_precision", summary.Metrics.ContextPrecision, thresholds.ContextPrecision},
+		{"faithfulness", summary.Metrics.Faithfulness, thresholds.Faithfulness},
+		{"answer_relevancy", summary.Metrics.AnswerRelevancy, thresholds.AnswerRelevancy},
+	}
+	for _, check := range checks {
+		if check.got < check.min {
+			failures = append(failures, fmt.Sprintf("%s=%.4f < %.4f", check.name, check.got, check.min))
+		}
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("RAG evaluation thresholds failed: %s", strings.Join(failures, "; "))
+	}
+	return nil
 }
 
 func Summarize(dataset string, results []Result) Summary {

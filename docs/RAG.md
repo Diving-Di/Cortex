@@ -212,12 +212,12 @@ SSE 事件序列为 `retrieval → delta* → sources → done`；回答与来�
 
 ### 8.1 数据集与评测范围
 
-- 主数据集 `backend/testdata/rag/knowledge_eval_v2.jsonl` 包含 45 条非菜谱查询（v2），另有 `recipe_eval_v1.jsonl` 包含 90 条菜谱查询（v1 回归用）、完整参考答案、gold
-  source path 和标签；文件名保留历史命名（语料来自已迁移的 HowToCook 菜谱），配套清单见
+- 主数据集 `backend/testdata/rag/knowledge_eval_merged.jsonl` 包含 164 条查询（90 条菜谱 + 74 条非菜谱）；`knowledge_eval_v2.jsonl` 的 45 条非菜谱查询仅用于快速回归。数据集包含完整参考答案、gold source path 和标签；文件名保留历史命名（语料来自已迁移的 HowToCook 菜谱），配套清单见
   `backend/testdata/rag/recipe_eval_v1_manifest.json`。
 - gold 按迁移前的文件名与数据库文档标题或 `stored_path` 匹配，不依赖知识集合唯一性。
 - 评测入口固定按用户名解析 `Diving` 的 Principal，在其全部启用且 ready 的知识文档上复用
   生产检索链路；不接收 `tenant_id`，也不限定知识集合。
+- 启动预检要求每个 gold 标题恰好对应一份 ready 文档；缺失或同标题歧义都会失败。完整脚本按标题幂等创建或更新 fixture，不修改 Diving 的其他历史笔记。
 
 ### 8.2 单条评测流程
 
@@ -275,10 +275,7 @@ Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候
 
 > **运行环境注意（2026-08-06 实测）**：
 > - `PATCH /api/v1/notes/{id}/knowledge` 使用 `digest(...,'sha256')`（pgcrypto）计算
->   `content_hash`，但 `backend/db/schema.sql` 基线尚未创建 `pgcrypto` 扩展。新库初始化后
->   首次为笔记启用知识索引会报 `function digest(bytea, unknown) does not exist
->   (SQLSTATE 42883)`；**应在 `schema.sql` 基线补充 `CREATE EXTENSION IF NOT EXISTS
->   pgcrypto;`**，已部署库手动执行一次即可。
+>   `content_hash`。空库基线与版本化迁移 `000020_pgcrypto` 都会安装该扩展。
 > - 评测固定按用户名解析 `Diving`；需要上传评测 fixture 时，口令仅通过
 >   `CORTEX_EVAL_DIVING_PASSWORD` 或脚本参数注入。其租户下必须已上传并
 >   索引评测集引用的全部文档，含 `backend/testdata/rag/non_recipe_notes/` 的 10 篇非菜谱笔记。
@@ -433,6 +430,8 @@ docker compose config --quiet
 ```powershell
 .\backend\scripts\rag_eval.ps1 -Workers 1
 ```
+
+完整流水线还会执行指标门槛：Hit@10 ≥ 0.99、Context Recall ≥ 0.80、Context Precision ≥ 0.85、Faithfulness ≥ 0.90、Answer Relevancy ≥ 0.88，且失败用例为 0；任一退化都会返回非零退出码。
 
 ## 12. 下一步优化策略
 

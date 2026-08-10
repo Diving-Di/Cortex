@@ -66,12 +66,21 @@ func (r knowledgeRetriever) Rerank(ctx context.Context, query string, items []st
 func main() {
 	var dataset, outputRoot, caseIDs string
 	var workers, searchLimit, contextTopK int
-	flag.StringVar(&dataset, "dataset", "testdata/rag/knowledge_eval_v2.jsonl", "JSONL evaluation dataset")
+	var preflightOnly bool
+	var thresholds rageval.Thresholds
+	flag.StringVar(&dataset, "dataset", "testdata/rag/knowledge_eval_merged.jsonl", "JSONL evaluation dataset")
 	flag.StringVar(&outputRoot, "output", "../artifacts/rag-eval", "artifact output root")
 	flag.IntVar(&workers, "workers", 1, "parallel case workers")
 	flag.IntVar(&searchLimit, "search-limit", 20, "retrieval candidate count")
 	flag.IntVar(&contextTopK, "context-top-k", 5, "reranked contexts sent to generation and judge")
 	flag.StringVar(&caseIDs, "case-ids", "", "optional comma-separated case IDs")
+	flag.BoolVar(&preflightOnly, "preflight-only", false, "validate Diving and dataset documents without calling AI")
+	flag.Float64Var(&thresholds.HitAt10, "min-hit-at-10", 0, "minimum aggregate Hit@10")
+	flag.Float64Var(&thresholds.ContextRecall, "min-context-recall", 0, "minimum context recall")
+	flag.Float64Var(&thresholds.ContextPrecision, "min-context-precision", 0, "minimum context precision")
+	flag.Float64Var(&thresholds.Faithfulness, "min-faithfulness", 0, "minimum faithfulness")
+	flag.Float64Var(&thresholds.AnswerRelevancy, "min-answer-relevancy", 0, "minimum answer relevancy")
+	flag.IntVar(&thresholds.MaxFailed, "max-failed", 0, "maximum failed cases")
 	flag.Parse()
 	if workers < 1 || workers > 4 || searchLimit < 1 || contextTopK < 1 || contextTopK > searchLimit {
 		fatal("invalid flags: workers must be 1..4 and context-top-k must be within search-limit")
@@ -80,7 +89,7 @@ func main() {
 	if err != nil {
 		fatal("load configuration: " + err.Error())
 	}
-	if strings.TrimSpace(cfg.AIAPIKey) == "" {
+	if !preflightOnly && strings.TrimSpace(cfg.AIAPIKey) == "" {
 		fatal("AI_API_KEY is required")
 	}
 	cases, err := rageval.LoadCases(dataset)
@@ -99,12 +108,19 @@ func main() {
 	if err != nil {
 		fatal("resolve Diving: " + err.Error())
 	}
-	missing, err := db.ValidateKnowledgeEvaluationTitles(ctx, principal, rageval.GoldTitles(cases))
+	missing, ambiguous, err := db.ValidateKnowledgeEvaluationTitles(ctx, principal, rageval.GoldTitles(cases))
 	if err != nil {
 		fatal("validate evaluation documents: " + err.Error())
 	}
 	if len(missing) > 0 {
 		fatal("Diving knowledge documents missing or not ready: " + strings.Join(missing, ", "))
+	}
+	if len(ambiguous) > 0 {
+		fatal("Diving knowledge documents are ambiguous (duplicate titles): " + strings.Join(ambiguous, ", "))
+	}
+	if preflightOnly {
+		fmt.Printf("RAG evaluation preflight passed: user=%s cases=%d documents=%d\n", evaluationUsername, len(cases), len(rageval.GoldTitles(cases)))
+		return
 	}
 	httpClient := &http.Client{Timeout: 180 * time.Second}
 	client := &ai.EinoClient{BaseURL: cfg.AIBaseURL, APIKey: cfg.AIAPIKey, HTTPClient: httpClient}
@@ -118,6 +134,9 @@ func main() {
 	dir := filepath.Join(outputRoot, time.Now().Format("20060102-150405"))
 	if err := rageval.WriteArtifacts(dir, runnerCfg, results, summary); err != nil {
 		fatal("write artifacts: " + err.Error())
+	}
+	if err := rageval.ValidateSummary(summary, thresholds); err != nil {
+		fatal(err.Error() + " (artifacts: " + dir + ")")
 	}
 	fmt.Printf("RAG evaluation complete: user=%s total=%d succeeded=%d failed=%d output=%s\n", evaluationUsername, summary.Total, summary.Succeeded, summary.Failed, dir)
 	if summary.Failed > 0 {
