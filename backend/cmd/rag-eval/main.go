@@ -34,12 +34,36 @@ type knowledgeRetriever struct {
 }
 
 func (r knowledgeRetriever) Search(ctx context.Context, query string, limit int) ([]store.KnowledgeCandidate, error) {
-	vectors, err := r.embedding.Embed(ctx, []string{query})
+	vectors, err := withRetry(ctx, 3, 500*time.Millisecond, func() ([][]float32, error) {
+		return r.embedding.Embed(ctx, []string{query})
+	})
 	if err != nil {
 		return nil, err
 	}
 	return r.store.SearchKnowledge(ctx, r.principal, query, vectors[0], r.model, nil,
 		r.vectorTopK, r.titleTopK, r.keywordTopK, limit)
+}
+
+func withRetry[T any](ctx context.Context, attempts int, initialDelay time.Duration, call func() (T, error)) (T, error) {
+	var zero T
+	var err error
+	for attempt := 0; attempt < attempts; attempt++ {
+		var value T
+		value, err = call()
+		if err == nil {
+			return value, nil
+		}
+		if attempt == attempts-1 {
+			break
+		}
+		delay := initialDelay * time.Duration(1<<attempt)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		}
+	}
+	return zero, err
 }
 
 func (r knowledgeRetriever) Rerank(ctx context.Context, query string, items []store.KnowledgeCandidate) ([]store.KnowledgeCandidate, error) {
@@ -123,12 +147,13 @@ func main() {
 		return
 	}
 	httpClient := &http.Client{Timeout: 180 * time.Second}
+	embeddingHTTPClient := &http.Client{Timeout: 30 * time.Second}
 	client := &ai.EinoClient{BaseURL: cfg.AIBaseURL, APIKey: cfg.AIAPIKey, HTTPClient: httpClient}
 	workflow := ai.Workflow{Client: client, Model: cfg.AIModel}
 	runnerCfg := rageval.Config{Username: evaluationUsername, Dataset: filepath.Base(dataset), SearchLimit: searchLimit, ContextTopK: contextTopK, EmbeddingModel: cfg.EmbeddingModel, RerankModel: cfg.RerankModel, Model: cfg.AIModel, JudgeModel: cfg.AIModel}
 	runner := rageval.Runner{Retriever: knowledgeRetriever{store: db, principal: principal, model: cfg.EmbeddingModel,
 		vectorTopK: cfg.RAGVectorTopK, titleTopK: cfg.RAGTitleTopK, keywordTopK: cfg.RAGKeywordTopK,
-		embedding: ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, HTTPClient: httpClient}, reranker: ai.LocalRerankClient{BaseURL: cfg.RerankBaseURL, Model: cfg.RerankModel, MaxDocuments: searchLimit, HTTPClient: httpClient}}, Generator: workflow, Judge: rageval.LLMJudge{Client: client, Model: cfg.AIModel}, Config: runnerCfg}
+		embedding: ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, HTTPClient: embeddingHTTPClient}, reranker: ai.LocalRerankClient{BaseURL: cfg.RerankBaseURL, Model: cfg.RerankModel, MaxDocuments: searchLimit, HTTPClient: httpClient}}, Generator: workflow, Judge: rageval.LLMJudge{Client: client, Model: cfg.AIModel}, Config: runnerCfg}
 	results := runCases(ctx, runner, cases, workers, cfg.Environment)
 	summary := rageval.Summarize(filepath.Base(dataset), results)
 	dir := filepath.Join(outputRoot, time.Now().Format("20060102-150405"))

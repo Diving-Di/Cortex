@@ -1,4 +1,5 @@
 import os
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -22,6 +23,7 @@ class EmbeddingRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.model = SentenceTransformer(MODEL_PATH, device="cpu")
+    app.state.encode_lock = threading.Lock()
     probe = app.state.model.encode(["健康检查"], normalize_embeddings=True)
     if probe.shape != (1, EXPECTED_DIMENSIONS):
         raise RuntimeError(f"embedding dimensions must be {EXPECTED_DIMENSIONS}")
@@ -47,7 +49,11 @@ def embeddings(request: EmbeddingRequest) -> dict[str, object]:
     values = [request.input] if isinstance(request.input, str) else request.input
     if not values or len(values) > 64 or any(not value.strip() for value in values):
         raise HTTPException(status_code=400, detail="invalid input")
-    vectors = app.state.model.encode(values, normalize_embeddings=True)
+    # SentenceTransformer/PyTorch inference can be invoked concurrently by the
+    # API, index worker and evaluator. Serialize CPU inference to avoid native
+    # runtime hangs and connection resets under sustained load.
+    with app.state.encode_lock:
+        vectors = app.state.model.encode(values, normalize_embeddings=True)
     if vectors.shape[1] != EXPECTED_DIMENSIONS:
         raise HTTPException(status_code=502, detail="invalid model output")
     return {
