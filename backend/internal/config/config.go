@@ -221,7 +221,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	ragKeywordTopK, err := positiveInt("RAG_KEYWORD_TOP_K", 15)
+	ragKeywordTopK, err := positiveInt("RAG_KEYWORD_TOP_K", 5)
 	if err != nil {
 		return Config{}, err
 	}
@@ -229,7 +229,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	ragContextTopK, err := positiveInt("RAG_CONTEXT_PARENT_TOP_K", 5)
+	ragContextTopK, err := positiveInt("RAG_CONTEXT_PARENT_TOP_K", 4)
 	if err != nil {
 		return Config{}, err
 	}

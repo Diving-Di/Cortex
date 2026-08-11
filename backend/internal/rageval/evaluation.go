@@ -33,6 +33,10 @@ type Config struct {
 	Dataset        string `json:"dataset"`
 	SearchLimit    int    `json:"search_limit"`
 	ContextTopK    int    `json:"context_top_k"`
+	VectorTopK     int    `json:"vector_top_k"`
+	TitleTopK      int    `json:"title_top_k"`
+	KeywordTopK    int    `json:"keyword_top_k"`
+	RetrievalOnly  bool   `json:"retrieval_only"`
 	EmbeddingModel string `json:"embedding_model"`
 	RerankModel    string `json:"rerank_model"`
 	Model          string `json:"model"`
@@ -318,7 +322,7 @@ func ComputeRouteMetrics(results []Result) RouteMetrics {
 	var rm RouteMetrics
 	var evaluated int
 	for _, r := range results {
-		if len(r.BeforeRerank) == 0 {
+		if r.Status == "failed" {
 			continue
 		}
 		evaluated++
@@ -597,7 +601,7 @@ func Summarize(dataset string, results []Result) Summary {
 	var retrieval, generation Metrics
 	var success []Result
 	for _, r := range results {
-		if len(r.BeforeRerank) > 0 && len(r.AfterRerank) > 0 {
+		if r.Status == "success" {
 			s.RetrievalEvaluated++
 			retrieval.HitAt1 += r.Metrics.HitAt1
 			retrieval.HitAt3 += r.Metrics.HitAt3
@@ -608,12 +612,14 @@ func Summarize(dataset string, results []Result) Summary {
 		}
 		if r.Status == "success" {
 			s.Succeeded++
-			s.GenerationEvaluated++
 			success = append(success, r)
-			generation.ContextRecall += r.Metrics.ContextRecall
-			generation.ContextPrecision += r.Metrics.ContextPrecision
-			generation.Faithfulness += r.Metrics.Faithfulness
-			generation.AnswerRelevancy += r.Metrics.AnswerRelevancy
+			if r.Judge != nil {
+				s.GenerationEvaluated++
+				generation.ContextRecall += r.Metrics.ContextRecall
+				generation.ContextPrecision += r.Metrics.ContextPrecision
+				generation.Faithfulness += r.Metrics.Faithfulness
+				generation.AnswerRelevancy += r.Metrics.AnswerRelevancy
+			}
 		} else {
 			s.Failed++
 		}

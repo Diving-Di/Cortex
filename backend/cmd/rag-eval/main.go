@@ -90,19 +90,24 @@ func (r knowledgeRetriever) Rerank(ctx context.Context, query string, items []st
 
 func main() {
 	var dataset, outputRoot, caseIDs string
-	var workers, searchLimit, contextTopK int
+	var workers, searchLimit, contextTopK, vectorTopK, titleTopK, keywordTopK int
 	var preflightOnly bool
 	var calibrateOnly bool
+	var retrievalOnly bool
 	var minimumAnswerableRecall float64
 	var thresholds rageval.Thresholds
 	flag.StringVar(&dataset, "dataset", "testdata/rag/knowledge_eval_merged.jsonl", "JSONL evaluation dataset")
 	flag.StringVar(&outputRoot, "output", "../artifacts/rag-eval", "artifact output root")
 	flag.IntVar(&workers, "workers", 1, "parallel case workers")
 	flag.IntVar(&searchLimit, "search-limit", 20, "retrieval candidate count")
-	flag.IntVar(&contextTopK, "context-top-k", 5, "reranked contexts sent to generation and judge")
+	flag.IntVar(&contextTopK, "context-top-k", 4, "reranked contexts sent to generation and judge")
 	flag.StringVar(&caseIDs, "case-ids", "", "optional comma-separated case IDs")
 	flag.BoolVar(&preflightOnly, "preflight-only", false, "validate Diving and dataset documents without calling AI")
 	flag.BoolVar(&calibrateOnly, "calibrate-only", false, "run retrieval/rerank only and scan rejection thresholds")
+	flag.BoolVar(&retrievalOnly, "retrieval-only", false, "run retrieval/rerank only and write evaluation artifacts")
+	flag.IntVar(&vectorTopK, "vector-top-k", -1, "override vector route candidate count; zero disables the route")
+	flag.IntVar(&titleTopK, "title-top-k", -1, "override title route candidate count; zero disables the route")
+	flag.IntVar(&keywordTopK, "keyword-top-k", -1, "override fulltext route candidate count; zero disables the route")
 	flag.Float64Var(&minimumAnswerableRecall, "min-answerable-recall", 0.8, "minimum recall used to select a calibrated threshold")
 	flag.Float64Var(&thresholds.HitAt10, "min-hit-at-10", 0, "minimum aggregate Hit@10")
 	flag.Float64Var(&thresholds.ContextRecall, "min-context-recall", 0, "minimum context recall")
@@ -111,14 +116,14 @@ func main() {
 	flag.Float64Var(&thresholds.AnswerRelevancy, "min-answer-relevancy", 0, "minimum answer relevancy")
 	flag.IntVar(&thresholds.MaxFailed, "max-failed", 0, "maximum failed cases")
 	flag.Parse()
-	if workers < 1 || workers > 4 || searchLimit < 1 || contextTopK < 1 || contextTopK > searchLimit {
+	if workers < 1 || workers > 4 || searchLimit < 1 || contextTopK < 1 || contextTopK > searchLimit || vectorTopK < -1 || titleTopK < -1 || keywordTopK < -1 {
 		fatal("invalid flags: workers must be 1..4 and context-top-k must be within search-limit")
 	}
 	cfg, err := config.Load()
 	if err != nil {
 		fatal("load configuration: " + err.Error())
 	}
-	if !preflightOnly && !calibrateOnly && strings.TrimSpace(cfg.AIAPIKey) == "" {
+	if !preflightOnly && !calibrateOnly && !retrievalOnly && strings.TrimSpace(cfg.AIAPIKey) == "" {
 		fatal("AI_API_KEY is required")
 	}
 	cases, err := rageval.LoadCases(dataset)
@@ -155,10 +160,23 @@ func main() {
 	embeddingHTTPClient := &http.Client{Timeout: 30 * time.Second}
 	client := &ai.EinoClient{BaseURL: cfg.AIBaseURL, APIKey: cfg.AIAPIKey, HTTPClient: httpClient}
 	workflow := ai.Workflow{Client: client, Model: cfg.AIModel}
-	runnerCfg := rageval.Config{Username: evaluationUsername, Dataset: filepath.Base(dataset), SearchLimit: searchLimit, ContextTopK: contextTopK, EmbeddingModel: cfg.EmbeddingModel, RerankModel: cfg.RerankModel, Model: cfg.AIModel, JudgeModel: cfg.AIModel}
+	if vectorTopK < 0 {
+		vectorTopK = cfg.RAGVectorTopK
+	}
+	if titleTopK < 0 {
+		titleTopK = cfg.RAGTitleTopK
+	}
+	if keywordTopK < 0 {
+		keywordTopK = cfg.RAGKeywordTopK
+	}
+	if vectorTopK+titleTopK+keywordTopK == 0 {
+		fatal("at least one retrieval route must be enabled")
+	}
+	runnerCfg := rageval.Config{Username: evaluationUsername, Dataset: filepath.Base(dataset), SearchLimit: searchLimit, ContextTopK: contextTopK, VectorTopK: vectorTopK, TitleTopK: titleTopK, KeywordTopK: keywordTopK, RetrievalOnly: retrievalOnly, EmbeddingModel: cfg.EmbeddingModel, RerankModel: cfg.RerankModel, Model: cfg.AIModel, JudgeModel: cfg.AIModel}
 	runner := rageval.Runner{Retriever: knowledgeRetriever{store: db, principal: principal, model: cfg.EmbeddingModel,
-		vectorTopK: cfg.RAGVectorTopK, titleTopK: cfg.RAGTitleTopK, keywordTopK: cfg.RAGKeywordTopK,
+		vectorTopK: vectorTopK, titleTopK: titleTopK, keywordTopK: keywordTopK,
 		embedding: ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, HTTPClient: embeddingHTTPClient}, reranker: ai.LocalRerankClient{BaseURL: cfg.RerankBaseURL, Model: cfg.RerankModel, MaxDocuments: searchLimit, HTTPClient: httpClient}}, Generator: workflow, Judge: rageval.LLMJudge{Client: client, Model: cfg.AIModel}, Config: runnerCfg, RetrievalOnly: calibrateOnly}
+	runner.RetrievalOnly = calibrateOnly || retrievalOnly
 	results := runCases(ctx, runner, cases, workers, cfg.Environment)
 	if calibrateOnly {
 		calibration := rageval.CalibrateRerankThreshold(cases, results, minimumAnswerableRecall)

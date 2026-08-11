@@ -68,13 +68,21 @@ RAG_RERANK_BASE_URL=http://reranker-service:8080
 RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 RAG_VECTOR_TOP_K=15
 RAG_TITLE_TOP_K=10
-RAG_KEYWORD_TOP_K=15
+RAG_KEYWORD_TOP_K=5
 RAG_FUSION_TOP_K=20
-RAG_CONTEXT_PARENT_TOP_K=5
+RAG_CONTEXT_PARENT_TOP_K=4
 RAG_RERANK_MIN_SCORE=              # 由当前 reranker/embedding/评估集校准；留空不启用绝对分门控
 RAG_RERANK_MIN_MARGIN=             # 可选 Top1-Top2 分差门槛；留空不启用
 RAG_MIN_QUALIFIED_EVIDENCE=1
 RAG_VERIFIER_MODEL=diary-default
+```
+
+知识库全文通道使用应用层确定性 Unicode 2-gram：汉字连续片段生成相邻二元 token，英文和数字
+保留规范化词，写入 `knowledge_child_chunks.keyword_text` 后由 PostgreSQL `simple` FTS + GIN
+索引。迁移会排队重建活动文档的新索引版本，旧版本在新版本成功前持续可用。只运行检索消融：
+
+```powershell
+.\backend\scripts\run_retrieval_ablation.ps1 -Workers 4
 ```
 
 知识问答不会给 Reranker 套用未经校准的默认分数。配置门槛后，只有合格证据会进入生成；

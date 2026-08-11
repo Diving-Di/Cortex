@@ -74,7 +74,7 @@ func (s *Store) WriteKnowledgeChunks(ctx context.Context, j KnowledgeIndexJob, p
 				return err
 			}
 			for ci, c := range p.Children {
-				if _, err := tx.Exec(ctx, `INSERT INTO knowledge_child_chunks(tenant_id,parent_id,document_id,index_version,ordinal,content,embedding_text,embedding,embedding_model,content_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8::vector,$9,$10)`, j.TenantID, parentID, j.DocumentID, j.TargetVersion, ci, c.Content, c.EmbeddingText, vectorLiteral(vectors[pi][ci]), model, c.Hash); err != nil {
+				if _, err := tx.Exec(ctx, `INSERT INTO knowledge_child_chunks(tenant_id,parent_id,document_id,index_version,ordinal,content,embedding_text,keyword_text,embedding,embedding_model,content_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::vector,$10,$11)`, j.TenantID, parentID, j.DocumentID, j.TargetVersion, ci, c.Content, c.EmbeddingText, c.KeywordText, vectorLiteral(vectors[pi][ci]), model, c.Hash); err != nil {
 					return err
 				}
 			}

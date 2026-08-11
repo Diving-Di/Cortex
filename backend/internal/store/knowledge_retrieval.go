@@ -8,6 +8,7 @@ import (
 
 	"diary-listener/backend/internal/apierror"
 	"diary-listener/backend/internal/domain"
+	"diary-listener/backend/internal/knowledge"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/text/unicode/norm"
@@ -61,7 +62,8 @@ func (s *Store) ValidateKnowledgeEvaluationTitles(ctx context.Context, p domain.
 				AND d.status='ready' AND d.deleted_at IS NULL
 				AND d.knowledge_enabled AND d.active_index_version>0
 				AND EXISTS(SELECT 1 FROM knowledge_child_chunks c WHERE c.tenant_id=d.tenant_id
-					AND c.document_id=d.id AND c.index_version=d.active_index_version AND c.embedding IS NOT NULL)`,
+					AND c.document_id=d.id AND c.index_version=d.active_index_version
+					AND c.embedding IS NOT NULL AND c.keyword_text<>'')`,
 				p.TenantID, title).Scan(&count); err != nil {
 				return err
 			}
@@ -96,19 +98,21 @@ func (s *Store) ValidateKnowledgeCollections(ctx context.Context, p domain.Princ
 }
 func (s *Store) SearchKnowledge(ctx context.Context, p domain.Principal, query string, embedding []float32, model string, collections []uuid.UUID, vectorLimit, titleLimit, keywordLimit, fusionLimit int) ([]KnowledgeCandidate, error) {
 	var out []KnowledgeCandidate
+	keywordQuery := knowledge.KeywordQueryText(query, 128)
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, p); err != nil {
 			return err
 		}
 		rows, err := tx.Query(ctx, `WITH eligible AS (
-SELECT c.id,c.parent_id,c.document_id,c.index_version,c.embedding_text,c.embedding,d.title,d.source_type,d.note_id,d.stored_path
+SELECT c.id,c.parent_id,c.document_id,c.index_version,c.embedding_text,c.search_vector,c.embedding,d.title,d.source_type,d.note_id,d.stored_path
 FROM knowledge_child_chunks c JOIN knowledge_documents d ON d.tenant_id=c.tenant_id AND d.id=c.document_id
 LEFT JOIN notes n ON n.tenant_id=d.tenant_id AND n.id=d.note_id
 WHERE c.tenant_id=$1 AND d.status='ready' AND d.deleted_at IS NULL AND d.knowledge_enabled
 AND c.index_version=d.active_index_version AND c.embedding_model=$4 AND c.embedding IS NOT NULL
 AND (coalesce(cardinality($3::uuid[]),0)=0 OR d.collection_id=ANY($3)) AND (d.source_type<>'note' OR n.deleted_at IS NULL)),
 v AS (SELECT id,parent_id,row_number() OVER(ORDER BY embedding <=> $2::vector) rank FROM eligible LIMIT $6),
-f AS (SELECT id,parent_id,row_number() OVER(ORDER BY ts_rank_cd(to_tsvector('simple',embedding_text),plainto_tsquery('simple',$5)) DESC) rank FROM eligible WHERE to_tsvector('simple',embedding_text) @@ plainto_tsquery('simple',$5) LIMIT $7),
+keyword_query AS (SELECT CASE WHEN $10='' THEN NULL ELSE to_tsquery('simple',replace($10,' ',' | ')) END query),
+f AS (SELECT id,parent_id,row_number() OVER(ORDER BY ts_rank_cd(search_vector,keyword_query.query) DESC,id) rank FROM eligible CROSS JOIN keyword_query WHERE keyword_query.query IS NOT NULL AND search_vector @@ keyword_query.query LIMIT $7),
 title_base AS (
   SELECT DISTINCT document_id,title,
     regexp_replace(lower(regexp_replace(normalize(trim(title),NFKC),'\.md$','','i')),'[[:space:][:punct:]，。！？；：、“”‘’（）【】《》·]+','','g') normalized_title,
@@ -120,12 +124,14 @@ title_docs AS (
   WHERE lower(trim(title))=lower(trim($5))
      OR normalized_title=normalized_query
      OR (char_length(normalized_title)>=4 AND position(normalized_title in normalized_query)>0)
-     OR (char_length(normalized_title)>=4 AND char_length(normalized_query)>=4 AND similarity(normalized_title,normalized_query)>=0.35)
+     OR (char_length(normalized_title)>=4 AND char_length(normalized_query)>=4
+         AND (word_similarity(normalized_title,normalized_query)>=0.45 OR similarity(normalized_title,normalized_query)>=0.35))
   ORDER BY CASE
     WHEN lower(trim(title))=lower(trim($5)) THEN 1
     WHEN normalized_title=normalized_query THEN 2
     WHEN char_length(normalized_title)>=4 AND position(normalized_title in normalized_query)>0 THEN 3
     ELSE 4 END,
+    word_similarity(normalized_title,normalized_query) DESC,
     similarity(normalized_title,normalized_query) DESC,
     char_length(normalized_title) DESC,
     document_id
@@ -142,7 +148,7 @@ child_score AS (
 score AS (SELECT parent_id,max(score) score,max(route_mask) route_mask FROM child_score GROUP BY parent_id ORDER BY score DESC LIMIT $9),
 parent_meta AS (SELECT DISTINCT ON (parent_id) parent_id,document_id,note_id,source_type,title,index_version,stored_path FROM eligible ORDER BY parent_id,id)
 SELECT e.document_id,score.parent_id,e.note_id,e.source_type,e.title,p.content,p.heading_path,e.index_version,score.score,coalesce(e.stored_path,''),coalesce(score.route_mask,0)
-FROM score JOIN parent_meta e ON e.parent_id=score.parent_id JOIN knowledge_parent_chunks p ON p.tenant_id=$1 AND p.id=score.parent_id ORDER BY score.score DESC`, p.TenantID, vectorLiteral(embedding), collections, model, query, vectorLimit, keywordLimit, titleLimit, fusionLimit)
+FROM score JOIN parent_meta e ON e.parent_id=score.parent_id JOIN knowledge_parent_chunks p ON p.tenant_id=$1 AND p.id=score.parent_id ORDER BY score.score DESC`, p.TenantID, vectorLiteral(embedding), collections, model, query, vectorLimit, keywordLimit, titleLimit, fusionLimit, keywordQuery)
 		if err != nil {
 			return err
 		}

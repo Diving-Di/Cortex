@@ -98,6 +98,29 @@ func TestValidateSummary(t *testing.T) {
 	}
 }
 
+func TestSummarizeCountsSuccessfulEmptyRetrievalAsMiss(t *testing.T) {
+	summary := Summarize("test.jsonl", []Result{
+		{Status: "success", Metrics: Metrics{HitAt10: 1, MRRBefore: 1, MRRAfter: 1}, BeforeRerank: []CandidateTrace{{Title: "gold"}}, AfterRerank: []CandidateTrace{{Title: "gold"}}},
+		{Status: "success"},
+	})
+	if summary.RetrievalEvaluated != 2 || summary.Metrics.HitAt10 != 0.5 || summary.Metrics.MRRBefore != 0.5 {
+		t.Fatalf("empty retrieval was excluded from denominator: %#v", summary)
+	}
+	if summary.GenerationEvaluated != 0 {
+		t.Fatalf("retrieval-only results counted as generation: %#v", summary)
+	}
+}
+
+func TestRouteMetricsCountsSuccessfulEmptyRetrievalAsMiss(t *testing.T) {
+	rm := ComputeRouteMetrics([]Result{
+		{Status: "success", SourcePaths: []string{"gold.md"}, BeforeRerank: []CandidateTrace{{Title: "gold", RouteProvenance: routeTitle}}},
+		{Status: "success", SourcePaths: []string{"missing.md"}},
+	})
+	if rm.TitleHitAt10 != 0.5 || rm.TitleIncremental != 0.5 {
+		t.Fatalf("empty route result was excluded from denominator: %#v", rm)
+	}
+}
+
 type fakeRetriever struct{}
 
 func (fakeRetriever) Search(context.Context, string, int) ([]store.KnowledgeCandidate, error) {

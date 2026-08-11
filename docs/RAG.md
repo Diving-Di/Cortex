@@ -118,16 +118,15 @@ child 上按 cosine distance `<=>` 排序取 `RAG_VECTOR_TOP_K`（默认 15）�
 
 ### 5.2 正文全文召回
 
-对 `embedding_text` 建 `to_tsvector('simple', ...)`，用
-`plainto_tsquery('simple', query)` 匹配，按 `ts_rank_cd` 排序取 `RAG_KEYWORD_TOP_K`
-（默认 15）。
-
-> 注意：`simple` 配置不做中文分词，匹配粒度是整段结构化文本；这解释了为何标题/章节字段
-> 被拼进 `embedding_text` 对全文召回同样重要。
+索引端对 `embedding_text` 做 NFKC/lowercase 规范化，连续汉字生成相邻 2-gram，英文与数字
+保留完整词，并把结果写入 `keyword_text`；`search_vector` 使用 PostgreSQL `simple` FTS + GIN。
+查询端复用同一 tokenizer，去重并限制为 128 个 token，以 OR `tsquery` 匹配并按
+`ts_rank_cd` 排序取 `RAG_KEYWORD_TOP_K`（默认 5）。
 
 ### 5.3 标题文档内向量召回
 
-先按“原始标题精确、通用规范化标题精确、至少 4 字符的完整短语、trigram 相似度 ≥ 0.35”
+先按“原始标题精确、通用规范化标题精确、至少 4 字符的完整短语、局部 trigram
+`word_similarity` ≥ 0.45 或整体 `similarity` ≥ 0.35”
 分级选择最多 5 篇文档，再在这批文档内按 query 向量召回 `RAG_TITLE_TOP_K`（默认 10）。
 通用规范化只处理 Unicode/大小写、空白、常见标点和 `.md` 扩展名，不删除“的做法”“教程”
 或“指南”等领域后缀。该通道用于把
@@ -152,9 +151,9 @@ RRF score = Σ 1 / (60 + route_rank)
 |---|---:|
 | `RAG_VECTOR_TOP_K` | 15 |
 | `RAG_TITLE_TOP_K` | 10 |
-| `RAG_KEYWORD_TOP_K` | 15 |
+| `RAG_KEYWORD_TOP_K` | 5 |
 | `RAG_FUSION_TOP_K` | 20 |
-| `RAG_CONTEXT_PARENT_TOP_K` | 5 |
+| `RAG_CONTEXT_PARENT_TOP_K` | 4 |
 
 ## 6. Rerank 与生成上下文
 
@@ -471,22 +470,32 @@ docker compose config --quiet
      定位是哪一路在漏召；
   4. 为低分 query 建立“命中 child → 最终 parent”的逐案例人工核查样本。
 
-### 12.2 中文检索能力（高优先，2026-08-06 已量化）
+### 12.2 中文检索能力（2026-08-11 已实现并固化基线）
 
-- **现状**：全文召回使用 `to_tsvector('simple')`，对中文不做分词，长 query 匹配粒度粗。
-  **2026-08-06 分通道评测量化**：164 条用例中全文通道 Hit@10 = 0、独立增量 = 0、协同命中 = 0，
-  rerank 前候选中无任何 `route=2` 候选；根因是 `simple` 分词把无空格中文整句当作单个 token，
-  与 `plainto_tsquery('simple', query)` 无法命中。向量通道单独已覆盖 100% gold，标题通道
-  47.56%（无独立增量）。向量召回对“精确数字/配料用量”类问题不够敏感（历史案例：蛋炒饭材料
-  与用量）。
-- **建议**：优先解决中文分词——在 `embedding_text` 上引入 `zhparser`/`pg_jieba` 扩展，或应用层
-  确定性 2-gram 切词后走 FTS，用 9.5 的分通道指标复测：目标是把 Fulltext Hit@10 从 0% 提升到
-  出现实际增量（Fulltext Incremental > 0），再决定保留或下线该通道；同时可实验 `pg_trgm` 相似度
-  作为补充通道，并控制索引体积与查询延迟。
+- **旧问题**：`to_tsvector('simple', embedding_text)` 与 `plainto_tsquery('simple', query)`
+  不对连续中文分词，旧 164 条分通道评测中 Fulltext Hit@10 为 0。
+- **2026-08-11 实现**：
+  1. 索引端和查询端共用应用层 Unicode 规范化：NFKC + lowercase；连续汉字生成相邻 2-gram，
+     拉丁字母和数字保留完整词；
+  2. `knowledge_child_chunks.keyword_text` 保存确定性 token，`search_vector` 改为基于该字段生成并
+     继续使用 GIN；查询 token 去重且最多 128 个，以 OR `tsquery` 召回，避免长问题构造超大查询；
+  3. 迁移 `000024_knowledge_chinese_bigram_fts` 保持当前活动索引在线，同时为活动文档排队构建
+     下一索引版本，成功后再原子切换；
+  4. `rag-eval --retrieval-only` 支持关闭任一路召回，`run_retrieval_ablation.ps1` 固化七组
+     164 条消融矩阵；旧基线见 `docs/rag-baselines/20260810-081146-pre-chinese-fts.md`。
+- **164 条验收结果**：Fulltext-only Hit@10 从 0 提升到 0.9634（158/164）；Vector-only
+  Hit@10 为 0.9939，Vector + Fulltext 为 1.0000，补回唯一漏例 `recipe-010`。标题通道加入局部
+  `word_similarity` 后 Title-only Hit@10 为 0.2927（48/164），其余 116 条无候选且未发现错误
+  标题候选；但标题命中均被向量或全文覆盖，融合 Hit@10 独立增量为 0。
+- **完整链路**：Hit@10 1.0000、rerank 后 MRR 0.996951、Context Recall 0.857885、
+  Context Precision 0.864668、Faithfulness 0.966236、Answer Relevancy 0.939085，自动门禁全部通过。
+  数据集由 90 条历史菜谱和 74 条非菜谱组成，不代表完全通用的真实用户分布。完整配置、分层
+  指标和消融产物索引见 `docs/rag-baselines/20260811-125254-chinese-bigram-fts.md`。
 
 ### 12.3 上下文选择策略调优（中优先）
 
-- **现状**：`RAG_CONTEXT_PARENT_TOP_K=5`、文档上限 3、标题命中门控 1，均为单一配置点。
+- **现状**：`RAG_CONTEXT_PARENT_TOP_K=4`、文档上限 3、标题命中门控 1，均为单一配置点；
+  TopK=4 新基线的整体 Context Recall 为 0.857885、Context Precision 为 0.864668。
 - **建议**：
   1. 对比 Top 5 与 Top 6/8 对 Context Recall 的提升，观察 Context Precision 回退幅度；
   2. 把“标题门控”从只判断第一名扩展到前 N 名文档的标题重合度，验证多文档场景；
