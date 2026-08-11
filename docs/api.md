@@ -197,10 +197,10 @@ claim 保证同一到期任务只生成一条运行记录。
 | `POST` | `/api/v1/templates/public/{public_id}/views` | 记录有效浏览 |
 | `POST` | `/api/v1/templates/public/{public_id}/reports` | 提交举报反馈，不自动上下架 |
 
-## 每日限量 AI 深度月报
+## 每日限量免费点数活动
 
-活动按数据库配置的 `Asia/Shanghai` 时间每天 20:00 开放、20:10 关闭，共 10 个名额，固定
-消耗 100 点。连续 5 天包含活动当天，当天只计算 20:00 前完成的有效笔记。
+活动按数据库配置的 `Asia/Shanghai` 时间每天 20:00 开放、20:10 关闭，共 10 个名额，每次
+赠送 100 点。连续 5 天包含活动当天，当天只计算 20:00 前完成的有效笔记。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -208,14 +208,14 @@ claim 保证同一到期任务只生成一条运行记录。
 | `GET` | `/api/v1/ai-events/current` | 查询当前活动、资格和近似剩余名额 |
 | `GET` | `/api/v1/ai-events/history` | 查询近期活动的完全匿名成功名单 |
 | `GET` | `/api/v1/ai-events/{event_id}` | 查询指定活动及当前用户资格 |
-| `POST` | `/api/v1/ai-events/{event_id}/claims` | 携带 UUID `Idempotency-Key` 领取并排队 |
-| `GET` | `/api/v1/ai-events/{event_id}/claims/me` | 查询当前用户本场生成状态和报告 ID |
+| `POST` | `/api/v1/ai-events/{event_id}/claims` | 携带 UUID `Idempotency-Key` 领取免费点数并即时到账 |
+| `GET` | `/api/v1/ai-events/{event_id}/claims/me` | 查询当前用户本场点数领取结果 |
 
-领取通过 Redis Lua 原子预扣，PostgreSQL 唯一约束与点数账本最终裁决。成功后自动写入月报并
-保存 revision 和来源；最终失败返还点数、不返普通名额。
+领取通过 Redis Lua 原子预扣名额，PostgreSQL 唯一约束与点数账本最终裁决。领取成功后点数
+即时到账，不创建 AI 生成任务，也不自动生成报告。
 
 活动时间、持续分钟数、名额、固定点数、连续天数和月度赠送点数保存在
-`ai_flash_event_settings`，默认分别为 `Asia/Shanghai` 20:00、10 分钟、10 名、100 点、5 天和
+`ai_flash_event_settings`，默认分别为 `Asia/Shanghai` 20:00、10 分钟、10 名、赠送 100 点、5 天和
 每月 1,000 点。scheduler 预热 Redis 后才开放领取；未预热时领取 fail-closed。
 数据库字段 `reservation_ready` 记录本场预热状态；预热失败时活动详情返回 `paused`，恢复后由
 worker 重新聚合资格和点数镜像并自动置为就绪。

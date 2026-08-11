@@ -7,7 +7,7 @@ export interface AIEvent {
   closes_at: string;
   total_slots: number;
   remaining_slots: number;
-  points_cost: number;
+  points_reward: number;
   required_streak_days: number;
   status: string;
   server_time: string;
@@ -27,12 +27,10 @@ export interface AIPointBalance {
 export interface AIEventClaim {
   id: number;
   event_id: string;
-  status: 'queued' | 'running' | 'succeeded' | 'failed';
-  points_cost: number;
+  status: 'succeeded';
+  points_reward: number;
   streak_days: number;
   claimed_at: string;
-  report_note_id?: number;
-  error_code?: string;
 }
 export interface AIEventHistoryItem {
   display_name: string;

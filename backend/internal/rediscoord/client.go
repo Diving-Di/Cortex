@@ -124,7 +124,7 @@ func (c *Client) Reserve(ctx context.Context, stockKey, claimedKey, member strin
 }
 
 func (c *Client) ReservePrepared(ctx context.Context, stockKey, claimedKey, windowKey, eligibleKey, pointsKey, pendingKey, member string) (int, error) {
-	script := `if redis.call('EXISTS',KEYS[1])==0 or redis.call('EXISTS',KEYS[3])==0 then return -1 end local w=redis.call('HMGET',KEYS[3],'opens','closes','cost') local now=tonumber(redis.call('TIME')[1]) if now<tonumber(w[1]) then return -2 end if now>=tonumber(w[2]) then return -3 end if redis.call('SISMEMBER',KEYS[2],ARGV[1])==1 then return 2 end if redis.call('SISMEMBER',KEYS[4],ARGV[1])==0 then return -4 end local points=tonumber(redis.call('HGET',KEYS[5],ARGV[1]) or '-1') local cost=tonumber(w[3]) if points<cost then return -5 end local n=tonumber(redis.call('GET',KEYS[1]) or '0') if n<=0 then return 0 end redis.call('DECR',KEYS[1]) redis.call('SADD',KEYS[2],ARGV[1]) redis.call('HINCRBY',KEYS[5],ARGV[1],-cost) redis.call('ZADD',KEYS[6],now,ARGV[1]) return 1`
+	script := `if redis.call('EXISTS',KEYS[1])==0 or redis.call('EXISTS',KEYS[3])==0 then return -1 end local w=redis.call('HMGET',KEYS[3],'opens','closes') local now=tonumber(redis.call('TIME')[1]) if now<tonumber(w[1]) then return -2 end if now>=tonumber(w[2]) then return -3 end if redis.call('SISMEMBER',KEYS[2],ARGV[1])==1 then return 2 end if redis.call('SISMEMBER',KEYS[4],ARGV[1])==0 then return -4 end local n=tonumber(redis.call('GET',KEYS[1]) or '0') if n<=0 then return 0 end redis.call('DECR',KEYS[1]) redis.call('SADD',KEYS[2],ARGV[1]) redis.call('ZADD',KEYS[6],now,ARGV[1]) return 1`
 	result, err := c.commands(ctx, []string{"EVAL", script, "6", stockKey, claimedKey, windowKey, eligibleKey, pointsKey, pendingKey, member})
 	if err != nil {
 		return 0, err
@@ -151,7 +151,7 @@ func (c *Client) ConfirmReservation(ctx context.Context, pendingKey, member stri
 }
 
 func (c *Client) Compensate(ctx context.Context, stockKey, claimedKey, windowKey, pointsKey, pendingKey, member string) error {
-	script := `redis.call('ZREM',KEYS[5],ARGV[1]) if redis.call('SREM',KEYS[2],ARGV[1])==1 then redis.call('INCR',KEYS[1]) local cost=tonumber(redis.call('HGET',KEYS[3],'cost') or '0') if redis.call('HEXISTS',KEYS[4],ARGV[1])==1 then redis.call('HINCRBY',KEYS[4],ARGV[1],cost) end end return 1`
+	script := `redis.call('ZREM',KEYS[5],ARGV[1]) if redis.call('SREM',KEYS[2],ARGV[1])==1 then redis.call('INCR',KEYS[1]) end return 1`
 	_, err := c.commands(ctx, []string{"EVAL", script, "5", stockKey, claimedKey, windowKey, pointsKey, pendingKey, member})
 	return err
 }

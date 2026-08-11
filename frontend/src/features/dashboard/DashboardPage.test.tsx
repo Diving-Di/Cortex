@@ -22,7 +22,7 @@ vi.mock('../../api/aiEvents', () => ({
     opens_at: '2026-08-01T12:30:00Z',
     closes_at: '2026-08-01T12:42:00Z',
     total_slots: 7,
-    points_cost: 80,
+    points_reward: 80,
     required_streak_days: 4,
     show_dashboard_prompt: true,
   }),
@@ -43,13 +43,13 @@ function renderDashboard() {
 
 test('uses server event configuration and remembers dismissal', async () => {
   const first = renderDashboard();
-  expect(await screen.findByText('今晚 20:30 AI 深度月报限量开放')).toBeInTheDocument();
-  expect(screen.getByText(/持续 12 分钟，共 7 个名额，固定消耗 80 点/)).toBeInTheDocument();
+  expect(await screen.findByText('今晚 20:30 免费点数限量开放')).toBeInTheDocument();
+  expect(screen.getByText(/持续 12 分钟，共 7 个名额，成功领取可获得 80 点/)).toBeInTheDocument();
   fireEvent.click(screen.getByText('今日不再提醒'));
   expect(localStorage.getItem('ai-event-modal-dismissed:event-1')).toBe('1');
   first.unmount();
   renderDashboard();
   await waitFor(() =>
-    expect(screen.queryByText('今晚 20:30 AI 深度月报限量开放')).not.toBeInTheDocument(),
+    expect(screen.queryByText('今晚 20:30 免费点数限量开放')).not.toBeInTheDocument(),
   );
 });

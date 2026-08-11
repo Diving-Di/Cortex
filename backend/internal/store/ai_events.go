@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"diary-listener/backend/internal/apierror"
@@ -22,7 +21,7 @@ type AIFlashEvent struct {
 	ClosesAt            time.Time `json:"closes_at"`
 	TotalSlots          int       `json:"total_slots"`
 	RemainingSlots      int       `json:"remaining_slots"`
-	PointsCost          int64     `json:"points_cost"`
+	PointsReward        int64     `json:"points_reward"`
 	RequiredStreakDays  int       `json:"required_streak_days"`
 	Status              string    `json:"status"`
 	ServerTime          time.Time `json:"server_time"`
@@ -43,22 +42,12 @@ type AIFlashClaim struct {
 	ID           int64      `json:"id"`
 	EventID      uuid.UUID  `json:"event_id"`
 	Status       string     `json:"status"`
-	PointsCost   int64      `json:"points_cost"`
+	PointsReward int64      `json:"points_reward"`
 	StreakDays   int        `json:"streak_days"`
 	ClaimedAt    time.Time  `json:"claimed_at"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 	ReportNoteID *int32     `json:"report_note_id,omitempty"`
 	ErrorCode    *string    `json:"error_code,omitempty"`
-}
-type AIEventJob struct {
-	ID, ClaimID  int64
-	Principal    domain.Principal
-	EventDate    time.Time
-	PointsCost   int64
-	RequestID    uuid.UUID
-	AttemptCount int
-	MaxAttempts  int
-	LeaseOwner   string
 }
 type AIEventHistoryItem struct {
 	DisplayName string    `json:"display_name"`
@@ -67,7 +56,7 @@ type AIEventHistoryItem struct {
 type AIEventReservationState struct {
 	PublicID          uuid.UUID
 	OpensAt, ClosesAt time.Time
-	PointsCost        int64
+	PointsReward      int64
 	Remaining         int
 	Tenants           []uuid.UUID
 	Eligible          []AIEventEligibleTenant
@@ -85,7 +74,7 @@ func (s *Store) GetAIEventReservationState(ctx context.Context) (AIEventReservat
 	var eventDate time.Time
 	var timezone string
 	var monthlyGrant int64
-	err := s.AdminPool.QueryRow(ctx, `SELECT e.id,e.public_id,e.event_date,e.timezone,e.opens_at,e.closes_at,e.total_slots,e.claimed_slots,e.points_cost,e.required_streak_days,s.monthly_grant_points FROM ai_flash_events e JOIN ai_flash_event_settings s ON s.id=1 WHERE e.event_date >= (now() AT TIME ZONE e.timezone)::date AND e.status NOT IN('paused','cancelled') ORDER BY e.event_date LIMIT 1`).Scan(&eventID, &x.PublicID, &eventDate, &timezone, &x.OpensAt, &x.ClosesAt, &total, &claimed, &x.PointsCost, &required, &monthlyGrant)
+	err := s.AdminPool.QueryRow(ctx, `SELECT e.id,e.public_id,e.event_date,e.timezone,e.opens_at,e.closes_at,e.total_slots,e.claimed_slots,e.points_cost,e.required_streak_days,s.monthly_grant_points FROM ai_flash_events e JOIN ai_flash_event_settings s ON s.id=1 WHERE e.event_date >= (now() AT TIME ZONE e.timezone)::date AND e.status NOT IN('paused','cancelled') ORDER BY e.event_date LIMIT 1`).Scan(&eventID, &x.PublicID, &eventDate, &timezone, &x.OpensAt, &x.ClosesAt, &total, &claimed, &x.PointsReward, &required, &monthlyGrant)
 	if err != nil {
 		return x, err
 	}
@@ -257,7 +246,7 @@ func (s *Store) getAIEvent(ctx context.Context, p domain.Principal, publicID *uu
 		var eventID int64
 		var claimedCount int
 		var reservationReady bool
-		err := tx.QueryRow(ctx, `SELECT id,public_id,event_date,timezone,opens_at,closes_at,total_slots,points_cost,required_streak_days,status,reservation_ready,claimed_slots,EXISTS(SELECT 1 FROM ai_flash_claims WHERE event_id=e.id AND tenant_id=$1) FROM ai_flash_events e WHERE ($2::uuid IS NOT NULL AND public_id=$2) OR ($2::uuid IS NULL AND event_date >= (now() AT TIME ZONE timezone)::date) ORDER BY event_date LIMIT 1`, p.TenantID, publicID).Scan(&eventID, &x.PublicID, &x.EventDate, &x.Timezone, &x.OpensAt, &x.ClosesAt, &x.TotalSlots, &x.PointsCost, &x.RequiredStreakDays, &x.Status, &reservationReady, &claimedCount, &x.Claimed)
+		err := tx.QueryRow(ctx, `SELECT id,public_id,event_date,timezone,opens_at,closes_at,total_slots,points_cost,required_streak_days,status,reservation_ready,claimed_slots,EXISTS(SELECT 1 FROM ai_flash_claims WHERE event_id=e.id AND tenant_id=$1) FROM ai_flash_events e WHERE ($2::uuid IS NOT NULL AND public_id=$2) OR ($2::uuid IS NULL AND event_date >= (now() AT TIME ZONE timezone)::date) ORDER BY event_date LIMIT 1`, p.TenantID, publicID).Scan(&eventID, &x.PublicID, &x.EventDate, &x.Timezone, &x.OpensAt, &x.ClosesAt, &x.TotalSlots, &x.PointsReward, &x.RequiredStreakDays, &x.Status, &reservationReady, &claimedCount, &x.Claimed)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("AI_EVENT_NOT_FOUND", "暂无活动", 404)
 		} else if err != nil {
@@ -300,7 +289,7 @@ func (s *Store) ClaimAIEvent(ctx context.Context, p domain.Principal, publicID, 
 		} else if err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `SELECT id,status,points_cost,streak_days_at_claim,claimed_at,finished_at,report_note_id,error_code FROM ai_flash_claims WHERE event_id=$1 AND tenant_id=$2`, eventID, p.TenantID).Scan(&result.ID, &result.Status, &result.PointsCost, &result.StreakDays, &result.ClaimedAt, &result.FinishedAt, &result.ReportNoteID, &result.ErrorCode); err == nil {
+		if err := tx.QueryRow(ctx, `SELECT id,status,points_cost,streak_days_at_claim,claimed_at,finished_at,report_note_id,error_code FROM ai_flash_claims WHERE event_id=$1 AND tenant_id=$2`, eventID, p.TenantID).Scan(&result.ID, &result.Status, &result.PointsReward, &result.StreakDays, &result.ClaimedAt, &result.FinishedAt, &result.ReportNoteID, &result.ErrorCode); err == nil {
 			result.EventID = publicID
 			return nil
 		} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -340,24 +329,17 @@ func (s *Store) ClaimAIEvent(ctx context.Context, p domain.Principal, publicID, 
 		if err != nil {
 			return err
 		}
-		if balance.Available < cost {
-			return apierror.New("AI_POINTS_INSUFFICIENT", "AI 点数不足", 409)
-		}
-		if _, err := tx.Exec(ctx, `UPDATE ai_point_accounts SET held_points=held_points+$1,version=version+1,updated_at=now() WHERE tenant_id=$2`, cost, p.TenantID); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE ai_point_accounts SET granted_points=granted_points+$1,version=version+1,updated_at=now() WHERE tenant_id=$2`, cost, p.TenantID); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO ai_point_ledger(tenant_id,period_start,event_id,entry_type,points,reference_type,reference_id) VALUES($1,$2,$3,'hold',$4,'ai_flash_event',$5)`, p.TenantID, balance.PeriodStart, requestID, cost, publicID.String()); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO ai_point_ledger(tenant_id,period_start,event_id,entry_type,points,reference_type,reference_id) VALUES($1,$2,$3,'grant',$4,'ai_flash_event_reward',$5)`, p.TenantID, balance.PeriodStart, requestID, cost, publicID.String()); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO ai_flash_claims(event_id,tenant_id,user_id,request_id,status,points_cost,streak_days_at_claim) VALUES($1,$2,$3,$4,'queued',$5,$6) RETURNING id,status,points_cost,streak_days_at_claim,claimed_at,finished_at,report_note_id,error_code`, eventID, p.TenantID, p.UserID, requestID, cost, streak).Scan(&result.ID, &result.Status, &result.PointsCost, &result.StreakDays, &result.ClaimedAt, &result.FinishedAt, &result.ReportNoteID, &result.ErrorCode); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO ai_flash_claims(event_id,tenant_id,user_id,request_id,status,points_cost,streak_days_at_claim,finished_at) VALUES($1,$2,$3,$4,'succeeded',$5,$6,now()) RETURNING id,status,points_cost,streak_days_at_claim,claimed_at,finished_at,report_note_id,error_code`, eventID, p.TenantID, p.UserID, requestID, cost, streak).Scan(&result.ID, &result.Status, &result.PointsReward, &result.StreakDays, &result.ClaimedAt, &result.FinishedAt, &result.ReportNoteID, &result.ErrorCode); err != nil {
 			return err
 		}
 		result.EventID = publicID
-		_, err = tx.Exec(ctx, `INSERT INTO ai_event_jobs(claim_id) VALUES($1)`, result.ID)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'ai_flash_claim',$2,'ai_flash_claim.queued','{}')`, uuid.New(), fmt.Sprint(result.ID))
+		_, err = tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'ai_flash_claim',$2,'ai_flash_claim.succeeded','{}')`, uuid.New(), fmt.Sprint(result.ID))
 		return err
 	})
 	return result, err
@@ -370,7 +352,7 @@ func (s *Store) GetMyAIEventClaim(ctx context.Context, p domain.Principal, publi
 		if err := setTenant(ctx, tx, p); err != nil {
 			return err
 		}
-		err := tx.QueryRow(ctx, `SELECT c.id,c.status,c.points_cost,c.streak_days_at_claim,c.claimed_at,c.finished_at,c.report_note_id,c.error_code FROM ai_flash_claims c JOIN ai_flash_events e ON e.id=c.event_id WHERE c.tenant_id=$1 AND e.public_id=$2`, p.TenantID, publicID).Scan(&x.ID, &x.Status, &x.PointsCost, &x.StreakDays, &x.ClaimedAt, &x.FinishedAt, &x.ReportNoteID, &x.ErrorCode)
+		err := tx.QueryRow(ctx, `SELECT c.id,c.status,c.points_cost,c.streak_days_at_claim,c.claimed_at,c.finished_at,c.report_note_id,c.error_code FROM ai_flash_claims c JOIN ai_flash_events e ON e.id=c.event_id WHERE c.tenant_id=$1 AND e.public_id=$2`, p.TenantID, publicID).Scan(&x.ID, &x.Status, &x.PointsReward, &x.StreakDays, &x.ClaimedAt, &x.FinishedAt, &x.ReportNoteID, &x.ErrorCode)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("AI_EVENT_CLAIM_NOT_FOUND", "尚未领取", 404)
 		}
@@ -384,123 +366,11 @@ func (s *Store) GetAIEventClaim(ctx context.Context, p domain.Principal, claimID
 		if err := setTenant(ctx, tx, p); err != nil {
 			return err
 		}
-		err := tx.QueryRow(ctx, `SELECT c.id,e.public_id,c.status,c.points_cost,c.streak_days_at_claim,c.claimed_at,c.finished_at,c.report_note_id,c.error_code FROM ai_flash_claims c JOIN ai_flash_events e ON e.id=c.event_id WHERE c.tenant_id=$1 AND c.id=$2`, p.TenantID, claimID).Scan(&x.ID, &x.EventID, &x.Status, &x.PointsCost, &x.StreakDays, &x.ClaimedAt, &x.FinishedAt, &x.ReportNoteID, &x.ErrorCode)
+		err := tx.QueryRow(ctx, `SELECT c.id,e.public_id,c.status,c.points_cost,c.streak_days_at_claim,c.claimed_at,c.finished_at,c.report_note_id,c.error_code FROM ai_flash_claims c JOIN ai_flash_events e ON e.id=c.event_id WHERE c.tenant_id=$1 AND c.id=$2`, p.TenantID, claimID).Scan(&x.ID, &x.EventID, &x.Status, &x.PointsReward, &x.StreakDays, &x.ClaimedAt, &x.FinishedAt, &x.ReportNoteID, &x.ErrorCode)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("AI_EVENT_CLAIM_NOT_FOUND", "领取记录不存在", 404)
 		}
 		return err
 	})
 	return x, err
-}
-
-func (s *Store) ClaimAIEventJob(ctx context.Context, worker string) (*AIEventJob, error) {
-	tx, err := s.AdminPool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-	var x AIEventJob
-	err = tx.QueryRow(ctx, `SELECT j.id,j.claim_id,c.tenant_id,c.user_id,e.event_date,c.points_cost,c.request_id,j.attempt_count,j.max_attempts FROM ai_event_jobs j JOIN ai_flash_claims c ON c.id=j.claim_id JOIN ai_flash_events e ON e.id=c.event_id WHERE (j.status='queued' OR (j.status='running' AND j.lease_until<now())) AND j.available_at<=now() AND j.attempt_count<j.max_attempts ORDER BY j.id FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&x.ID, &x.ClaimID, &x.Principal.TenantID, &x.Principal.UserID, &x.EventDate, &x.PointsCost, &x.RequestID, &x.AttemptCount, &x.MaxAttempts)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	}
-	x.Principal.TenantActive = true
-	x.AttemptCount++
-	x.LeaseOwner = worker
-	if _, err = tx.Exec(ctx, `UPDATE ai_event_jobs SET status='running',attempt_count=attempt_count+1,lease_owner=$1,lease_until=now()+interval '5 minutes',updated_at=now() WHERE id=$2`, worker, x.ID); err == nil {
-		_, err = tx.Exec(ctx, `UPDATE ai_flash_claims SET status='running' WHERE id=$1`, x.ClaimID)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	return &x, nil
-}
-
-func (s *Store) ClaimExhaustedAIEventJob(ctx context.Context, worker string) (*AIEventJob, error) {
-	tx, err := s.AdminPool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-	var x AIEventJob
-	err = tx.QueryRow(ctx, `SELECT j.id,j.claim_id,c.tenant_id,c.user_id,e.event_date,c.points_cost,c.request_id,j.attempt_count,j.max_attempts FROM ai_event_jobs j JOIN ai_flash_claims c ON c.id=j.claim_id JOIN ai_flash_events e ON e.id=c.event_id WHERE j.status='running' AND j.attempt_count>=j.max_attempts AND j.lease_until<now() ORDER BY j.id FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&x.ID, &x.ClaimID, &x.Principal.TenantID, &x.Principal.UserID, &x.EventDate, &x.PointsCost, &x.RequestID, &x.AttemptCount, &x.MaxAttempts)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	x.Principal.TenantActive = true
-	x.LeaseOwner = worker
-	if _, err = tx.Exec(ctx, `UPDATE ai_event_jobs SET lease_owner=$1,lease_until=now()+interval '5 minutes',updated_at=now() WHERE id=$2`, worker, x.ID); err != nil {
-		return nil, err
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	return &x, nil
-}
-
-func (s *Store) RenewAIEventJobLease(ctx context.Context, jobID int64, owner string) error {
-	tag, err := s.AdminPool.Exec(ctx, `UPDATE ai_event_jobs SET lease_until=now()+interval '5 minutes',updated_at=now() WHERE id=$1 AND status='running' AND lease_owner=$2`, jobID, owner)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() != 1 {
-		return errors.New("AI event job lease lost")
-	}
-	return nil
-}
-
-func (s *Store) FinishAIEventJob(ctx context.Context, job AIEventJob, reportID *int32, runErr error) error {
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, job.Principal); err != nil {
-			return err
-		}
-		var jobStatus string
-		if err := tx.QueryRow(ctx, `SELECT status FROM ai_event_jobs WHERE id=$1 AND lease_owner=$2 FOR UPDATE`, job.ID, job.LeaseOwner).Scan(&jobStatus); errors.Is(err, pgx.ErrNoRows) {
-			return errors.New("AI event job lease lost")
-		} else if err != nil {
-			return err
-		}
-		if jobStatus != "running" {
-			return errors.New("AI event job is not running")
-		}
-		if runErr == nil {
-			if _, err := tx.Exec(ctx, `UPDATE ai_point_accounts SET held_points=held_points-$1,consumed_points=consumed_points+$1,version=version+1,updated_at=now() WHERE tenant_id=$2`, job.PointsCost, job.Principal.TenantID); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `INSERT INTO ai_point_ledger(tenant_id,period_start,event_id,entry_type,points,reference_type,reference_id) SELECT tenant_id,period_start,$1,'capture',$2,'ai_flash_claim',$3 FROM ai_point_accounts WHERE tenant_id=$4`, job.RequestID, job.PointsCost, strconv.FormatInt(job.ClaimID, 10), job.Principal.TenantID); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `UPDATE ai_flash_claims SET status='succeeded',finished_at=now(),report_note_id=$1 WHERE id=$2 AND tenant_id=$3`, reportID, job.ClaimID, job.Principal.TenantID); err != nil {
-				return err
-			}
-			_, err := tx.Exec(ctx, `UPDATE ai_event_jobs SET status='success',lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND lease_owner=$2`, job.ID, job.LeaseOwner)
-			return err
-		}
-		if job.AttemptCount < job.MaxAttempts {
-			if _, err := tx.Exec(ctx, `UPDATE ai_flash_claims SET status='queued',error_code=NULL WHERE id=$1 AND tenant_id=$2`, job.ClaimID, job.Principal.TenantID); err != nil {
-				return err
-			}
-			_, err := tx.Exec(ctx, `UPDATE ai_event_jobs SET status='queued',available_at=now()+least(interval '2 minutes',interval '5 seconds'*power(2,$2)),last_error_code='AI_EVENT_GENERATION_RETRY',lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND lease_owner=$3`, job.ID, job.AttemptCount, job.LeaseOwner)
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE ai_point_accounts SET held_points=GREATEST(0,held_points-$1),version=version+1,updated_at=now() WHERE tenant_id=$2`, job.PointsCost, job.Principal.TenantID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO ai_point_ledger(tenant_id,period_start,event_id,entry_type,points,reference_type,reference_id) SELECT tenant_id,period_start,$1,'release',$2,'ai_flash_claim',$3 FROM ai_point_accounts WHERE tenant_id=$4 ON CONFLICT DO NOTHING`, job.RequestID, job.PointsCost, strconv.FormatInt(job.ClaimID, 10), job.Principal.TenantID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE ai_flash_claims SET status='failed',finished_at=now(),error_code='AI_EVENT_GENERATION_FAILED' WHERE id=$1 AND tenant_id=$2`, job.ClaimID, job.Principal.TenantID); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `UPDATE ai_event_jobs SET status='failed',last_error_code='AI_EVENT_GENERATION_FAILED',lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND lease_owner=$2`, job.ID, job.LeaseOwner)
-		return err
-	})
 }

@@ -28,7 +28,7 @@ beforeEach(() => {
     closes_at: new Date(Date.now() + 600000).toISOString(),
     total_slots: 10,
     remaining_slots: 8,
-    points_cost: 100,
+    points_reward: 100,
     required_streak_days: 5,
     status: 'open',
     server_time: new Date().toISOString(),
@@ -60,24 +60,23 @@ function renderPage() {
 
 test('shows configured event and eligibility', async () => {
   renderPage();
-  expect(await screen.findByText('每日限量 AI 深度月报')).toBeInTheDocument();
+  expect(await screen.findByText('每日限量免费点数')).toBeInTheDocument();
   expect(screen.getByText('立即领取')).toBeEnabled();
   expect(screen.getByText('100')).toBeInTheDocument();
   expect(await screen.findByText('记录者·A1B2')).toBeInTheDocument();
 });
 
-test('shows sold-out and insufficient-points reasons', async () => {
+test('shows sold-out without requiring an existing point balance', async () => {
   state.event.remaining_slots = 0;
   state.balance.available = 20;
   renderPage();
   expect(await screen.findByText('本场名额已领完')).toBeInTheDocument();
-  expect(screen.getByText('AI 点数不足')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '立即领取' })).toBeDisabled();
 });
 
 test('resynchronizes server time when the page becomes visible', async () => {
   renderPage();
-  await screen.findByText('每日限量 AI 深度月报');
+  await screen.findByText('每日限量免费点数');
   const initialCalls = vi.mocked(getCurrentAIEvent).mock.calls.length;
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
   fireEvent(document, new Event('visibilitychange'));

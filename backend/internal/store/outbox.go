@@ -79,7 +79,7 @@ func (s *Store) GetMarketplaceMetrics(ctx context.Context) (MarketplaceMetrics, 
 		(SELECT count(*) FROM ai_flash_claims WHERE status='failed'),
 		(SELECT count(*) FROM ai_point_accounts a WHERE a.held_points<>(SELECT COALESCE(sum(CASE entry_type WHEN 'hold' THEN points WHEN 'capture' THEN -points WHEN 'release' THEN -points ELSE 0 END),0) FROM ai_point_ledger l WHERE l.tenant_id=a.tenant_id AND l.period_start=a.period_start) OR a.consumed_points<>(SELECT COALESCE(sum(points) FILTER(WHERE entry_type='capture'),0) FROM ai_point_ledger l WHERE l.tenant_id=a.tenant_id AND l.period_start=a.period_start)),
 		(SELECT count(*) FROM ai_flash_events e WHERE e.claimed_slots<>(SELECT count(*) FROM ai_flash_claims c WHERE c.event_id=e.id)),
-		(SELECT count(*) FROM ai_flash_claims c LEFT JOIN notes n ON n.id=c.report_note_id AND n.tenant_id=c.tenant_id WHERE c.status='succeeded' AND (n.id IS NULL OR NOT EXISTS(SELECT 1 FROM report_sources r WHERE r.tenant_id=c.tenant_id AND r.report_note_id=c.report_note_id))) FROM outbox_events`).Scan(&m.PendingOutbox, &m.OutboxLagSeconds, &m.QueuedClaims, &m.RunningClaims, &m.FailedClaims, &m.PointAccountsDrifted, &m.EventSlotDrifted, &m.SucceededClaimsInvalid)
+		(SELECT count(*) FROM ai_flash_claims c LEFT JOIN notes n ON n.id=c.report_note_id AND n.tenant_id=c.tenant_id WHERE c.status='succeeded' AND c.report_note_id IS NOT NULL AND (n.id IS NULL OR NOT EXISTS(SELECT 1 FROM report_sources r WHERE r.tenant_id=c.tenant_id AND r.report_note_id=c.report_note_id))) FROM outbox_events`).Scan(&m.PendingOutbox, &m.OutboxLagSeconds, &m.QueuedClaims, &m.RunningClaims, &m.FailedClaims, &m.PointAccountsDrifted, &m.EventSlotDrifted, &m.SucceededClaimsInvalid)
 	return m, err
 }
 

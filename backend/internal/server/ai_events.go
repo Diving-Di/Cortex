@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -126,11 +125,6 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_INELIGIBLE", "连续记录天数不足", 409))
 		return
 	}
-	if reserved == -5 {
-		aiEventClaimsError.Add(1)
-		httpx.WriteError(w, s.logger, apierror.New("AI_POINTS_INSUFFICIENT", "AI 点数不足", 409))
-		return
-	}
 	if reserved == 0 {
 		aiEventClaimsSoldOut.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_SOLD_OUT", "活动名额已领完", 409))
@@ -143,7 +137,7 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_ALREADY_CLAIMED", "本场活动已经领取", 409))
 			return
 		}
-		httpx.JSON(w, http.StatusAccepted, x)
+		httpx.JSON(w, http.StatusOK, x)
 		return
 	}
 	x, err := s.store.ClaimAIEvent(r.Context(), principal, eventID, requestID)
@@ -155,7 +149,7 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.redis.ConfirmReservation(r.Context(), pendingKey, member)
 	aiEventClaimsReserved.Add(1)
-	httpx.JSON(w, http.StatusAccepted, x)
+	httpx.JSON(w, http.StatusOK, x)
 }
 func aiEventReservationMember(tenantID uuid.UUID) string {
 	digest := sha256.Sum256([]byte(tenantID.String()))
@@ -189,7 +183,6 @@ func (s *Server) getAIEventClaim(w http.ResponseWriter, r *http.Request) {
 }
 
 func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, logger *slog.Logger) {
-	s := &Server{cfg: cfg, store: db, logger: logger}
 	coord, _ := rediscoord.New(cfg.RedisURL)
 	go func() {
 		ticker := time.NewTicker(time.Minute)
@@ -215,7 +208,7 @@ func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, 
 						for _, item := range state.Eligible {
 							eligible[aiEventReservationMember(item.TenantID)] = item.Available
 						}
-						if err := coord.WarmEvent(ctx, stock, claimed, window, eligibleKey, pointsKey, pendingKey, state.OpensAt, state.ClosesAt, state.Remaining, state.PointsCost, members, eligible, ttl); err != nil {
+						if err := coord.WarmEvent(ctx, stock, claimed, window, eligibleKey, pointsKey, pendingKey, state.OpensAt, state.ClosesAt, state.Remaining, state.PointsReward, members, eligible, ttl); err != nil {
 							logger.Error("warm AI event reservation", "error", err)
 						} else {
 							ready = true
@@ -235,108 +228,4 @@ func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, 
 			}
 		}
 	}()
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		worker := uuid.NewString()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				job, err := db.ClaimAIEventJob(ctx, worker)
-				if err != nil {
-					logger.Error("claim AI event job", "error", err)
-					continue
-				}
-				if job != nil {
-					s.executeAIEventJob(ctx, *job)
-					continue
-				}
-				exhausted, err := db.ClaimExhaustedAIEventJob(ctx, worker)
-				if err != nil {
-					logger.Error("claim exhausted AI event job", "error", err)
-					continue
-				}
-				if exhausted != nil {
-					if err := db.FinishAIEventJob(ctx, *exhausted, nil, apierror.New("AI_EVENT_MAX_ATTEMPTS", "活动生成重试次数已用尽", 503)); err != nil {
-						logger.Error("finalize exhausted AI event job", "error", err)
-					}
-				}
-			}
-		}
-	}()
-}
-func (s *Server) executeAIEventJob(ctx context.Context, job store.AIEventJob) {
-	started := time.Now()
-	inputRunes, outputRunes := 0, 0
-	leaseCtx, stopLease := context.WithCancel(ctx)
-	defer stopLease()
-	go func() {
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-leaseCtx.Done():
-				return
-			case <-ticker.C:
-				if err := s.store.RenewAIEventJobLease(leaseCtx, job.ID, job.LeaseOwner); err != nil {
-					s.logger.Error("renew AI event job lease", "job_id", job.ID, "error", err)
-					return
-				}
-			}
-		}
-	}()
-	_, _, sources, err := s.store.ReportSources(ctx, job.Principal, "monthly", job.EventDate)
-	if err == nil && len(sources) == 0 {
-		err = apierror.New("REPORT_NO_SOURCES", "所选周期没有来源笔记", 422)
-	}
-	if err == nil && s.cfg.AIAPIKey == "" {
-		err = apierror.New("AI_NOT_CONFIGURED", "AI 未配置", 503)
-	}
-	var reportID *int32
-	if err == nil {
-		var material strings.Builder
-		for _, source := range sources {
-			fmt.Fprintf(&material, "[来源 #%d %s %s]\n%s\n\n", source.ID, optionalText(source.NoteDate), source.Title, source.Snippet)
-		}
-		prompt := "仅依据以下来源撰写深度月报，使用 [#笔记ID] 引用，不得虚构。\n" + material.String()
-		inputRunes = len([]rune(prompt))
-		events, streamErr := s.aiWorkflow().GenerateReport(s.aiContext(ctx, "ai_flash_monthly_report", job.Principal), prompt)
-		err = streamErr
-		var content strings.Builder
-		if err == nil {
-			for event := range events {
-				if event.Err != nil {
-					err = event.Err
-					break
-				}
-				content.WriteString(event.Content)
-			}
-			outputRunes = len([]rune(content.String()))
-		}
-		if err == nil {
-			result, e := s.store.ConfirmReport(ctx, job.Principal, "monthly", job.EventDate, fmt.Sprintf("%s AI 深度月报", job.EventDate.Format("2006-01")), content.String(), sourceIDs(sources), true)
-			err = e
-			if e == nil {
-				id := result["id"].(int32)
-				reportID = &id
-			}
-		}
-	}
-	status := "success"
-	var usageCode *string
-	if err != nil {
-		status = "error"
-		code := "AI_EVENT_GENERATION_FAILED"
-		usageCode = &code
-	}
-	usageCtx, cancelUsage := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancelUsage()
-	if usageErr := s.store.RecordAIUsage(usageCtx, job.Principal, store.AIUsage{RequestType: "ai_flash_monthly_report", Model: s.cfg.AIModel, InputTokens: max(1, inputRunes/4), OutputTokens: outputRunes / 4, Duration: time.Since(started), Status: status, ErrorCode: usageCode}); usageErr != nil {
-		s.logger.Error("record AI event usage", "claim_id", job.ClaimID, "error", usageErr)
-	}
-	if finishErr := s.store.FinishAIEventJob(ctx, job, reportID, err); finishErr != nil {
-		s.logger.Error("finish AI event job", "error", finishErr)
-	}
 }

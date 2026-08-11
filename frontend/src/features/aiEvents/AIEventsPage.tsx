@@ -1,18 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Card, List, Progress, Space, Spin, Statistic, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
 import {
   claimAIEvent,
   getAIEventHistory,
   getAIPointBalance,
   getCurrentAIEvent,
-  getMyAIEventClaim,
 } from '../../api/aiEvents';
 
 export default function AIEventsPage() {
   const qc = useQueryClient(),
-    nav = useNavigate(),
     [clock, setClock] = useState(Date.now()),
     [serverOffset, setServerOffset] = useState(0);
   useEffect(() => {
@@ -41,20 +38,12 @@ export default function AIEventsPage() {
     document.addEventListener('visibilitychange', sync);
     return () => document.removeEventListener('visibilitychange', sync);
   }, [event]);
-  const claim = useQuery({
-    queryKey: ['ai-event-claim', event.data?.id],
-    queryFn: () => getMyAIEventClaim(event.data!.id),
-    enabled: !!event.data?.claimed,
-    retry: false,
-    refetchInterval: (q) =>
-      ['queued', 'running'].includes(q.state.data?.status || '') ? 2000 : false,
-  });
   const mutation = useMutation({
     mutationFn: () => claimAIEvent(event.data!.id),
     onSuccess: () => {
-      message.success('领取成功，月报正在生成');
+      message.success(`领取成功，已到账 ${event.data!.points_reward} 点`);
       qc.invalidateQueries({ queryKey: ['ai-event'] });
-      qc.invalidateQueries({ queryKey: ['ai-event-claim'] });
+      qc.invalidateQueries({ queryKey: ['ai-points'] });
     },
     onError: (e: any) => message.error(e?.response?.data?.message || '领取失败'),
   });
@@ -75,7 +64,7 @@ export default function AIEventsPage() {
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <Card
-        title="每日限量 AI 深度月报"
+        title="每日限量免费点数"
         extra={
           <Tag color={open ? 'green' : phase === 'closed' ? 'default' : 'blue'}>
             {open ? '领取中' : phase === 'closed' ? '已结束' : '未开放'}
@@ -92,7 +81,7 @@ export default function AIEventsPage() {
             value={event.data.remaining_slots}
             suffix={`/ ${event.data.total_slots}`}
           />
-          <Statistic title="固定点数" value={event.data.points_cost} />
+          <Statistic title="本次赠送" value={event.data.points_reward} suffix="点" />
           <Statistic title="可用点数" value={balance.data.available} />
         </Space>
         <Progress
@@ -104,11 +93,7 @@ export default function AIEventsPage() {
           type="primary"
           size="large"
           disabled={
-            !open ||
-            !event.data.eligible ||
-            event.data.claimed ||
-            event.data.remaining_slots <= 0 ||
-            balance.data.available < event.data.points_cost
+            !open || !event.data.eligible || event.data.claimed || event.data.remaining_slots <= 0
           }
           loading={mutation.isPending}
           onClick={() => mutation.mutate()}
@@ -122,9 +107,6 @@ export default function AIEventsPage() {
             message={`连续记录天数不足（活动当天需在 ${opensLabel} 前完成）`}
           />
         )}
-        {event.data.eligible && balance.data.available < event.data.points_cost && (
-          <Alert style={{ marginTop: 16 }} type="warning" message="AI 点数不足" />
-        )}
         {!event.data.claimed && event.data.remaining_slots <= 0 && (
           <Alert style={{ marginTop: 16 }} type="warning" message="本场名额已领完" />
         )}
@@ -132,19 +114,6 @@ export default function AIEventsPage() {
           <Alert style={{ marginTop: 16 }} type="success" message="本场活动已经领取" />
         )}
       </Card>
-      {claim.data && (
-        <Card title="生成状态">
-          <Tag>{claim.data.status}</Tag>
-          {claim.data.status === 'succeeded' && claim.data.report_note_id && (
-            <Button onClick={() => nav(`/notes/${claim.data!.report_note_id}`)}>
-              查看自动写入的月报
-            </Button>
-          )}
-          {claim.data.status === 'failed' && (
-            <Alert type="error" message="生成失败，点数已返还；普通名额不返还" />
-          )}
-        </Card>
-      )}
       <Card title="近期成功记录（完全匿名）">
         <List
           loading={history.isLoading}

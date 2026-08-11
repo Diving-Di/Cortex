@@ -69,10 +69,10 @@ func TestRedisCoordinationIntegration(t *testing.T) {
 	if got, err := c.ReservePrepared(ctx, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, "a"); err != nil || got != -3 {
 		t.Fatalf("closed got=%d err=%v", got, err)
 	}
-	if err := c.WarmEvent(ctx, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, time.Now().Add(-time.Minute), time.Now().Add(time.Minute), 2, 100, nil, eligible, time.Minute); err != nil {
+	if err := c.WarmEvent(ctx, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, time.Now().Add(-time.Minute), time.Now().Add(time.Minute), 3, 100, nil, eligible, time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	for i, want := range []int{1, 1, -5, -4} {
+	for i, want := range []int{1, 1, 1, -4} {
 		got, err := c.ReservePrepared(ctx, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, string(rune('a'+i)))
 		if err != nil || got != want {
 			t.Fatalf("prepared %d got=%d want=%d err=%v", i, got, want, err)

@@ -42,7 +42,7 @@ if (@($recommendedAfterReport.items | Where-Object { $_.public_id -eq $published
 $detail = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/templates/public/$($published.public_id)" -Headers $headers
 if (!$detail.liked -or !$detail.favorited) { throw "template reactions were not persisted" }
 $event = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/ai-events/current" -Headers $headers
-if ($event.total_slots -ne 10 -or $event.points_cost -ne 100) { throw "event configuration mismatch" }
+if ($event.total_slots -ne 10 -or $event.points_reward -ne 100) { throw "event configuration mismatch" }
 $balance = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/ai-points/balance" -Headers $headers
 if ($balance.available -lt 100) { throw "point account was not initialized" }
 Write-Output "template and AI event acceptance passed"

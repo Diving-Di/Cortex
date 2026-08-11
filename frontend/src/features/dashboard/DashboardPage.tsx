@@ -133,7 +133,7 @@ export default function DashboardPage() {
       <OfflineStatus />
       <Modal
         open={eventOpen}
-        title={eventTime ? `今晚 ${eventTime} AI 深度月报限量开放` : 'AI 深度月报限量开放'}
+        title={eventTime ? `今晚 ${eventTime} 免费点数限量开放` : '免费点数限量开放'}
         onOk={() => navigate('/ai-events')}
         okText="查看活动"
         cancelText="今日不再提醒"
@@ -145,8 +145,8 @@ export default function DashboardPage() {
       >
         {aiEvent.data && (
           <p>
-            持续 {eventDuration} 分钟，共 {aiEvent.data.total_slots} 个名额，固定消耗{' '}
-            {aiEvent.data.points_cost} 点。连续记录 {aiEvent.data.required_streak_days}{' '}
+            持续 {eventDuration} 分钟，共 {aiEvent.data.total_slots} 个名额，成功领取可获得{' '}
+            {aiEvent.data.points_reward} 点。连续记录 {aiEvent.data.required_streak_days}{' '}
             天（含活动当天）即可参与。
           </p>
         )}

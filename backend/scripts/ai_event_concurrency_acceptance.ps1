@@ -66,16 +66,16 @@ finally {
     Wait-ServiceHealthy "llm-gateway"
 }
 
-$accepted = @($results | Where-Object Status -eq 202).Count
+$accepted = @($results | Where-Object Status -eq 200).Count
 $rejected = @($results | Where-Object Status -eq 409).Count
 if ($accepted -ne 10 -or $rejected -ne 2) {
     throw "unexpected claim results: accepted=$accepted rejected=$rejected statuses=$($results.Status -join ',')"
 }
 
 $facts = docker compose exec -T db psql -U diary_migrator -d diary_listener -At -F ',' -c `
-    "SELECT e.claimed_slots,count(DISTINCT c.tenant_id),count(DISTINCT j.id),(SELECT count(*) FROM ai_point_ledger l WHERE l.entry_type='hold' AND l.reference_type='ai_flash_event' AND l.reference_id=e.public_id::text) FROM ai_flash_events e LEFT JOIN ai_flash_claims c ON c.event_id=e.id LEFT JOIN ai_event_jobs j ON j.claim_id=c.id WHERE e.public_id='$eventID'::uuid GROUP BY e.id,e.public_id,e.claimed_slots"
+    "SELECT e.claimed_slots,count(DISTINCT c.tenant_id),count(DISTINCT j.id),(SELECT count(*) FROM ai_point_ledger l WHERE l.entry_type='grant' AND l.reference_type='ai_flash_event_reward' AND l.reference_id=e.public_id::text) FROM ai_flash_events e LEFT JOIN ai_flash_claims c ON c.event_id=e.id LEFT JOIN ai_event_jobs j ON j.claim_id=c.id WHERE e.public_id='$eventID'::uuid GROUP BY e.id,e.public_id,e.claimed_slots"
 $parts = $facts.Trim().Split(',')
-if ($parts.Count -ne 4 -or ($parts | Where-Object { [int]$_ -ne 10 }).Count -ne 0) {
+if ($parts.Count -ne 4 -or [int]$parts[0] -ne 10 -or [int]$parts[1] -ne 10 -or [int]$parts[2] -ne 0 -or [int]$parts[3] -ne 10) {
     throw "database facts are inconsistent: $facts"
 }
 
@@ -86,5 +86,5 @@ if ($parts.Count -ne 4 -or ($parts | Where-Object { [int]$_ -ne 10 }).Count -ne 
     SoldOut = $rejected
     Claims = [int]$parts[1]
     Jobs = [int]$parts[2]
-    Holds = [int]$parts[3]
+    RewardGrants = [int]$parts[3]
 } | ConvertTo-Json -Compress
