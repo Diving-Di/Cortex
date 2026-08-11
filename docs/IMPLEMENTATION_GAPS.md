@@ -19,8 +19,8 @@
 - 运行后端 vet、测试和 server/migrate 构建。
 - 运行前端格式检查、测试和生产构建。
 - 运行 `docker compose config --quiet`。
-- 在完整环境运行 `non_ai_smoke.ps1`、`ai_acceptance.ps1`、`research_acceptance.ps1`、
-  `template_ai_event_acceptance.ps1`、`backup_acceptance.ps1`。
+- 在完整环境运行 `non_ai_smoke.ps1`、`ai_acceptance.ps1`、`research_acceptance.ps1` 和
+  `template_ai_event_acceptance.ps1`。
 - 验证个人知识库：上传 `.md` / `.zip`、配额与并发预占、文档删除后退出检索、笔记知识开关、
   混合问答的来源保存与 `KNOWLEDGE_NO_EVIDENCE`、跨租户 404 隔离。
 - 确认新实例能由 `backend/db/schema.sql` 基线加版本化迁移完成初始化（当前共 51 张表），

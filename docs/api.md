@@ -113,12 +113,17 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 | --- | --- |
 | `POST /api/v1/knowledge/uploads` | 上传一个 `.md` 或 `.zip`，安全落盘后返回 202 |
 | `GET /api/v1/knowledge/uploads/{id}` | 查询上传和索引状态 |
-| `GET /api/v1/knowledge/documents` | 列出当前租户文档与 3 GiB 配额 |
+| `GET /api/v1/knowledge/documents` | 列出当前租户文档、最新索引任务状态与 3 GiB 配额 |
 | `DELETE /api/v1/knowledge/documents/{id}` | 使文档立即退出检索并删除 |
 | `PATCH /api/v1/notes/{id}/knowledge` | 开启或关闭笔记知识索引 |
 | `POST /api/v1/knowledge/chat/stream` | 在服务端验证的范围内混合检索、精排并 SSE 回答 |
 
+流式生成只有收到 `done`（知识问答）或 `[DONE]`（通用 AI）才算完成。上游在已输出内容后失败时发送 `error` 事件，不再发送完成标记；载荷包含 `incomplete`、`output_tokens` 和 `upstream_stage`。知识问答会把部分回答以 `failed` 状态保存，客户端应复用 `request_id` 查询/展示同一次请求，不得自动从头重试。供应商 continuation token 未接入前不执行续写。
+
 客户端提交的 `tenant_id` 始终被忽略；无当前租户证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
+已有活动索引的文档在重建期间仍返回 `Status: "ready"`；`index_job_status` 单独表示
+`queued`、`running`、`success` 或 `failed`。重建失败通过 `last_index_failure_code` 暴露，旧索引
+继续可查询；只有 `active_index_version=0` 的首次索引最终失败时，文档才进入 `failed`。
 
 ## 用户设置
 
@@ -218,17 +223,8 @@ worker 重新聚合资格和点数镜像并自动置为就绪。
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/api/v1/exports/markdown` | 下载全部有效笔记的 Markdown ZIP |
-| `GET` | `/api/v1/backups/full` | 下载版本化完整备份 ZIP |
-| `POST` | `/api/v1/backups/full/restore` | 将完整备份 ZIP 恢复到空租户 |
 
-Markdown ZIP 只用于内容交换。完整备份使用 `cortex-full-backup-v1` 格式，包含笔记、标签、
-版本、附件、定时报告、私有模板、个人收藏以及研究来源、草稿和资产；模板恢复后统一为
-`private`。公开快照、公共排名、举报和活动库存不进入备份；当前完整备份也不包含个人知识库上传、索引与
-问答数据（`knowledge_*` 表）。恢复旧备份时会忽略其中的个人知识数据及
-研究知识关联字段；不包含 Token、AI Provider、
-用量、敏感审计、小红书 Cookie 或授权尝试。恢复会重新分配并映射资源 ID，校验 ZIP 路径和
-文件 SHA-256，且只允许目标租户为空时执行。数据库与文件卷的基础设施灾备仍由部署者负责。
-备份超过目标租户的笔记或附件配额时返回 `BACKUP_RESTORE_QUOTA_EXCEEDED`。
+Markdown ZIP 只用于内容交换。数据库与文件卷的基础设施灾备由部署者负责。
 
 ## 小红书研究
 

@@ -14,6 +14,7 @@ type ChatRequest struct {
 
 type StreamEvent struct {
 	Content string
+	Type    string
 	Err     error
 }
 

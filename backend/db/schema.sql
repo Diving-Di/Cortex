@@ -301,6 +301,10 @@ CREATE TABLE public.messages (
     tenant_id uuid NOT NULL,
     status character varying(20) DEFAULT 'complete'::character varying NOT NULL,
     request_id character varying(128),
+    error_code character varying(64),
+    upstream_stage character varying(64),
+    output_tokens integer DEFAULT 0 NOT NULL,
+	CONSTRAINT messages_output_tokens_check CHECK ((output_tokens >= 0)),
     CONSTRAINT messages_status_check CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('complete'::character varying)::text, ('failed'::character varying)::text, ('cancelled'::character varying)::text])))
 );
 
@@ -1294,7 +1298,7 @@ COPY public.message_sources (id, tenant_id, message_id, note_id, snippet, releva
 -- Data for Name: messages; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.messages (id, conversation_id, role, content, created_at, tenant_id, status, request_id) FROM stdin;
+COPY public.messages (id, conversation_id, role, content, created_at, tenant_id, status, request_id, error_code, upstream_stage, output_tokens) FROM stdin;
 \.
 
 

@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode"
 
 	"diary-listener/backend/internal/apierror"
 	"diary-listener/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/text/unicode/norm"
 )
 
 type KnowledgeCandidate struct {
@@ -107,10 +109,26 @@ AND c.index_version=d.active_index_version AND c.embedding_model=$4 AND c.embedd
 AND (coalesce(cardinality($3::uuid[]),0)=0 OR d.collection_id=ANY($3)) AND (d.source_type<>'note' OR n.deleted_at IS NULL)),
 v AS (SELECT id,parent_id,row_number() OVER(ORDER BY embedding <=> $2::vector) rank FROM eligible LIMIT $6),
 f AS (SELECT id,parent_id,row_number() OVER(ORDER BY ts_rank_cd(to_tsvector('simple',embedding_text),plainto_tsquery('simple',$5)) DESC) rank FROM eligible WHERE to_tsvector('simple',embedding_text) @@ plainto_tsquery('simple',$5) LIMIT $7),
+title_base AS (
+  SELECT DISTINCT document_id,title,
+    regexp_replace(lower(regexp_replace(normalize(trim(title),NFKC),'\.md$','','i')),'[[:space:][:punct:]，。！？；：、“”‘’（）【】《》·]+','','g') normalized_title,
+    regexp_replace(lower(regexp_replace(normalize(trim($5),NFKC),'\.md$','','i')),'[[:space:][:punct:]，。！？；：、“”‘’（）【】《》·]+','','g') normalized_query
+  FROM eligible
+),
 title_docs AS (
-  SELECT DISTINCT document_id FROM eligible
-  WHERE position(replace(replace(lower(title),'的做法',''),' ','') in replace(lower($5),' ','')) > 0
-     OR position(replace(lower($5),' ','') in replace(replace(lower(title),'的做法',''),' ','')) > 0
+  SELECT document_id FROM title_base
+  WHERE lower(trim(title))=lower(trim($5))
+     OR normalized_title=normalized_query
+     OR (char_length(normalized_title)>=4 AND position(normalized_title in normalized_query)>0)
+     OR (char_length(normalized_title)>=4 AND char_length(normalized_query)>=4 AND similarity(normalized_title,normalized_query)>=0.35)
+  ORDER BY CASE
+    WHEN lower(trim(title))=lower(trim($5)) THEN 1
+    WHEN normalized_title=normalized_query THEN 2
+    WHEN char_length(normalized_title)>=4 AND position(normalized_title in normalized_query)>0 THEN 3
+    ELSE 4 END,
+    similarity(normalized_title,normalized_query) DESC,
+    char_length(normalized_title) DESC,
+    document_id
   LIMIT 5
 ),
 t AS (SELECT id,parent_id,row_number() OVER(ORDER BY embedding <=> $2::vector) rank FROM eligible WHERE document_id IN (SELECT document_id FROM title_docs) LIMIT $8),
@@ -150,7 +168,7 @@ func SelectKnowledgeContexts(query string, items []KnowledgeCandidate, limit int
 	}
 	docLimit := min(3, limit)
 	queryKey := normalizeKnowledgeTitle(query)
-	if titleKey := normalizeKnowledgeTitle(items[0].Title); titleKey != "" && strings.Contains(queryKey, titleKey) {
+	if titleKey := normalizeKnowledgeTitle(items[0].Title); titleMatchEligible(titleKey) && strings.Contains(queryKey, titleKey) {
 		docLimit = 1
 	}
 	documents := make([]uuid.UUID, 0, docLimit)
@@ -195,12 +213,21 @@ func SelectKnowledgeContexts(query string, items []KnowledgeCandidate, limit int
 }
 
 func normalizeKnowledgeTitle(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ToLower(norm.NFKC.String(strings.TrimSpace(value)))
 	value = strings.TrimSuffix(value, ".md")
-	value = strings.TrimSuffix(value, "的做法")
-	return strings.ReplaceAll(value, " ", "")
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			return r
+		}
+		return -1
+	}, value)
 }
-func (s *Store) SaveKnowledgeAnswer(ctx context.Context, p domain.Principal, conversationID *int32, requestID, question, answer string, sources []KnowledgeCandidate) (int32, int32, error) {
+
+func titleMatchEligible(value string) bool {
+	return len([]rune(value)) >= 4
+}
+
+func (s *Store) SaveKnowledgeAnswer(ctx context.Context, p domain.Principal, conversationID *int32, requestID, question, answer, status, errorCode, upstreamStage string, outputTokens int, sources []KnowledgeCandidate) (int32, int32, error) {
 	var messageID, savedConversationID int32
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, p); err != nil {
@@ -226,7 +253,7 @@ func (s *Store) SaveKnowledgeAnswer(ctx context.Context, p domain.Principal, con
 		if _, err := tx.Exec(ctx, `INSERT INTO messages(tenant_id,conversation_id,role,content,status,request_id) VALUES($1,$2,'user',$3,'complete',nullif($4,''))`, p.TenantID, savedConversationID, question, requestID); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO messages(tenant_id,conversation_id,role,content,status) VALUES($1,$2,'assistant',$3,'complete') RETURNING id`, p.TenantID, savedConversationID, answer).Scan(&messageID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO messages(tenant_id,conversation_id,role,content,status,error_code,upstream_stage,output_tokens) VALUES($1,$2,'assistant',$3,$4,nullif($5,''),nullif($6,''),$7) RETURNING id`, p.TenantID, savedConversationID, answer, status, errorCode, upstreamStage, outputTokens).Scan(&messageID); err != nil {
 			return err
 		}
 		for _, src := range sources {

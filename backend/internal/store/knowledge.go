@@ -24,6 +24,8 @@ type KnowledgeDocument struct {
 	ActiveIndexVersion        int     `json:"active_index_version"`
 	FailureCode               *string `json:"failure_code,omitempty"`
 	FailureSummary            *string `json:"failure_summary,omitempty"`
+	LastIndexFailureCode      *string `json:"last_index_failure_code,omitempty"`
+	IndexJobStatus            *string `json:"index_job_status,omitempty"`
 	CreatedAt, UpdatedAt      time.Time
 }
 type KnowledgeUpload struct {
@@ -66,7 +68,7 @@ func (s *Store) RetryKnowledgeDocument(ctx context.Context, p domain.Principal, 
 			return err
 		}
 		var version int
-		if err := tx.QueryRow(ctx, `UPDATE knowledge_documents SET status='indexing',failure_code=NULL,failure_summary=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING active_index_version+1`, p.TenantID, id).Scan(&version); errors.Is(err, pgx.ErrNoRows) {
+		if err := tx.QueryRow(ctx, `UPDATE knowledge_documents SET status=CASE WHEN active_index_version=0 THEN 'indexing' ELSE 'ready' END,failure_code=CASE WHEN active_index_version=0 THEN NULL ELSE failure_code END,failure_summary=CASE WHEN active_index_version=0 THEN NULL ELSE failure_summary END,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND knowledge_enabled RETURNING active_index_version+1`, p.TenantID, id).Scan(&version); errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("KNOWLEDGE_SCOPE_NOT_FOUND", "知识库资源不存在", 404)
 		} else if err != nil {
 			return err
@@ -188,14 +190,14 @@ func (s *Store) ListKnowledgeDocuments(ctx context.Context, p domain.Principal) 
 			return err
 		}
 		_ = tx.QueryRow(ctx, `SELECT used_bytes,reserved_bytes FROM knowledge_quotas WHERE tenant_id=$1`, p.TenantID).Scan(&used, &reserved)
-		rows, err := tx.Query(ctx, `SELECT id,upload_id,collection_id,source_type,title,status,stored_path,size_bytes,active_index_version,failure_code,failure_summary,created_at,updated_at FROM knowledge_documents WHERE tenant_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC`, p.TenantID)
+		rows, err := tx.Query(ctx, `SELECT d.id,d.upload_id,d.collection_id,d.source_type,d.title,d.status,d.stored_path,d.size_bytes,d.active_index_version,d.failure_code,d.failure_summary,d.last_index_failure_code,j.status,d.created_at,d.updated_at FROM knowledge_documents d LEFT JOIN LATERAL (SELECT status FROM knowledge_index_jobs WHERE tenant_id=d.tenant_id AND document_id=d.id ORDER BY target_index_version DESC,id DESC LIMIT 1) j ON true WHERE d.tenant_id=$1 AND d.deleted_at IS NULL ORDER BY d.updated_at DESC`, p.TenantID)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var v KnowledgeDocument
-			if err := rows.Scan(&v.ID, &v.UploadID, &v.CollectionID, &v.SourceType, &v.Title, &v.Status, &v.StoredPath, &v.SizeBytes, &v.ActiveIndexVersion, &v.FailureCode, &v.FailureSummary, &v.CreatedAt, &v.UpdatedAt); err != nil {
+			if err := rows.Scan(&v.ID, &v.UploadID, &v.CollectionID, &v.SourceType, &v.Title, &v.Status, &v.StoredPath, &v.SizeBytes, &v.ActiveIndexVersion, &v.FailureCode, &v.FailureSummary, &v.LastIndexFailureCode, &v.IndexJobStatus, &v.CreatedAt, &v.UpdatedAt); err != nil {
 				return err
 			}
 			out = append(out, v)
@@ -251,11 +253,11 @@ func (s *Store) SetNoteKnowledge(ctx context.Context, p domain.Principal, noteID
 			return err
 		}
 		var id uuid.UUID
-		err = tx.QueryRow(ctx, `INSERT INTO knowledge_documents(tenant_id,source_type,note_id,title,content_hash,status,knowledge_enabled) VALUES($1,'note',$2,$3,encode(digest(convert_to($4,'UTF8'),'sha256'),'hex'),'indexing',true) ON CONFLICT (tenant_id,note_id) WHERE source_type='note' DO UPDATE SET title=excluded.title,content_hash=excluded.content_hash,status='indexing',knowledge_enabled=true,deleted_at=NULL,updated_at=now() RETURNING id`, p.TenantID, noteID, title, content).Scan(&id)
+		err = tx.QueryRow(ctx, `INSERT INTO knowledge_documents(tenant_id,source_type,note_id,title,content_hash,status,knowledge_enabled) VALUES($1,'note',$2,$3,encode(digest(convert_to($4,'UTF8'),'sha256'),'hex'),'indexing',true) ON CONFLICT (tenant_id,note_id) WHERE source_type='note' DO UPDATE SET title=excluded.title,content_hash=excluded.content_hash,status=CASE WHEN knowledge_documents.active_index_version=0 THEN 'indexing' ELSE 'ready' END,knowledge_enabled=true,deleted_at=NULL,updated_at=now() RETURNING id`, p.TenantID, noteID, title, content).Scan(&id)
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO knowledge_index_jobs(tenant_id,document_id,target_index_version) SELECT $1,$2,active_index_version+1 FROM knowledge_documents WHERE tenant_id=$1 AND id=$2 ON CONFLICT DO NOTHING`, p.TenantID, id)
+		_, err = tx.Exec(ctx, `INSERT INTO knowledge_index_jobs(tenant_id,document_id,target_index_version) SELECT $1,$2,active_index_version+1 FROM knowledge_documents WHERE tenant_id=$1 AND id=$2 ON CONFLICT(tenant_id,document_id,target_index_version) DO UPDATE SET status='queued',available_at=now(),failure_code=NULL,lease_owner=NULL,lease_until=NULL,updated_at=now()`, p.TenantID, id)
 		return err
 	})
 }

@@ -53,7 +53,9 @@ flowchart LR
 
 - 语料来自：单文件 `.md`、包含 Markdown 的 `.zip`（仅处理 `.md`、`.png`、`.jpg`，其他类型条目跳过）、以及
   通过 `PATCH /api/v1/notes/{id}/knowledge` 开启参与问答的个人笔记；每租户容量上限 3 GiB。
-- 文档状态机为 `uploaded → parsing → indexing → ready`，失败为 `failed`，删除为 `deleting`。
+- 首次索引的文档状态机为 `uploaded → parsing → indexing → ready`，最终失败为 `failed`，删除为
+  `deleting`。已有 `active_index_version` 的文档重建时保持 `ready`，后台进度由最新
+  `knowledge_index_jobs.status` 表示，失败只记录 `last_index_failure_code`。
 - 检索只覆盖 `status='ready'`、`deleted_at IS NULL`、`knowledge_enabled` 的文档，且
   `child.index_version = document.active_index_version`；`source_type='note'` 的文档还要保证
   对应笔记未被软删除。
@@ -85,11 +87,14 @@ flowchart LR
 - 后台 `RunKnowledgeIndexer`（`backend/internal/server/knowledge_worker.go`）轮询
   `knowledge_index_jobs`：claim 任务 → 读取正文 → `knowledge.Chunk` → embedding →
   `WriteKnowledgeChunks` 原子写入新版本并切换 `active_index_version`；
-- 重建期间旧 `active_index_version` 继续服务；任一步失败则该文档保持旧版本，并记录稳定
+- 重建期间文档保持 `ready`，旧 `active_index_version` 继续服务；任一步失败则该文档保持旧版本，并记录稳定
   错误码（`KNOWLEDGE_MARKDOWN_INVALID`、`KNOWLEDGE_EMBEDDING_UNAVAILABLE`、
   `KNOWLEDGE_INDEX_FAILED` 等）；
 - 检索 SQL 始终要求 `child.index_version = document.active_index_version`，不会混用同一文档
   的两个版本。
+- 新版本 N 成功激活后保留 N 与 N-1，删除更早的 parent/child chunk。旧版本因此至少跨过一个
+  完整成功重建周期才会清理，可用于短期回滚和新旧结果对比；历史
+  `knowledge_message_sources` 保存的标题、摘要与 `index_version` 元数据不受 chunk 清理影响。
 
 ## 4. Query 处理策略
 
@@ -122,8 +127,10 @@ child 上按 cosine distance `<=>` 排序取 `RAG_VECTOR_TOP_K`（默认 15）�
 
 ### 5.3 标题文档内向量召回
 
-先找“标题包含 query 或 query 包含标题”的文档（去空格、去 `.md`、去“的做法”后缀，最多
-5 篇），再在这批文档内按 query 向量召回 `RAG_TITLE_TOP_K`（默认 10）。该通道用于把
+先按“原始标题精确、通用规范化标题精确、至少 4 字符的完整短语、trigram 相似度 ≥ 0.35”
+分级选择最多 5 篇文档，再在这批文档内按 query 向量召回 `RAG_TITLE_TOP_K`（默认 10）。
+通用规范化只处理 Unicode/大小写、空白、常见标点和 `.md` 扩展名，不删除“的做法”“教程”
+或“指南”等领域后缀。该通道用于把
 “明确点名某篇资料”的问题锁定到目标文档，避免被全局相似文档淹没。
 
 ### 5.4 child 层 RRF 与 parent 聚合
@@ -171,7 +178,7 @@ reranker 返回的 index 必须完整、唯一且在候选范围内；缺失、�
 精排后由 `SelectKnowledgeContexts`（`backend/internal/store/knowledge_retrieval.go`）选择
 最终上下文：
 
-1. 先确定文档：**明确标题命中时只从第一名文档选择**（`query` 归一化后包含第一名标题），
+1. 先确定文档：**至少 4 字符的明确标题命中时只从第一名文档选择**（`query` 通用归一化后包含第一名标题），
    否则最多保留三个高分文档；
 2. 在选中文档内按其最高分 parent 依次填充，再用剩余预算补充这些文档的其他相关章节；
 3. 总预算 `RAG_CONTEXT_PARENT_TOP_K`（默认 5），相同 parent 去重。
@@ -202,7 +209,7 @@ SSE 事件序列为 `retrieval → delta* → sources → done`；回答与来�
 | 上下文选择后为空 | 同“没有候选”，返回无依据语义 |
 | 来源在保存时失效 | 返回 `KNOWLEDGE_SOURCE_INVALID`，提示重新提问 |
 | 索引构建失败 | 未完成文档继续使用旧活动版本 |
-| LiteLLM 不可用 | AI 问答不可用；笔记、搜索、附件、导出和备份保持可用 |
+| LiteLLM 不可用 | AI 问答不可用；笔记、搜索、附件和导出保持可用 |
 | 个人笔记被软删除 | 对应 `source_type='note'` 文档退出检索 |
 
 普通日志只应记录错误码、候选数、耗时和 request/trace ID，不记录完整 query、正文、上下文
@@ -378,6 +385,9 @@ Judge 均走 LiteLLM。以下按运行目录演进对照。
 | 向量召回（Vector） | 1.0000 | 唯一能独立覆盖全部 gold 的通道 |
 | 全文召回（Fulltext） | 0.0000 | 对中文查询**零命中**，增量与协同均为 0 |
 | 标题召回（Title） | 0.4756 | 命中必然同时被向量命中，无独立增量 |
+
+> 该标题通道数据来自移除菜谱专用“的做法”规则之前的基线。通用分级标题匹配上线后必须重跑
+> 164 条评测并建立新基线，不能沿用 0.4756 作为当前实现指标。
 
 > **关键结论（通道来源追踪的首次量化结果）**：164 条用例的 rerank 前候选中没有任何一条带
 > `route=2`（全文）标记。根因是 `to_tsvector('simple')` / `plainto_tsquery('simple')` 对

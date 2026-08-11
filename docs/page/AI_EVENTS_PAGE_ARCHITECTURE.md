@@ -68,7 +68,7 @@
 - 活动数据按租户 RLS 隔离；成功名单完全匿名。
 - 领取 Redis 不可用时 fail-closed（返回 503），避免突发流量冲击数据库库存；活动详情/倒计时
   Redis 不可用时由 PostgreSQL 提供并标记剩余名额不可用。
-- `/healthz` 不依赖 Redis；Redis 数据卷不进入租户完整备份，关键数据可由 PostgreSQL 重建。
+- `/healthz` 不依赖 Redis；Redis 关键数据可由 PostgreSQL 重建。
 - 删除租户时清理活动相关缓存；活动数据不进入公开统计以外的可见范围。
 
 ## 测试与验收

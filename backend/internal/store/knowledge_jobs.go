@@ -79,10 +79,16 @@ func (s *Store) WriteKnowledgeChunks(ctx context.Context, j KnowledgeIndexJob, p
 				}
 			}
 		}
-		if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET active_index_version=$3,status='ready',failure_code=NULL,failure_summary=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.DocumentID, j.TargetVersion); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET active_index_version=$3,status='ready',failure_code=NULL,failure_summary=NULL,last_index_failure_code=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.DocumentID, j.TargetVersion); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE knowledge_index_jobs SET status='success',lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.ID); err != nil {
+			return err
+		}
+		// Keep the active version and its immediate predecessor. Version N-2 is
+		// removed only after N succeeds, leaving one full rebuild cycle for rollback.
+		// Historical message sources retain their title, snippet, and index_version.
+		if _, err := tx.Exec(ctx, `DELETE FROM knowledge_parent_chunks WHERE tenant_id=$1 AND document_id=$2 AND index_version < $3 - 1`, j.TenantID, j.DocumentID, j.TargetVersion); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `UPDATE knowledge_uploads u SET status='ready',updated_at=now() WHERE u.tenant_id=$1 AND NOT EXISTS(SELECT 1 FROM knowledge_documents d WHERE d.tenant_id=u.tenant_id AND d.upload_id=u.id AND d.status<>'ready')`, j.TenantID)
@@ -90,9 +96,17 @@ func (s *Store) WriteKnowledgeChunks(ctx context.Context, j KnowledgeIndexJob, p
 	})
 }
 func (s *Store) FailKnowledgeJob(ctx context.Context, j KnowledgeIndexJob, code string) error {
-	_, err := s.AdminPool.Exec(ctx, `UPDATE knowledge_index_jobs SET status=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,available_at=now()+make_interval(secs=>least(3600,attempts*attempts*10)),failure_code=$2,lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`, j.ID, code)
-	if err == nil {
-		_, _ = s.AdminPool.Exec(ctx, `UPDATE knowledge_documents SET status=CASE WHEN active_index_version=0 THEN 'failed' ELSE status END,failure_code=$3,failure_summary='索引服务暂时不可用',updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.DocumentID, code)
+	tx, err := s.AdminPool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
 	}
-	return err
+	defer tx.Rollback(ctx)
+	var jobStatus string
+	if err := tx.QueryRow(ctx, `UPDATE knowledge_index_jobs SET status=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,available_at=now()+make_interval(secs=>least(3600,attempts*attempts*10)),failure_code=$2,lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 RETURNING status`, j.ID, code).Scan(&jobStatus); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status=CASE WHEN active_index_version>0 THEN 'ready' WHEN $4='failed' THEN 'failed' ELSE 'indexing' END,failure_code=CASE WHEN active_index_version=0 AND $4='failed' THEN $3 ELSE NULL END,failure_summary=CASE WHEN active_index_version=0 AND $4='failed' THEN '索引服务暂时不可用' ELSE NULL END,last_index_failure_code=CASE WHEN active_index_version>0 THEN $3 ELSE last_index_failure_code END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.DocumentID, code, jobStatus); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

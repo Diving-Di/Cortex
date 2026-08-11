@@ -84,10 +84,10 @@ flowchart LR
 
 ## 7. AI 与降级
 
-AI 未配置或不可用时，认证、笔记、搜索、附件、导出、备份和知识库文件管理仍可用。
+AI 未配置或不可用时，认证、笔记、搜索、附件、导出和知识库文件管理仍可用。
 个人知识库上传、删除不依赖 Embedding；Embedding 或 Reranker 不可用时，索引任务失败或
 问答返回稳定错误（`KNOWLEDGE_EMBEDDING_UNAVAILABLE` / `KNOWLEDGE_RERANK_UNAVAILABLE`）。
-后端只持有 LiteLLM 虚拟密钥；供应商真实 Key 不进入前端、业务数据库、日志或备份。
+后端只持有 LiteLLM 虚拟密钥；供应商真实 Key 不进入前端、业务数据库或日志。
 流式响应已经输出内容后不得从头重试。
 
 ## 8. 部署与验证
@@ -113,7 +113,6 @@ docker compose config --quiet
 .\backend\scripts\ai_acceptance.ps1
 .\backend\scripts\research_acceptance.ps1
 .\backend\scripts\template_ai_event_acceptance.ps1
-.\backend\scripts\backup_acceptance.ps1
 ```
 
 知识库验收覆盖上传、索引、混合问答、跨租户隔离与 3 GiB 配额。
@@ -121,7 +120,7 @@ docker compose config --quiet
 ## 9. 模板广场与限量 AI 活动
 
 私有模板受租户 RLS 保护，作者明确上架时生成不含租户标识的公开快照；作者下架或删除租户时
-立即使快照不可见。完整备份只包含私有模板和个人收藏。
+立即使快照不可见。
 
 每日活动配置保存在 PostgreSQL，Redis Lua 负责库存和重复领取预扣，数据库唯一约束、点数
 账本与 claim/job 状态机保存最终事实。Worker 使用有限租约领取任务，成功后自动写入带来源的

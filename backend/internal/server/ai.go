@@ -111,13 +111,15 @@ func (s *Server) writeSSE(
 	started := time.Now()
 	var output strings.Builder
 	status := "success"
+	streamComplete := true
 	var errorCode *string
 	for event := range events {
 		if event.Err != nil {
 			status = "error"
+			streamComplete = false
 			value := "AI_REQUEST_FAILED"
 			errorCode = &value
-			payload, _ := json.Marshal(map[string]string{"code": value})
+			payload, _ := json.Marshal(map[string]any{"code": value, "incomplete": output.Len() > 0, "output_tokens": len([]rune(output.String())) / 4, "upstream_stage": "generation"})
 			_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", payload)
 			flusher.Flush()
 			break
@@ -141,8 +143,10 @@ func (s *Server) writeSSE(
 			_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", payload)
 		}
 	}
-	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
-	flusher.Flush()
+	if status == "success" && streamComplete {
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}
 	usageCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 	defer cancel()
 	if err := s.store.RecordAIUsage(usageCtx, principalFrom(r.Context()), store.AIUsage{

@@ -11,6 +11,8 @@ export type KnowledgeDocument = {
   active_index_version: number;
   failure_code?: string;
   failure_summary?: string;
+  last_index_failure_code?: string;
+  index_job_status?: 'queued' | 'running' | 'success' | 'failed';
   CreatedAt: string;
   UpdatedAt: string;
 };

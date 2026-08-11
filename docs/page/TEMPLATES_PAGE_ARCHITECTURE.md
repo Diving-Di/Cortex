@@ -77,11 +77,9 @@
 - 从模板创建笔记必须携带幂等键，防止双击创建两篇。
 - Redis 不可用时：模板浏览 fail-open（降级 PostgreSQL），不影响私有模板 CRUD 与使用。
 - 作者下架或删除租户时立即隐藏公开快照并清理缓存；公开统计只保留匿名聚合。
-- 完整备份包含私有模板和个人收藏，不包含公开快照、公共排名、举报与活动数据。
 
 ## 测试与验收
 
 - 覆盖：私有模板乐观锁、上架/下架可见性、公开快照隔离、幂等使用、点赞/收藏/使用统计、
   Outbox 幂等消费、Redis 清空后重建、Redis 故障降级。
-- 端到端：`template_ai_event_acceptance.ps1`、`template_ai_event_redis_failure_acceptance.ps1`、
-  `backup_acceptance.ps1`。
+- 端到端：`template_ai_event_acceptance.ps1`、`template_ai_event_redis_failure_acceptance.ps1`。

@@ -43,12 +43,32 @@ func TestSelectKnowledgeContextsDeduplicatesParents(t *testing.T) {
 func TestSelectKnowledgeContextsStaysWithinExactTitleDocument(t *testing.T) {
 	docA, docB := uuid.New(), uuid.New()
 	items := []KnowledgeCandidate{
-		{DocumentID: docA, ParentID: uuid.New(), Title: "鱼香肉丝的做法"},
-		{DocumentID: docB, ParentID: uuid.New(), Title: "香干肉丝的做法"},
-		{DocumentID: docA, ParentID: uuid.New(), Title: "鱼香肉丝的做法"},
+		{DocumentID: docA, ParentID: uuid.New(), Title: "PostgreSQL 事务隔离指南"},
+		{DocumentID: docB, ParentID: uuid.New(), Title: "PostgreSQL 索引优化指南"},
+		{DocumentID: docA, ParentID: uuid.New(), Title: "PostgreSQL 事务隔离指南"},
 	}
-	got := SelectKnowledgeContexts("鱼香肉丝怎样炒？", items, 2)
+	got := SelectKnowledgeContexts("《PostgreSQL 事务隔离指南》讲了什么？", items, 2)
 	if len(got) != 2 || got[0].DocumentID != docA || got[1].DocumentID != docA {
 		t.Fatalf("exact-title contexts crossed documents: %#v", got)
+	}
+}
+
+func TestNormalizeKnowledgeTitleIsGeneric(t *testing.T) {
+	if got := normalizeKnowledgeTitle(" ＰｏｓｔｇｒｅＳＱＬ：事务隔离指南.MD "); got != "postgresql事务隔离指南" {
+		t.Fatalf("normalized title=%q", got)
+	}
+	if got := normalizeKnowledgeTitle("鱼香肉丝的做法"); got != "鱼香肉丝的做法" {
+		t.Fatalf("domain suffix was changed: %q", got)
+	}
+}
+
+func TestShortTitleDoesNotTriggerSingleDocumentGate(t *testing.T) {
+	docA, docB := uuid.New(), uuid.New()
+	got := SelectKnowledgeContexts("AI 有哪些应用？", []KnowledgeCandidate{
+		{DocumentID: docA, ParentID: uuid.New(), Title: "AI"},
+		{DocumentID: docB, ParentID: uuid.New(), Title: "机器学习"},
+	}, 2)
+	if len(got) != 2 {
+		t.Fatalf("short title unexpectedly gated contexts: %#v", got)
 	}
 }

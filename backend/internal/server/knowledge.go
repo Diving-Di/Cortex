@@ -243,6 +243,13 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principalFrom(r.Context())
+	if previous, found, err := s.store.GetKnowledgeRequest(r.Context(), p, req.RequestID); err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	} else if found {
+		s.writeKnowledgeReplay(w, previous)
+		return
+	}
 	if err := s.store.ValidateKnowledgeCollections(r.Context(), p, req.CollectionIDs); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -277,6 +284,11 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		candidates[i].Score = scores[i]
 	}
 	sortKnowledgeCandidates(candidates)
+	candidates = filterRerankEvidence(candidates, s.cfg.RAGRerankMinScore)
+	if len(candidates) < s.cfg.RAGMinQualifiedEvidence || rerankMarginTooSmall(candidates, s.cfg.RAGRerankMinMargin) {
+		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_NO_EVIDENCE", "没有找到当前知识库中的有效依据", 422))
+		return
+	}
 	candidates = store.SelectKnowledgeContexts(req.Question, candidates, s.cfg.RAGContextTopK)
 	evidence := make([]ai.KnowledgeEvidence, len(candidates))
 	sources := make([]map[string]any, len(candidates))
@@ -286,14 +298,35 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		evidence[i] = ai.KnowledgeEvidence{Citation: citation, Title: candidates[i].Title, Kind: candidates[i].SourceType, Content: candidates[i].Content, Heading: strings.Join(candidates[i].Heading, " / ")}
 		sources[i] = map[string]any{"citation": citation, "document_id": candidates[i].DocumentID, "note_id": candidates[i].NoteID, "source_type": candidates[i].SourceType, "title": candidates[i].Title, "heading": candidates[i].Heading, "rank": i + 1}
 	}
-	events, err := s.aiWorkflow().AnswerKnowledge(s.aiContext(r.Context(), "knowledge_chat", p), ai.KnowledgeInput{Question: req.Question, Evidence: evidence})
+	workflow := s.aiWorkflow()
+	workflow.VerifierModel = s.cfg.RAGVerifierModel
+	events, err := workflow.AnswerKnowledgeGrounded(s.aiContext(r.Context(), "knowledge_chat", p), ai.KnowledgeInput{Question: req.Question, Evidence: evidence})
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	s.writeKnowledgeSSE(w, r, events, sources, func(ctx context.Context, answer string) (int32, int32, error) {
-		return s.store.SaveKnowledgeAnswer(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, candidates)
+	s.writeKnowledgeSSE(w, r, events, sources, func(ctx context.Context, answer, status, errorCode, upstreamStage string, outputTokens int) (int32, int32, error) {
+		return s.store.SaveKnowledgeAnswer(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, status, errorCode, upstreamStage, outputTokens, candidates)
 	})
+}
+func (s *Server) writeKnowledgeReplay(w http.ResponseWriter, result store.KnowledgeRequestResult) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	if result.Content != "" {
+		_ = writeNamedSSE(w, "delta", map[string]string{"content": result.Content})
+	}
+	if result.Status == "complete" {
+		_ = writeNamedSSE(w, "done", map[string]any{"message_id": result.MessageID, "conversation_id": result.ConversationID, "replayed": true})
+	} else {
+		_ = writeNamedSSE(w, "error", map[string]any{"code": result.ErrorCode, "message": "生成服务暂时不可用", "incomplete": true, "output_tokens": result.OutputTokens, "upstream_stage": result.UpstreamStage, "message_id": result.MessageID, "conversation_id": result.ConversationID, "replayed": true})
+	}
+	flusher.Flush()
 }
 func sortKnowledgeCandidates(items []store.KnowledgeCandidate) {
 	for i := 1; i < len(items); i++ {
@@ -302,7 +335,22 @@ func sortKnowledgeCandidates(items []store.KnowledgeCandidate) {
 		}
 	}
 }
-func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, events <-chan ai.StreamEvent, sources []map[string]any, save func(context.Context, string) (int32, int32, error)) {
+func filterRerankEvidence(items []store.KnowledgeCandidate, threshold *float64) []store.KnowledgeCandidate {
+	if threshold == nil {
+		return items
+	}
+	qualified := items[:0]
+	for _, item := range items {
+		if item.Score >= *threshold {
+			qualified = append(qualified, item)
+		}
+	}
+	return qualified
+}
+func rerankMarginTooSmall(items []store.KnowledgeCandidate, threshold *float64) bool {
+	return threshold != nil && len(items) > 1 && items[0].Score-items[1].Score < *threshold
+}
+func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, events <-chan ai.StreamEvent, sources []map[string]any, save func(context.Context, string, string, string, string, int) (int32, int32, error)) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return
@@ -317,19 +365,44 @@ func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, event
 	var answer strings.Builder
 	for event := range events {
 		if event.Err != nil {
-			_ = writeNamedSSE(w, "error", map[string]string{"code": "AI_REQUEST_FAILED", "message": "生成服务暂时不可用"})
+			outputTokens := len([]rune(answer.String())) / 4
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+			messageID, conversationID, saveErr := save(ctx, answer.String(), "failed", "AI_REQUEST_FAILED", "generation", outputTokens)
+			cancel()
+			payload := map[string]any{"code": "AI_REQUEST_FAILED", "message": "生成服务暂时不可用", "incomplete": answer.Len() > 0, "output_tokens": outputTokens, "upstream_stage": "generation"}
+			if saveErr == nil {
+				payload["message_id"] = messageID
+				payload["conversation_id"] = conversationID
+			} else {
+				s.logger.Error("save incomplete knowledge answer", "error", saveErr)
+			}
+			_ = writeNamedSSE(w, "error", payload)
+			flusher.Flush()
+			return
+		}
+		if event.Type == "verifying" {
+			_ = writeNamedSSE(w, "verifying", map[string]string{"status": "verifying"})
+			flusher.Flush()
+			continue
+		}
+		if event.Type == "rejected" {
+			_ = writeNamedSSE(w, "rejected", map[string]string{"code": "KNOWLEDGE_NO_EVIDENCE", "message": "生成内容未通过证据核验"})
 			flusher.Flush()
 			return
 		}
 		answer.WriteString(event.Content)
-		if writeNamedSSE(w, "delta", map[string]string{"content": event.Content}) != nil {
+		eventName := "delta"
+		if event.Type == "verified" {
+			eventName = "verified"
+		}
+		if writeNamedSSE(w, eventName, map[string]string{"content": event.Content}) != nil {
 			return
 		}
 		flusher.Flush()
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 	defer cancel()
-	messageID, conversationID, err := save(ctx, answer.String())
+	messageID, conversationID, err := save(ctx, answer.String(), "complete", "", "completed", len([]rune(answer.String()))/4)
 	if err != nil {
 		_ = writeNamedSSE(w, "error", map[string]string{"code": "KNOWLEDGE_SOURCE_INVALID", "message": "来源已失效，请重新提问"})
 	} else {

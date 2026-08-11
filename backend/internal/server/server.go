@@ -108,8 +108,6 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.GET("/api/v1/attachments/:attachmentID", gin.WrapF(s.downloadAttachment))
 			active.DELETE("/api/v1/attachments/:attachmentID", gin.WrapF(s.deleteAttachment))
 			active.POST("/api/v1/exports/markdown", gin.WrapF(s.exportMarkdown))
-			active.GET("/api/v1/backups/full", gin.WrapF(s.exportFullBackup))
-			active.POST("/api/v1/backups/full/restore", gin.WrapF(s.restoreFullBackup))
 			active.GET("/api/v1/settings/preferences", gin.WrapF(s.getPreferences))
 			active.PUT("/api/v1/settings/preferences", gin.WrapF(s.updatePreferences))
 			active.POST("/api/v1/research/jobs", gin.WrapF(s.createResearchJob))

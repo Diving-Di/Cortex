@@ -9,7 +9,7 @@ import (
 )
 
 // ExportNote is the stable exchange representation used by Markdown export.
-// It is intentionally independent from the removed full-backup format.
+// ExportNotes returns the tenant's active notes for Markdown exchange export.
 type ExportNote struct {
 	ID       int32
 	Type     string

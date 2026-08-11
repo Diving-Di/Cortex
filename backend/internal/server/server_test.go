@@ -62,17 +62,27 @@ func TestLegacyRoutesAreNotRegistered(t *testing.T) {
 	}
 }
 
-func TestTenantRestoreRouteIsNotRegistered(t *testing.T) {
+func TestRemovedRestoreAndBackupRoutesAreNotRegistered(t *testing.T) {
 	handler := New(
 		config.Config{CORSOrigins: []string{"http://localhost:5173"}},
 		nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		"test",
 	)
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/tenant/restore", nil)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	routes := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/v1/tenant/restore"},
+		{http.MethodGet, "/api/v1/backups/full"},
+		{http.MethodPost, "/api/v1/backups/full/restore"},
+	}
+	for _, route := range routes {
+		request := httptest.NewRequest(route.method, route.path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s %s status = %d, want %d", route.method, route.path, response.Code, http.StatusNotFound)
+		}
 	}
 }

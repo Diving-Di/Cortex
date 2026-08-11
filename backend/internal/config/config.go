@@ -33,6 +33,10 @@ type Config struct {
 	RAGKeywordTopK               int
 	RAGFusionTopK                int
 	RAGContextTopK               int
+	RAGRerankMinScore            *float64
+	RAGRerankMinMargin           *float64
+	RAGMinQualifiedEvidence      int
+	RAGVerifierModel             string
 	AIAPIKey                     string
 	AIBaseURL                    string
 	AIModel                      string
@@ -232,6 +236,18 @@ func Load() (Config, error) {
 	if ragContextTopK > ragFusionTopK {
 		return Config{}, fmt.Errorf("RAG_CONTEXT_PARENT_TOP_K must not exceed RAG_FUSION_TOP_K")
 	}
+	rerankMinScore, err := optionalFloat("RAG_RERANK_MIN_SCORE")
+	if err != nil {
+		return Config{}, err
+	}
+	rerankMinMargin, err := optionalFloat("RAG_RERANK_MIN_MARGIN")
+	if err != nil {
+		return Config{}, err
+	}
+	minQualifiedEvidence, err := positiveInt("RAG_MIN_QUALIFIED_EVIDENCE", 1)
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{
 		DatabaseURL:             databaseURL,
 		MigrationDatabaseURL:    migrationDatabaseURL,
@@ -252,6 +268,9 @@ func Load() (Config, error) {
 		RerankModel:             valueOrDefault("RAG_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
 		RAGVectorTopK:           ragVectorTopK, RAGTitleTopK: ragTitleTopK, RAGKeywordTopK: ragKeywordTopK,
 		RAGFusionTopK: ragFusionTopK, RAGContextTopK: ragContextTopK,
+		RAGRerankMinScore: rerankMinScore, RAGRerankMinMargin: rerankMinMargin,
+		RAGMinQualifiedEvidence:      minQualifiedEvidence,
+		RAGVerifierModel:             valueOrDefault("RAG_VERIFIER_MODEL", valueOrDefault("AI_MODEL", "gpt-5.6")),
 		AIAPIKey:                     strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIBaseURL:                    valueOrDefault("AI_BASE_URL", "https://api.openai.com/v1"),
 		AIModel:                      valueOrDefault("AI_MODEL", "gpt-5.6"),
@@ -326,6 +345,18 @@ func positiveInt(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be a positive integer", key)
 	}
 	return value, nil
+}
+
+func optionalFloat(key string) (*float64, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a number", key)
+	}
+	return &value, nil
 }
 
 func nonNegativeInt(key string, fallback int) (int, error) {

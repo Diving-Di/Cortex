@@ -19,8 +19,9 @@
   建立索引。
 - 配额区：展示已用、剩余容量和进度条，容量判断以后端返回为准。
 - 文档列表：显示标题、来源类型（上传资料 / 个人笔记）、大小、索引状态与失败摘要，支持删除。
-- 状态：`uploaded`、`parsing`、`indexing`、`ready`、`failed`、`deleting`；失败文档保留
-  稳定错误摘要，不展示服务器路径。
+- 状态：首次索引使用 `uploaded`、`parsing`、`indexing`、`ready`、`failed`，删除使用
+  `deleting`；已有活动版本的文档重建时保持 `ready`，另由 `index_job_status` 展示后台任务状态，
+  重建失败记录 `last_index_failure_code` 且旧版本继续服务。
 
 ## 前端数据流
 
@@ -55,6 +56,8 @@
   切分 parent 与不超过 500 字的 child，经 Compose 内部 `embedding-service`
   （`iic/nlp_gte_sentence-embedding_chinese-small`，512 维）生成向量写入
   `knowledge_child_chunks`（pgvector + 全文 tsvector）。
+- 新索引在单个事务中写完后切换 `active_index_version`；成功激活 N 后保留 N 与 N-1，清理更早
+  chunk，历史消息来源中的标题、摘要和版本元数据继续保留。
 - 限额配置：`KNOWLEDGE_MAX_UPLOAD_BYTES`（256 MiB）、`KNOWLEDGE_MAX_EXTRACTED_BYTES`（1 GiB）、
   `KNOWLEDGE_MAX_FILE_BYTES`（64 MiB）、`KNOWLEDGE_MAX_FILES`（5000）、
   `KNOWLEDGE_MAX_DEPTH`（16）、`KNOWLEDGE_MAX_COMPRESSION_RATIO`（100）。
@@ -80,7 +83,7 @@
   404。
 - 文件不通过公开静态目录暴露；上传/下载/删除均需认证，下载图片带 `private` 缓存头。
 - AI / Embedding 不可用时，上传与删除仍可用；索引任务标记失败，问答返回稳定错误码。
-- 删除文档立即退出检索；完整备份（`cortex-full-backup-v1`）不包含 `knowledge_*` 数据。
+- 删除文档立即退出检索。
 
 ## 测试与验收
 

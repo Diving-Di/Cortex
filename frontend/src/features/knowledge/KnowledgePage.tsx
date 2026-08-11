@@ -53,7 +53,7 @@ export default function KnowledgePage({ token }: { token: string }) {
         showIcon
         type="info"
         message="仅支持 Markdown 或 Markdown ZIP"
-        description="ZIP 可包含 Markdown 引用的 PNG、JPG、GIF、WebP 图片。所有资料只对当前账号可见，每个账号上限 3 GiB。"
+        description="ZIP 仅解析 Markdown、PNG 和 JPG，其他类型条目会被跳过。所有资料只对当前账号可见，每个账号上限 3 GiB。"
       />
       <Card title="上传资料">
         <Upload.Dragger
@@ -107,6 +107,15 @@ export default function KnowledgePage({ token }: { token: string }) {
                   <Tag color={v === 'ready' ? 'success' : v === 'failed' ? 'error' : 'processing'}>
                     {statusText[v] ?? v}
                   </Tag>
+                  {v === 'ready' && ['queued', 'running'].includes(row.index_job_status ?? '') && (
+                    <Typography.Text type="secondary">可用，正在更新索引</Typography.Text>
+                  )}
+                  {v === 'ready' && row.index_job_status === 'failed' && (
+                    <Typography.Text type="warning">
+                      旧版本可用，最近更新失败：
+                      {row.last_index_failure_code ?? 'KNOWLEDGE_INDEX_FAILED'}
+                    </Typography.Text>
+                  )}
                   {row.failure_summary && (
                     <Typography.Text type="danger">{row.failure_summary}</Typography.Text>
                   )}

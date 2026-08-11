@@ -47,7 +47,7 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 
 ### 数据自主与隔离
 
-- 将有效笔记导出为 Markdown ZIP，或导出包含私有文件和资源关系的完整备份 ZIP。
+- 将有效笔记导出为 Markdown ZIP。
 - 每个账号自动对应一个个人空间，租户身份只由服务端根据 Token 解析。
 - PostgreSQL RLS 与显式 `tenant_id` 条件共同约束业务查询。
 - 附件保存在受控数据目录中，不作为公开静态资源暴露。
@@ -59,9 +59,7 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 - 每天 20:00 开放 10 分钟的 AI 深度月报活动，限 10 个名额，固定消耗 100 点。
 - Redis 负责高峰原子预扣，PostgreSQL 保存点数、领取和生成任务的最终事实。
 
-Markdown ZIP 只用于内容交换。版本化完整备份可恢复到空的个人空间并重映射资源 ID，且排除
-Token、密钥、小红书授权会话和敏感审计；生产灾备仍应覆盖 PostgreSQL 数据库与应用数据卷。
-个人空间软删除恢复和笔记版本恢复继续保留。
+Markdown ZIP 只用于内容交换；生产灾备应覆盖 PostgreSQL 数据库与应用数据卷。笔记版本恢复继续保留。
 
 ## 技术架构
 
@@ -188,7 +186,7 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 | --- | --- |
 | `DATABASE_URL` | 业务连接，必须使用低权限 `diary_app` |
 | `MIGRATION_DATABASE_URL` | 迁移与 scheduler claim 使用的管理连接 |
-| `CORTEX_DATA_DIR` | 附件、知识文件、导出和备份的数据根目录；旧 `DIARY_DATA_DIR` 仅作兼容回退 |
+| `CORTEX_DATA_DIR` | 附件、知识文件和导出的数据根目录；旧 `DIARY_DATA_DIR` 仅作兼容回退 |
 | `MAX_ATTACHMENT_BYTES` | 单附件上限，默认 20 MiB |
 | `RAG_EMBEDDING_*` | Embedding 地址、凭据、逻辑模型和维度 |
 | `RAG_RERANK_*` | Reranker 地址和模型 |
@@ -254,10 +252,9 @@ docker compose config --quiet
 .\backend\scripts\ai_acceptance.ps1
 .\backend\scripts\research_acceptance.ps1
 .\backend\scripts\template_ai_event_acceptance.ps1
-.\backend\scripts\backup_acceptance.ps1
 ```
 
-知识库验收覆盖上传、索引、混合问答、来源保存与 3 GiB 配额；研究、模板与备份验收覆盖各自流程。
+知识库验收覆盖上传、索引、混合问答、来源保存与 3 GiB 配额；研究与模板验收覆盖各自流程。
 
 ## 文档
 
