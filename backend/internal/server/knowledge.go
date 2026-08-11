@@ -254,13 +254,29 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
+	conversationContext := ""
+	if req.ConversationID != nil {
+		history, err := s.store.LoadKnowledgeConversation(r.Context(), p, *req.ConversationID, 5)
+		if err != nil {
+			httpx.WriteError(w, s.logger, err)
+			return
+		}
+		conversationContext = formatKnowledgeConversation(history, 8000)
+	}
+	workflow := s.aiWorkflow()
+	rewrite, err := workflow.RewriteKnowledgeQuery(s.aiContext(r.Context(), "knowledge_query_rewrite", p), req.Question, conversationContext)
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	retrievalQuery := rewrite.Query
 	embeddingClient := ai.LocalEmbeddingClient{BaseURL: s.cfg.EmbeddingBaseURL, APIKey: s.cfg.EmbeddingAPIKey, Model: s.cfg.EmbeddingModel, Dimensions: s.cfg.EmbeddingDimensions, SendDimensions: s.cfg.EmbeddingSendDimensions}
-	vectors, err := embeddingClient.Embed(r.Context(), []string{req.Question})
+	vectors, err := embeddingClient.Embed(r.Context(), []string{retrievalQuery})
 	if err != nil {
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_EMBEDDING_UNAVAILABLE", "知识检索服务暂时不可用", 503))
 		return
 	}
-	candidates, err := s.store.SearchKnowledge(r.Context(), p, req.Question, vectors[0], s.cfg.EmbeddingModel, req.CollectionIDs,
+	candidates, err := s.store.SearchKnowledge(r.Context(), p, retrievalQuery, vectors[0], s.cfg.EmbeddingModel, req.CollectionIDs,
 		s.cfg.RAGVectorTopK, s.cfg.RAGTitleTopK, s.cfg.RAGKeywordTopK, s.cfg.RAGFusionTopK)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -275,7 +291,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		documents[i] = ai.FormatRerankDocument(candidates[i].Title, candidates[i].SourceType, candidates[i].Heading, candidates[i].Content)
 	}
 	reranker := ai.LocalRerankClient{BaseURL: s.cfg.RerankBaseURL, Model: s.cfg.RerankModel, MaxDocuments: s.cfg.RAGFusionTopK}
-	scores, err := reranker.Rerank(r.Context(), req.Question, documents)
+	scores, err := reranker.Rerank(r.Context(), retrievalQuery, documents)
 	if err != nil {
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_RERANK_UNAVAILABLE", "知识精排服务暂时不可用", 503))
 		return
@@ -289,7 +305,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_NO_EVIDENCE", "没有找到当前知识库中的有效依据", 422))
 		return
 	}
-	candidates = store.SelectKnowledgeContexts(req.Question, candidates, s.cfg.RAGContextTopK)
+	candidates = store.SelectKnowledgeContexts(retrievalQuery, candidates, s.cfg.RAGContextTopK)
 	evidence := make([]ai.KnowledgeEvidence, len(candidates))
 	sources := make([]map[string]any, len(candidates))
 	for i := range candidates {
@@ -298,9 +314,8 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		evidence[i] = ai.KnowledgeEvidence{Citation: citation, Title: candidates[i].Title, Kind: candidates[i].SourceType, Content: candidates[i].Content, Heading: strings.Join(candidates[i].Heading, " / ")}
 		sources[i] = map[string]any{"citation": citation, "document_id": candidates[i].DocumentID, "note_id": candidates[i].NoteID, "source_type": candidates[i].SourceType, "title": candidates[i].Title, "heading": candidates[i].Heading, "rank": i + 1}
 	}
-	workflow := s.aiWorkflow()
 	workflow.VerifierModel = s.cfg.RAGVerifierModel
-	events, err := workflow.AnswerKnowledgeGrounded(s.aiContext(r.Context(), "knowledge_chat", p), ai.KnowledgeInput{Question: req.Question, Evidence: evidence})
+	events, err := workflow.AnswerKnowledgeGrounded(s.aiContext(r.Context(), "knowledge_chat", p), ai.KnowledgeInput{Question: req.Question, ConversationContext: conversationContext, Evidence: evidence})
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -308,6 +323,30 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 	s.writeKnowledgeSSE(w, r, events, sources, func(ctx context.Context, answer, status, errorCode, upstreamStage string, outputTokens int) (int32, int32, error) {
 		return s.store.SaveKnowledgeAnswerOutcome(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, status, errorCode, upstreamStage, outputTokens, candidates)
 	})
+}
+
+func formatKnowledgeConversation(messages []store.KnowledgeConversationMessage, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	turns := make([]string, 0, len(messages)/2)
+	used := 0
+	for i := len(messages) - 2; i >= 0; i -= 2 {
+		if messages[i].Role != "user" || messages[i+1].Role != "assistant" {
+			continue
+		}
+		turn := "用户：" + strings.TrimSpace(messages[i].Content) + "\n助手：" + strings.TrimSpace(messages[i+1].Content)
+		length := len([]rune(turn))
+		if used+length > maxRunes {
+			continue
+		}
+		turns = append(turns, turn)
+		used += length
+	}
+	for left, right := 0, len(turns)-1; left < right; left, right = left+1, right-1 {
+		turns[left], turns[right] = turns[right], turns[left]
+	}
+	return strings.Join(turns, "\n")
 }
 func (s *Server) writeKnowledgeReplay(w http.ResponseWriter, result store.KnowledgeRequestResult) {
 	flusher, ok := w.(http.Flusher)

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"diary-listener/backend/internal/apierror"
@@ -474,7 +475,7 @@ func (s *Store) FinishAIEventJob(ctx context.Context, job AIEventJob, reportID *
 			if _, err := tx.Exec(ctx, `UPDATE ai_point_accounts SET held_points=held_points-$1,consumed_points=consumed_points+$1,version=version+1,updated_at=now() WHERE tenant_id=$2`, job.PointsCost, job.Principal.TenantID); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO ai_point_ledger(tenant_id,period_start,event_id,entry_type,points,reference_type,reference_id) SELECT tenant_id,period_start,$1,'capture',$2,'ai_flash_claim',$3 FROM ai_point_accounts WHERE tenant_id=$4`, job.RequestID, job.PointsCost, job.ClaimID, job.Principal.TenantID); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO ai_point_ledger(tenant_id,period_start,event_id,entry_type,points,reference_type,reference_id) SELECT tenant_id,period_start,$1,'capture',$2,'ai_flash_claim',$3 FROM ai_point_accounts WHERE tenant_id=$4`, job.RequestID, job.PointsCost, strconv.FormatInt(job.ClaimID, 10), job.Principal.TenantID); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(ctx, `UPDATE ai_flash_claims SET status='succeeded',finished_at=now(),report_note_id=$1 WHERE id=$2 AND tenant_id=$3`, reportID, job.ClaimID, job.Principal.TenantID); err != nil {
@@ -493,7 +494,7 @@ func (s *Store) FinishAIEventJob(ctx context.Context, job AIEventJob, reportID *
 		if _, err := tx.Exec(ctx, `UPDATE ai_point_accounts SET held_points=GREATEST(0,held_points-$1),version=version+1,updated_at=now() WHERE tenant_id=$2`, job.PointsCost, job.Principal.TenantID); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO ai_point_ledger(tenant_id,period_start,event_id,entry_type,points,reference_type,reference_id) SELECT tenant_id,period_start,$1,'release',$2,'ai_flash_claim',$3 FROM ai_point_accounts WHERE tenant_id=$4 ON CONFLICT DO NOTHING`, job.RequestID, job.PointsCost, job.ClaimID, job.Principal.TenantID); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO ai_point_ledger(tenant_id,period_start,event_id,entry_type,points,reference_type,reference_id) SELECT tenant_id,period_start,$1,'release',$2,'ai_flash_claim',$3 FROM ai_point_accounts WHERE tenant_id=$4 ON CONFLICT DO NOTHING`, job.RequestID, job.PointsCost, strconv.FormatInt(job.ClaimID, 10), job.Principal.TenantID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE ai_flash_claims SET status='failed',finished_at=now(),error_code='AI_EVENT_GENERATION_FAILED' WHERE id=$1 AND tenant_id=$2`, job.ClaimID, job.Principal.TenantID); err != nil {

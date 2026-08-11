@@ -81,6 +81,11 @@ RAG_VERIFIER_MODEL=diary-default
 答案会先缓冲并逐条核验引用，最多基于失败声明重写一次。SSE 依次发送 `retrieval`、
 `verifying`、`verified`、`sources`、`done`，核验失败则发送 `rejected`，不会发送未经核验的正文。
 
+传入 `conversation_id` 时，知识问答会先校验当前租户、当前用户及 `knowledge` 会话范围，
+再加载最近 5 个成功问答轮次（最多 8,000 字符）。历史仅用于判断追问/新话题和改写独立检索
+Query；Embedding、全文检索、标题召回及 Reranker 使用改写 Query，最终生成仍保留原始问题，
+并只允许本轮所选集合中的新证据支撑事实。失败或未完成回答不会进入会话上下文。
+
 知识库模型由 Compose 内部服务从 ModelScope 固定 revision 构建并离线运行；
 Embedding 输出严格为 512 维，Reranker 使用 BGE CrossEncoder。
 个人知识库按 Markdown 标题切分 parent 与不超过 500 字的 child，向量与全文检索使用 RRF

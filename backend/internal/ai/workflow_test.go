@@ -117,3 +117,47 @@ func TestExtractCitedClaimsRejectsMissingUnknownAndDuplicateCitations(t *testing
 		t.Fatalf("claims=%#v invalid=%#v", claims, invalid)
 	}
 }
+
+func TestRewriteKnowledgeQueryResolvesFollowUpAndProtectsNewTopic(t *testing.T) {
+	m := &workflowModel{chunks: []string{`{"classification":"follow_up","query":"知识索引任务的 Worker 租约过期后如何处理？"}`}}
+	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "diary-default"}
+	result, err := workflow.RewriteKnowledgeQuery(context.Background(), "它过期后怎么办？", "用户：介绍租约\n助手：租约为五分钟")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Classification != "follow_up" || !strings.Contains(result.Query, "Worker 租约") {
+		t.Fatalf("rewrite=%#v", result)
+	}
+	if !strings.Contains(result.Query, "介绍租约") {
+		t.Fatalf("rewrite did not preserve latest topic: %q", result.Query)
+	}
+	if !strings.Contains(m.input[0].Content, "不可信数据") || !strings.Contains(m.input[1].Content, "它过期后怎么办") {
+		t.Fatalf("rewrite prompt=%#v", m.input)
+	}
+
+	m.chunks = []string{`{"classification":"new_topic","query":"被历史污染的问题"}`}
+	result, err = workflow.RewriteKnowledgeQuery(context.Background(), "Docker 怎么做健康检查？", "用户：介绍 Worker 租约")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Query != "Docker 怎么做健康检查？" {
+		t.Fatalf("new topic query=%q", result.Query)
+	}
+}
+
+func TestVerifierAcceptsFencedJSONAndNormalizedResult(t *testing.T) {
+	m := &workflowModel{chunks: []string{"```json\n{\"results\":[{\"claim\":\"租约为五分钟 [K1]\",\"result\":\" Entailed \"}]}\n```"}}
+	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "diary-default"}
+	failures, err := workflow.verifyKnowledgeText(context.Background(), "租约为五分钟 [K1]。", []KnowledgeEvidence{{Citation: "K1", Content: "租约为五分钟"}})
+	if err != nil || len(failures) != 0 {
+		t.Fatalf("failures=%#v err=%v", failures, err)
+	}
+}
+
+func TestRewriteKnowledgeQuerySkipsModelWithoutHistory(t *testing.T) {
+	workflow := Workflow{}
+	result, err := workflow.RewriteKnowledgeQuery(context.Background(), "独立问题", "")
+	if err != nil || result.Query != "独立问题" {
+		t.Fatalf("rewrite=%#v err=%v", result, err)
+	}
+}

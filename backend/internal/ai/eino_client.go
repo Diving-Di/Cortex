@@ -67,25 +67,32 @@ func (c *EinoClient) StreamChain(
 	if err != nil {
 		return nil, stableEinoError(ctx, err)
 	}
-	reader, err := runner.Stream(ctx, input, compose.WithChatModelOption(c.modelOptions(ctx)...))
+	reader, err := runner.Stream(ctx, input, compose.WithChatModelOption(c.modelOptions(ctx, operation)...))
 	if err != nil {
 		return nil, stableEinoError(ctx, err)
 	}
 	return streamReaderEvents(ctx, reader), nil
 }
 
-func (c *EinoClient) modelOptions(ctx context.Context) []model.Option {
+func (c *EinoClient) modelOptions(ctx context.Context, operation string) []model.Option {
 	metadata := requestMetadataFrom(ctx)
-	if metadata.RequestID == "" {
-		return nil
+	options := make([]model.Option, 0, 3)
+	// Retrieval rewriting, grounded generation, and verification must be
+	// reproducible. A zero temperature also reduces citation-format drift.
+	switch operation {
+	case "knowledge-query-rewrite", "knowledge", "knowledge-verify":
+		options = append(options, model.WithTemperature(0))
 	}
-	return []model.Option{
+	if metadata.RequestID == "" {
+		return options
+	}
+	return append(options,
 		einoopenai.WithExtraFields(map[string]any{"metadata": map[string]string{
 			"request_id": metadata.RequestID, "request_type": metadata.RequestType,
 			"tenant": metadata.Tenant, "environment": metadata.Environment,
 		}}),
 		einoopenai.WithExtraHeader(map[string]string{"X-Request-ID": metadata.RequestID}),
-	}
+	)
 }
 
 func streamReaderEvents(ctx context.Context, reader *schema.StreamReader[*schema.Message]) <-chan StreamEvent {
