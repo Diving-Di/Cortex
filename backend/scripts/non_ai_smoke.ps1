@@ -63,9 +63,6 @@ try {
     } catch {
         $deletedStatus = [int]$_.Exception.Response.StatusCode
     }
-    $restoredTenant = Invoke-RestMethod "$base/api/v1/tenant/restore" `
-        -Method Post -Headers $headers[0]
-
     [pscustomobject]@{
         Suffix = $suffix
         TenantRenamed = $renamed.name
@@ -77,7 +74,6 @@ try {
         CrossTenantAttachment = $crossAttachment
         ExportBytes = (Get-Item $exportFile).Length
         DeletedTenantStatus = $deletedStatus
-        RestoredTenantStatus = $restoredTenant.status
     } | ConvertTo-Json -Compress
 } finally {
     Remove-Item -LiteralPath $exportFile -Force -ErrorAction SilentlyContinue

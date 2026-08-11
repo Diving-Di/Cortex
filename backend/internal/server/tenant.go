@@ -53,12 +53,3 @@ func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-
-func (s *Server) restoreTenant(w http.ResponseWriter, r *http.Request) {
-	value, err := s.store.RestoreTenant(r.Context(), principalFrom(r.Context()))
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	httpx.JSON(w, http.StatusOK, value)
-}

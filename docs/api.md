@@ -4,7 +4,7 @@
 
 ## 通用约定
 
-除注册、登录和健康检查外，请求均使用 Token 认证：
+浏览器登录使用 `HttpOnly` 会话 Cookie；非浏览器客户端可以使用 Token 认证：
 
 ```http
 Authorization: Token <token>
@@ -34,6 +34,7 @@ data: [DONE]
 | `POST` | `/api/v1/auth/register` | 否 | 注册账号并创建个人空间 |
 | `POST` | `/api/v1/auth/login` | 否 | 登录并返回 Token |
 | `POST` | `/api/v1/auth/logout` | 是 | 撤销当前 Token |
+| `GET` | `/api/v1/auth/session` | 是 | 获取当前浏览器会话状态 |
 
 用户名和密码至少 6 个字符，用户名与邮箱唯一。
 
@@ -44,7 +45,6 @@ data: [DONE]
 | `GET` | `/api/v1/tenant` | 获取空间状态、配额与用量 |
 | `PATCH` | `/api/v1/tenant` | 修改空间显示名称 |
 | `DELETE` | `/api/v1/tenant` | 软删除个人空间 |
-| `POST` | `/api/v1/tenant/restore` | 恢复个人空间 |
 | `GET` | `/api/dashboard?timezone=Asia/Shanghai` | 获取工作台统计摘要 |
 
 `/api/dashboard` 是当前保留的未版本化工作台接口；其他产品业务接口使用 `/api/v1`。

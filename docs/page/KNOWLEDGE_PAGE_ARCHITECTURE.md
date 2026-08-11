@@ -8,7 +8,7 @@
 
 - 目标：让用户把个人 Markdown 资料变成可检索、可问答的私有知识库；提供上传、状态跟踪、
   容量管理和删除能力；页面与 API 只面向当前租户。
-- 范围：`.md` 单文件与包含 Markdown 的 `.zip`（可携带 PNG/JPG/GIF/WebP 图片）；个人笔记
+- 范围：`.md` 单文件与包含 Markdown 的 `.zip`（仅处理 `.md`、`.png`、`.jpg`，其他类型条目跳过）；个人笔记
   可通过 `PATCH /api/v1/notes/{id}/knowledge` 加入问答；每租户容量上限 3 GiB。
 - 非目标：PDF/Word 解析、OCR、图片向量检索、团队共享、外部对象存储、压缩包在线预览、
   数据库与 Markdown 双向同步。
@@ -44,7 +44,7 @@
 
 ## 后端组件与持久化模型
 
-- 上传校验在 `backend/internal/knowledge`（archive/chunker）：校验类型、配额、ZIP 路径安全
+- 上传校验在 `backend/internal/knowledge`（archive/chunker）：校验类型、配额、ZIP 路径安全；ZIP 中仅解析 `.md`、`.png`、`.jpg`，其余类型条目跳过
   （拒绝绝对路径、盘符、`..`、符号链接、超高压缩比等），文件保存到
   `CORTEX_DATA_DIR/knowledge/{tenant_id}/{upload_id}/source` 安全相对路径。
 - 数据库迁移 `000017_personal_knowledge_v2` 新增九张表并启用 RLS：

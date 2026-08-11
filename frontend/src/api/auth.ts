@@ -11,6 +11,11 @@ interface LoginResponse {
   username: string;
 }
 
+export interface SessionResponse {
+  username: string;
+  tenant_active: boolean;
+}
+
 interface RegisterPayload extends LoginPayload {
   email: string;
 }
@@ -22,4 +27,12 @@ export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
 
 export async function registerUser(payload: RegisterPayload): Promise<void> {
   await http.post(apiUrls.auth.register, payload);
+}
+
+export async function getSession(): Promise<SessionResponse> {
+  return (await http.get<SessionResponse>(apiUrls.auth.session)).data;
+}
+
+export async function logoutUser(): Promise<void> {
+  await http.post(apiUrls.auth.logout);
 }

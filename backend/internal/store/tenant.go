@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 
-	"diary-listener/backend/internal/apierror"
 	"diary-listener/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -115,31 +114,6 @@ func (s *Store) DeleteTenant(ctx context.Context, principal domain.Principal) ([
 		return err
 	})
 	return publicIDs, err
-}
-
-func (s *Store) RestoreTenant(ctx context.Context, principal domain.Principal) (TenantSummary, error) {
-	var result TenantSummary
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		command, err := tx.Exec(ctx, `
-            UPDATE tenants SET status='active',deleted_at=NULL,updated_at=now()
-            WHERE id=$1 AND user_id=$2 AND status='deleted'`, principal.TenantID, principal.UserID,
-		)
-		if err != nil {
-			return err
-		}
-		if command.RowsAffected() == 0 {
-			return apierror.New("TENANT_NOT_DELETED", "个人空间不处于可恢复状态", 409)
-		}
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
-		if err := auditResource(ctx, tx, principal, "tenant.restore", "tenant", principal.TenantID.String()); err != nil {
-			return err
-		}
-		result, err = tenantSummary(ctx, tx, principal)
-		return err
-	})
-	return result, err
 }
 
 func auditResource(

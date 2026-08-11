@@ -10,8 +10,16 @@ import {
   ThunderboltOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import ProtectedRoute from './routes/ProtectedRoute';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useOutletContext,
+} from 'react-router-dom';
+import ProtectedRoute, { type AuthenticatedOutletContext } from './routes/ProtectedRoute';
+import { logoutUser } from './api/auth';
 import './App.css';
 
 const LoginPage = lazy(() => import('./features/auth/LoginPage'));
@@ -26,13 +34,16 @@ const AIEventsPage = lazy(() => import('./features/aiEvents/AIEventsPage'));
 function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const token = localStorage.getItem('token') as string;
-  const username = localStorage.getItem('username') || '';
+  const token = '';
+  const { session } = useOutletContext<AuthenticatedOutletContext>();
+  const username = session.username;
 
-  function logout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('username');
-    navigate('/login', { replace: true });
+  async function logout() {
+    try {
+      await logoutUser();
+    } finally {
+      navigate('/login', { replace: true });
+    }
   }
 
   const selected = location.pathname.startsWith('/notes') ? '/notes' : location.pathname;

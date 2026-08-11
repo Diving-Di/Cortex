@@ -63,7 +63,7 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 	authenticated.Use(s.authenticate())
 	{
 		authenticated.POST("/api/v1/auth/logout", gin.WrapF(s.logout))
-		authenticated.POST("/api/v1/tenant/restore", gin.WrapF(s.restoreTenant))
+		authenticated.GET("/api/v1/auth/session", gin.WrapF(s.session))
 
 		active := authenticated.Group("/")
 		active.Use(s.requireActiveTenant())
@@ -220,12 +220,20 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) authenticate() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		scheme, token, ok := strings.Cut(
+		scheme, token, hasHeader := strings.Cut(
 			strings.TrimSpace(c.Request.Header.Get("Authorization")), " ",
 		)
-		if !ok ||
-			(strings.ToLower(scheme) != "token" && strings.ToLower(scheme) != "bearer") ||
-			strings.TrimSpace(token) == "" {
+		validHeader := hasHeader &&
+			(strings.ToLower(scheme) == "token" || strings.ToLower(scheme) == "bearer") &&
+			strings.TrimSpace(token) != ""
+		if !validHeader {
+			token = ""
+			cookie, err := c.Request.Cookie(authCookieName)
+			if err == nil {
+				token = cookie.Value
+			}
+		}
+		if strings.TrimSpace(token) == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"detail": "Authentication credentials were not provided.",
 			})

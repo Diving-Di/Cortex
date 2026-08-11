@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
@@ -45,7 +44,7 @@ type Error struct{ Code string }
 
 func (e *Error) Error() string { return e.Code }
 
-var imageExt = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true}
+var imageExt = map[string]bool{".png": true, ".jpg": true}
 
 func Prepare(uploadPath, originalName, targetRoot string, limits Limits) (Prepared, error) {
 	ext := strings.ToLower(filepath.Ext(originalName))
@@ -99,7 +98,7 @@ func prepareZIP(filename, root string, limits Limits) (Prepared, error) {
 		}
 		ext := strings.ToLower(path.Ext(clean))
 		if ext != ".md" && !imageExt[ext] {
-			return Prepared{}, &Error{Code: "KNOWLEDGE_FILE_TYPE_UNSUPPORTED"}
+			continue
 		}
 		if int64(f.UncompressedSize64) > limits.MaxFileBytes || f.CompressedSize64 == 0 && f.UncompressedSize64 > 0 ||
 			(f.CompressedSize64 > 0 && f.UncompressedSize64/f.CompressedSize64 > uint64(limits.MaxCompressionRatio)) {
@@ -210,16 +209,14 @@ func writeImage(data []byte, rel, root, ext string) (Asset, error) {
 	if i := strings.IndexByte(expected, ';'); i >= 0 {
 		expected = expected[:i]
 	}
-	if ext == ".jpg" || ext == ".jpeg" {
+	if ext == ".jpg" {
 		expected = "image/jpeg"
 	}
 	if expected == "" || actual != expected {
 		return Asset{}, &Error{Code: "KNOWLEDGE_ARCHIVE_INVALID"}
 	}
-	if ext != ".webp" {
-		if _, _, err := image.DecodeConfig(bytes.NewReader(data)); err != nil {
-			return Asset{}, &Error{Code: "KNOWLEDGE_ARCHIVE_INVALID"}
-		}
+	if _, _, err := image.DecodeConfig(bytes.NewReader(data)); err != nil {
+		return Asset{}, &Error{Code: "KNOWLEDGE_ARCHIVE_INVALID"}
 	}
 	if err := writeFile(root, rel, data); err != nil {
 		return Asset{}, err

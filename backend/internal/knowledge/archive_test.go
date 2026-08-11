@@ -3,6 +3,10 @@ package knowledge
 import (
 	"archive/zip"
 	"bytes"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +14,22 @@ import (
 
 func testLimits() Limits {
 	return Limits{MaxUploadBytes: 1 << 20, MaxExtractedBytes: 1 << 20, MaxFileBytes: 1 << 18, MaxFiles: 20, MaxDepth: 5, MaxCompressionRatio: 100}
+}
+func testImage(t *testing.T, format string) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	var out bytes.Buffer
+	var err error
+	if format == "png" {
+		err = png.Encode(&out, img)
+	} else {
+		err = jpeg.Encode(&out, img, nil)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
 }
 func writeTestZIP(t *testing.T, entries map[string][]byte) string {
 	t.Helper()
@@ -57,14 +77,46 @@ func TestPrepareMarkdownNormalizesEncodingAndNewlines(t *testing.T) {
 		t.Fatalf("not normalized: %q", data)
 	}
 }
-func TestPrepareZIPRejectsTraversalAndUnsupportedFiles(t *testing.T) {
-	for name, entries := range map[string]map[string][]byte{"traversal": {"../secret.md": []byte("# no")}, "unsupported": {"ok.md": []byte("# ok"), "bad.exe": []byte("MZ")}} {
-		t.Run(name, func(t *testing.T) {
-			_, err := Prepare(writeTestZIP(t, entries), "input.zip", filepath.Join(t.TempDir(), "source"), testLimits())
-			if err == nil {
-				t.Fatal("expected rejection")
-			}
-		})
+func TestPrepareZIPRejectsTraversal(t *testing.T) {
+	_, err := Prepare(writeTestZIP(t, map[string][]byte{"../secret.md": []byte("# no")}), "input.zip", filepath.Join(t.TempDir(), "source"), testLimits())
+	if err == nil {
+		t.Fatal("expected rejection")
+	}
+}
+func TestPrepareZIPSkipsUnsupportedFiles(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "source")
+	got, err := Prepare(writeTestZIP(t, map[string][]byte{
+		"ok.md":        []byte("# ok"),
+		"bad.exe":      []byte("MZ"),
+		"document.pdf": []byte("%PDF"),
+		"page.html":    []byte("<html></html>"),
+		"image.jpeg":   []byte("ignored"),
+		"image.gif":    []byte("ignored"),
+		"image.webp":   []byte("ignored"),
+	}), "input.zip", root, testLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Documents) != 1 || len(got.Assets) != 0 {
+		t.Fatalf("documents=%d assets=%d", len(got.Documents), len(got.Assets))
+	}
+	for _, name := range []string{"bad.exe", "document.pdf", "page.html", "image.jpeg", "image.gif", "image.webp"} {
+		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Fatalf("skipped entry %q was written or stat failed: %v", name, err)
+		}
+	}
+}
+func TestPrepareZIPAcceptsPNGAndJPG(t *testing.T) {
+	got, err := Prepare(writeTestZIP(t, map[string][]byte{
+		"ok.md":     []byte("# ok"),
+		"image.png": testImage(t, "png"),
+		"image.jpg": testImage(t, "jpg"),
+	}), "input.zip", filepath.Join(t.TempDir(), "source"), testLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Documents) != 1 || len(got.Assets) != 2 {
+		t.Fatalf("documents=%d assets=%d", len(got.Documents), len(got.Assets))
 	}
 }
 func TestPrepareZIPRequiresMarkdown(t *testing.T) {

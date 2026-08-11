@@ -51,7 +51,7 @@ flowchart LR
 
 ### 3.1 语料来源与文档状态
 
-- 语料来自：单文件 `.md`、包含 Markdown 的 `.zip`（可携带 PNG/JPG/GIF/WebP 图片）、以及
+- 语料来自：单文件 `.md`、包含 Markdown 的 `.zip`（仅处理 `.md`、`.png`、`.jpg`，其他类型条目跳过）、以及
   通过 `PATCH /api/v1/notes/{id}/knowledge` 开启参与问答的个人笔记；每租户容量上限 3 GiB。
 - 文档状态机为 `uploaded → parsing → indexing → ready`，失败为 `failed`，删除为 `deleting`。
 - 检索只覆盖 `status='ready'`、`deleted_at IS NULL`、`knowledge_enabled` 的文档，且

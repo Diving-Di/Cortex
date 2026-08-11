@@ -5,9 +5,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   return (
     <Auth
-      onLogin={(token, username) => {
-        localStorage.setItem('token', token);
-        localStorage.setItem('username', username);
+      onLogin={() => {
         navigate('/', { replace: true });
       }}
     />
