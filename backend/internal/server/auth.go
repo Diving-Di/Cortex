@@ -23,6 +23,10 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type browserLoginResponse struct {
+	Username string `json:"username"`
+}
+
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 	if err := httpx.DecodeJSON(r, &request); err != nil {
@@ -56,10 +60,37 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	token, username, ok := s.authenticateCredentials(w, r)
+	if !ok {
+		return
+	}
+	s.setAuthCookie(w, r, token, s.cfg.TokenTTL)
+	writeBrowserLoginResponse(w, username)
+}
+
+func writeBrowserLoginResponse(w http.ResponseWriter, username string) {
+	httpx.JSON(w, http.StatusOK, browserLoginResponse{Username: username})
+}
+
+func (s *Server) issueToken(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(r.Header.Get("Origin")) != "" {
+		httpx.WriteError(w, s.logger, apierror.New(
+			"TOKEN_BROWSER_FORBIDDEN", "浏览器客户端必须使用会话 Cookie", http.StatusForbidden,
+		))
+		return
+	}
+	token, username, ok := s.authenticateCredentials(w, r)
+	if !ok {
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"token": token, "username": username})
+}
+
+func (s *Server) authenticateCredentials(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	var request loginRequest
 	if err := httpx.DecodeJSON(r, &request); err != nil {
 		httpx.WriteError(w, s.logger, err)
-		return
+		return "", "", false
 	}
 	token, username, err := s.store.Login(
 		r.Context(), strings.TrimSpace(request.Username), request.Password, s.cfg.TokenTTL,
@@ -67,21 +98,21 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if appErr, ok := err.(*apierror.Error); ok && appErr.Code == "INVALID_CREDENTIALS" {
 			httpx.JSON(w, http.StatusBadRequest, map[string]string{"detail": appErr.Message})
-			return
+			return "", "", false
 		}
 		httpx.WriteError(w, s.logger, err)
-		return
+		return "", "", false
 	}
-	s.setAuthCookie(w, r, token, s.cfg.TokenTTL)
-	httpx.JSON(w, http.StatusOK, map[string]string{"token": token, "username": username})
+	return token, username, true
 }
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	principal := principalFrom(r.Context())
-	httpx.JSON(w, http.StatusOK, map[string]any{
-		"username":      principal.Username,
-		"tenant_active": principal.TenantActive,
-	})
+	writeSessionResponse(w, principal.Username)
+}
+
+func writeSessionResponse(w http.ResponseWriter, username string) {
+	httpx.JSON(w, http.StatusOK, map[string]string{"username": username})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {

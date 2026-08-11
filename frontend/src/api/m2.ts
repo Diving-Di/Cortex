@@ -1,4 +1,4 @@
-import { authHeaders, http } from './http';
+import { http } from './http';
 export type Source = { id: number; title: string; note_date: string | null; snippet: string };
 export class IncompleteStreamError extends Error {
   readonly incomplete = true;
@@ -11,15 +11,11 @@ export class IncompleteStreamError extends Error {
     this.name = 'IncompleteStreamError';
   }
 }
-export async function streamPost(
-  token: string,
-  path: string,
-  body: unknown,
-  onChunk: (text: string) => void,
-) {
+export async function streamPost(path: string, body: unknown, onChunk: (text: string) => void) {
   const response = await fetch(`/api/v1${path}`, {
     method: 'POST',
-    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
@@ -64,19 +60,17 @@ export async function streamPost(
     throw new IncompleteStreamError('连接提前结束，回答未完成');
   }
 }
-export async function confirmOrganize(token: string, body: unknown) {
-  return (await http.post('/api/v1/ai/organize/confirm', body, { headers: authHeaders(token) }))
-    .data;
+export async function confirmOrganize(body: unknown) {
+  return (await http.post('/api/v1/ai/organize/confirm', body)).data;
 }
-export async function previewReport(token: string, body: unknown) {
+export async function previewReport(body: unknown) {
   return (
     await http.post<{ start_date: string; end_date: string; sources: Source[] }>(
       '/api/v1/reports/preview',
       body,
-      { headers: authHeaders(token) },
     )
   ).data;
 }
-export async function confirmReport(token: string, body: unknown) {
-  return (await http.post('/api/v1/reports/confirm', body, { headers: authHeaders(token) })).data;
+export async function confirmReport(body: unknown) {
+  return (await http.post('/api/v1/reports/confirm', body)).data;
 }

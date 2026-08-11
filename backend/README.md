@@ -71,7 +71,15 @@ RAG_TITLE_TOP_K=10
 RAG_KEYWORD_TOP_K=15
 RAG_FUSION_TOP_K=20
 RAG_CONTEXT_PARENT_TOP_K=5
+RAG_RERANK_MIN_SCORE=              # 由当前 reranker/embedding/评估集校准；留空不启用绝对分门控
+RAG_RERANK_MIN_MARGIN=             # 可选 Top1-Top2 分差门槛；留空不启用
+RAG_MIN_QUALIFIED_EVIDENCE=1
+RAG_VERIFIER_MODEL=diary-default
 ```
+
+知识问答不会给 Reranker 套用未经校准的默认分数。配置门槛后，只有合格证据会进入生成；
+答案会先缓冲并逐条核验引用，最多基于失败声明重写一次。SSE 依次发送 `retrieval`、
+`verifying`、`verified`、`sources`、`done`，核验失败则发送 `rejected`，不会发送未经核验的正文。
 
 知识库模型由 Compose 内部服务从 ModelScope 固定 revision 构建并离线运行；
 Embedding 输出严格为 512 维，Reranker 使用 BGE CrossEncoder。
@@ -105,6 +113,15 @@ Compose 环境使用固定 revision 的
 
 结果写入 `artifacts/rag-eval/<timestamp>/`。候选正文只在进程内用于生成与 Judge，trace 默认只保存
 文档 ID、标题、章节、索引版本、排名和分数，不写入完整检索正文。
+
+Reranker 拒答阈值使用同时包含有答案与无答案问题的数据集校准：
+
+```powershell
+go run ./cmd/rag-eval -dataset testdata/rag/knowledge_threshold_calibration_v1.jsonl -calibrate-only -workers 2 -min-answerable-recall 0.8
+```
+
+当前模型组合的校准结果记录在 `testdata/rag/knowledge_threshold_calibration_v1_manifest.json`。
+升级 embedding、reranker 或语料版本后必须重新运行，不能沿用当前 `0.5038954`。
 
 个人知识库检索 v3 会跳过只有 Markdown heading、没有正文的 parent，并通过迁移
 `000019_knowledge_retrieval_v3` 为现有 ready 文档排队 `active_index_version + 1`；旧索引会持续服务，

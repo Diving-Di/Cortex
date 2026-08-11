@@ -1,4 +1,4 @@
-import { authHeaders, http } from './http';
+import { http } from './http';
 import axios from 'axios';
 
 export interface XHSAuthorization {
@@ -32,11 +32,9 @@ export interface XHSAuthAttempt {
   updated_at: string;
 }
 
-export async function getXHSAuthorization(token: string) {
+export async function getXHSAuthorization() {
   try {
-    const response = await http.get<XHSAuthorization>('/api/v1/research/xhs/authorization', {
-      headers: authHeaders(token),
-    });
+    const response = await http.get<XHSAuthorization>('/api/v1/research/xhs/authorization', {});
     return response.data;
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 404) return null;
@@ -44,47 +42,42 @@ export async function getXHSAuthorization(token: string) {
   }
 }
 
-export async function startXHSAuthorization(token: string) {
+export async function startXHSAuthorization() {
   const response = await http.post<XHSAuthAttempt>(
     '/api/v1/research/xhs/authorizations',
     undefined,
-    { headers: authHeaders(token) },
+    {},
   );
   return response.data;
 }
 
-export async function getXHSAuthAttempt(token: string, id: string) {
-  const response = await http.get<XHSAuthAttempt>(`/api/v1/research/xhs/authorizations/${id}`, {
-    headers: authHeaders(token),
-  });
+export async function getXHSAuthAttempt(id: string) {
+  const response = await http.get<XHSAuthAttempt>(`/api/v1/research/xhs/authorizations/${id}`, {});
   return response.data;
 }
 
-export async function loadXHSAuthQR(token: string, id: string) {
+export async function loadXHSAuthQR(id: string) {
   const response = await http.get<Blob>(`/api/v1/research/xhs/authorizations/${id}/qr`, {
-    headers: authHeaders(token),
     responseType: 'blob',
   });
   return URL.createObjectURL(response.data);
 }
 
-export async function cancelXHSAuthorization(token: string, id: string) {
-  await http.post(`/api/v1/research/xhs/authorizations/${id}/cancel`, undefined, {
-    headers: authHeaders(token),
-  });
+export async function cancelXHSAuthorization(id: string) {
+  await http.post(`/api/v1/research/xhs/authorizations/${id}/cancel`, undefined, {});
 }
 
-export async function verifyXHSAuthorization(token: string) {
+export async function verifyXHSAuthorization() {
   const response = await http.post<XHSAuthorization>(
     '/api/v1/research/xhs/authorization/verify',
     undefined,
-    { headers: authHeaders(token) },
+    {},
   );
   return response.data;
 }
 
-export async function revokeXHSAuthorization(token: string) {
-  await http.delete('/api/v1/research/xhs/authorization', { headers: authHeaders(token) });
+export async function revokeXHSAuthorization() {
+  await http.delete('/api/v1/research/xhs/authorization', {});
 }
 
 export type ResearchJobStatus =
@@ -178,50 +171,42 @@ export interface ResearchSource {
   assets?: ResearchAsset[];
 }
 
-export async function createResearchJob(
-  token: string,
-  value: {
-    mode: 'keyword' | 'urls';
-    keywords?: string[];
-    urls?: string[];
-    target_count: number;
-    search_sort?: 'general' | 'time_descending' | 'popularity_descending';
-    idempotency_key: string;
-  },
-) {
-  const response = await http.post<ResearchJob>('/api/v1/research/jobs', value, {
-    headers: authHeaders(token),
-  });
+export async function createResearchJob(value: {
+  mode: 'keyword' | 'urls';
+  keywords?: string[];
+  urls?: string[];
+  target_count: number;
+  search_sort?: 'general' | 'time_descending' | 'popularity_descending';
+  idempotency_key: string;
+}) {
+  const response = await http.post<ResearchJob>('/api/v1/research/jobs', value, {});
   return response.data;
 }
 
-export async function listResearchJobs(token: string, page = 1) {
+export async function listResearchJobs(page = 1) {
   const response = await http.get<{ items: ResearchJob[]; total: number }>(
     '/api/v1/research/jobs',
     {
-      headers: authHeaders(token),
       params: { limit: 20, offset: (page - 1) * 20 },
     },
   );
   return { ...response.data, items: response.data.items || [] };
 }
 
-export async function cancelResearchJob(token: string, id: number) {
-  await http.post(`/api/v1/research/jobs/${id}/cancel`, undefined, { headers: authHeaders(token) });
+export async function cancelResearchJob(id: number) {
+  await http.post(`/api/v1/research/jobs/${id}/cancel`, undefined, {});
 }
 
-export async function retryResearchJob(token: string, id: number) {
-  await http.post(`/api/v1/research/jobs/${id}/retry`, undefined, { headers: authHeaders(token) });
+export async function retryResearchJob(id: number) {
+  await http.post(`/api/v1/research/jobs/${id}/retry`, undefined, {});
 }
 
 export async function listResearchSources(
-  token: string,
   query: { jobId?: number; status?: string; search?: string; sort?: string; page?: number } = {},
 ) {
   const response = await http.get<{ items: ResearchSource[]; total: number }>(
     '/api/v1/research/sources',
     {
-      headers: authHeaders(token),
       params: {
         limit: 20,
         offset: ((query.page || 1) - 1) * 20,
@@ -235,57 +220,45 @@ export async function listResearchSources(
   return { ...response.data, items: response.data.items || [] };
 }
 
-export async function getResearchSource(token: string, id: number) {
-  const response = await http.get<ResearchSource>(`/api/v1/research/sources/${id}`, {
-    headers: authHeaders(token),
-  });
+export async function getResearchSource(id: number) {
+  const response = await http.get<ResearchSource>(`/api/v1/research/sources/${id}`, {});
   return response.data;
 }
 
 export async function updateResearchDraft(
-  token: string,
   sourceId: number,
   value: Pick<ResearchDraft, 'summary' | 'key_points' | 'category' | 'suggested_tags' | 'version'>,
 ) {
   const response = await http.patch<ResearchDraft>(
     `/api/v1/research/sources/${sourceId}/draft`,
     value,
-    { headers: authHeaders(token) },
+    {},
   );
   return response.data;
 }
 
-export async function ignoreResearchSource(token: string, id: number) {
-  await http.post(`/api/v1/research/sources/${id}/ignore`, undefined, {
-    headers: authHeaders(token),
-  });
+export async function ignoreResearchSource(id: number) {
+  await http.post(`/api/v1/research/sources/${id}/ignore`, undefined, {});
 }
 
-export async function recollectResearchSource(token: string, id: number) {
-  await http.post(`/api/v1/research/sources/${id}/recollect`, undefined, {
-    headers: authHeaders(token),
-  });
+export async function recollectResearchSource(id: number) {
+  await http.post(`/api/v1/research/sources/${id}/recollect`, undefined, {});
 }
 
-export async function deleteResearchSource(token: string, id: number) {
-  await http.delete(`/api/v1/research/sources/${id}`, { headers: authHeaders(token) });
+export async function deleteResearchSource(id: number) {
+  await http.delete(`/api/v1/research/sources/${id}`, {});
 }
 
-export async function batchSaveResearchSources(token: string, ids: number[]) {
-  await http.post('/api/v1/research/sources/batch-save', { ids }, { headers: authHeaders(token) });
+export async function batchSaveResearchSources(ids: number[]) {
+  await http.post('/api/v1/research/sources/batch-save', { ids }, {});
 }
 
-export async function batchIgnoreResearchSources(token: string, ids: number[]) {
-  await http.post(
-    '/api/v1/research/sources/batch-ignore',
-    { ids },
-    { headers: authHeaders(token) },
-  );
+export async function batchIgnoreResearchSources(ids: number[]) {
+  await http.post('/api/v1/research/sources/batch-ignore', { ids }, {});
 }
 
-export async function loadResearchAsset(token: string, id: number) {
+export async function loadResearchAsset(id: number) {
   const response = await http.get<Blob>(`/api/v1/research/assets/${id}`, {
-    headers: authHeaders(token),
     responseType: 'blob',
   });
   return URL.createObjectURL(response.data);

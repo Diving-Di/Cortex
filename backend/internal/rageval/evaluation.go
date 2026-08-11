@@ -25,6 +25,7 @@ type Case struct {
 	ReferenceAnswer string   `json:"reference_answer"`
 	SourcePaths     []string `json:"source_paths"`
 	Tags            []string `json:"tags"`
+	Answerable      *bool    `json:"answerable,omitempty"`
 }
 
 type Config struct {
@@ -119,10 +120,11 @@ type Judge interface {
 	Evaluate(context.Context, JudgeInput) (Assessment, error)
 }
 type Runner struct {
-	Retriever Retriever
-	Generator Generator
-	Judge     Judge
-	Config    Config
+	Retriever     Retriever
+	Generator     Generator
+	Judge         Judge
+	Config        Config
+	RetrievalOnly bool
 }
 
 func LoadCases(path string) ([]Case, error) {
@@ -142,7 +144,8 @@ func LoadCases(path string) ([]Case, error) {
 		if err := d.Decode(&c); err != nil {
 			return nil, fmt.Errorf("dataset line %d: %w", line, err)
 		}
-		if strings.TrimSpace(c.ID) == "" || strings.TrimSpace(c.Query) == "" || strings.TrimSpace(c.ReferenceAnswer) == "" || len(c.SourcePaths) == 0 {
+		answerable := c.Answerable == nil || *c.Answerable
+		if strings.TrimSpace(c.ID) == "" || strings.TrimSpace(c.Query) == "" || (answerable && (strings.TrimSpace(c.ReferenceAnswer) == "" || len(c.SourcePaths) == 0)) {
 			return nil, fmt.Errorf("dataset line %d: required field is empty", line)
 		}
 		if seen[c.ID] {
@@ -179,7 +182,7 @@ func (r Runner) RunCase(ctx context.Context, c Case) (out Result) {
 	start := time.Now()
 	out = Result{ID: c.ID, Query: c.Query, ReferenceAnswer: c.ReferenceAnswer, SourcePaths: c.SourcePaths, Tags: c.Tags, Status: "failed"}
 	defer func() { out.Latencies.TotalMS = time.Since(start).Milliseconds() }()
-	if r.Retriever == nil || r.Generator == nil || r.Judge == nil {
+	if r.Retriever == nil || (!r.RetrievalOnly && (r.Generator == nil || r.Judge == nil)) {
 		out.Error = "evaluation dependency is not configured"
 		return
 	}
@@ -200,6 +203,10 @@ func (r Runner) RunCase(ctx context.Context, c Case) (out Result) {
 	}
 	out.AfterRerank = traces(after)
 	out.Metrics = retrievalMetrics(c.SourcePaths, before, after)
+	if r.RetrievalOnly {
+		out.Status = "success"
+		return
+	}
 	contexts := store.SelectKnowledgeContexts(c.Query, after, r.Config.ContextTopK)
 	evidence := make([]ai.KnowledgeEvidence, 0, len(contexts))
 	judgeContexts := make([]JudgeContext, 0, len(contexts))

@@ -306,7 +306,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeKnowledgeSSE(w, r, events, sources, func(ctx context.Context, answer, status, errorCode, upstreamStage string, outputTokens int) (int32, int32, error) {
-		return s.store.SaveKnowledgeAnswer(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, status, errorCode, upstreamStage, outputTokens, candidates)
+		return s.store.SaveKnowledgeAnswerOutcome(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, status, errorCode, upstreamStage, outputTokens, candidates)
 	})
 }
 func (s *Server) writeKnowledgeReplay(w http.ResponseWriter, result store.KnowledgeRequestResult) {
@@ -386,7 +386,17 @@ func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, event
 			continue
 		}
 		if event.Type == "rejected" {
-			_ = writeNamedSSE(w, "rejected", map[string]string{"code": "KNOWLEDGE_NO_EVIDENCE", "message": "生成内容未通过证据核验"})
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+			messageID, conversationID, saveErr := save(ctx, "", "failed", "KNOWLEDGE_NO_EVIDENCE", "verification", 0)
+			cancel()
+			payload := map[string]any{"code": "KNOWLEDGE_NO_EVIDENCE", "message": "生成内容未通过证据核验"}
+			if saveErr == nil {
+				payload["message_id"] = messageID
+				payload["conversation_id"] = conversationID
+			} else {
+				s.logger.Error("save rejected knowledge answer", "error", saveErr)
+			}
+			_ = writeNamedSSE(w, "rejected", payload)
 			flusher.Flush()
 			return
 		}

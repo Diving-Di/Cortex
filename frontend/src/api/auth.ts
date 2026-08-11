@@ -7,13 +7,11 @@ interface LoginPayload {
 }
 
 interface LoginResponse {
-  token: string;
   username: string;
 }
 
 export interface SessionResponse {
   username: string;
-  tenant_active: boolean;
 }
 
 interface RegisterPayload extends LoginPayload {

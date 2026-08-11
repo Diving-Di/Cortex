@@ -49,7 +49,7 @@ test('renders public templates with interactions', async () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <TemplatesPage token="t" />
+        <TemplatesPage />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -57,12 +57,12 @@ test('renders public templates with interactions', async () => {
   expect(screen.getByText(/使用模板/)).toBeInTheDocument();
   expect(screen.getByText(/点赞/)).toBeInTheDocument();
   expect(screen.getByText(/收藏/)).toBeInTheDocument();
-  await waitFor(() => expect(recordTemplateView).toHaveBeenCalledWith('t', 'p1'));
+  await waitFor(() => expect(recordTemplateView).toHaveBeenCalledWith('p1'));
   fireEvent.click(screen.getByRole('button', { name: /举\s*报/ }));
   fireEvent.change(screen.getByLabelText('举报说明'), { target: { value: '需要检查' } });
   fireEvent.click(screen.getByRole('button', { name: /提\s*交/ }));
   await waitFor(() =>
-    expect(reportTemplate).toHaveBeenCalledWith('t', 'p1', 'inappropriate', '需要检查'),
+    expect(reportTemplate).toHaveBeenCalledWith('p1', 'inappropriate', '需要检查'),
   );
 });
 
@@ -112,14 +112,14 @@ test('loads the next signed-cursor page', async () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <TemplatesPage token="t" />
+        <TemplatesPage />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   expect(await screen.findByText('第一页模板')).toBeInTheDocument();
   fireEvent.click(screen.getByText('加载更多'));
   expect(await screen.findByText('第二页模板')).toBeInTheDocument();
-  expect(listPublicTemplates).toHaveBeenLastCalledWith('t', 'recommended', 'signed-cursor');
+  expect(listPublicTemplates).toHaveBeenLastCalledWith('recommended', 'signed-cursor');
 });
 
 test('renders an empty private-template list when the legacy API returns null', async () => {
@@ -127,7 +127,7 @@ test('renders an empty private-template list when the legacy API returns null', 
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <TemplatesPage token="t" />
+        <TemplatesPage />
       </MemoryRouter>
     </QueryClientProvider>,
   );

@@ -43,7 +43,7 @@ test('lists ordinary dated notes and creates a note with today date', async () =
   render(
     <MemoryRouter>
       <QueryClientProvider client={new QueryClient()}>
-        <NoteList token="test-token" />
+        <NoteList />
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -53,16 +53,12 @@ test('lists ordinary dated notes and creates a note with today date', async () =
   expect(screen.queryByPlaceholderText('类型')).not.toBeInTheDocument();
   expect(screen.queryByPlaceholderText('标签')).not.toBeInTheDocument();
   await waitFor(() =>
-    expect(listNotes).toHaveBeenCalledWith(
-      'test-token',
-      expect.objectContaining({ type: 'normal' }),
-    ),
+    expect(listNotes).toHaveBeenCalledWith(expect.objectContaining({ type: 'normal' })),
   );
 
   fireEvent.click(screen.getByRole('button', { name: '新建笔记' }));
   await waitFor(() =>
     expect(createNote).toHaveBeenCalledWith(
-      'test-token',
       expect.objectContaining({
         type: 'normal',
         note_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),

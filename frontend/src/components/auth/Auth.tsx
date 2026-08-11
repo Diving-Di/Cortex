@@ -7,7 +7,7 @@ import { loginUser, registerUser } from '../../api/auth';
 import './Auth.css';
 
 interface AuthProps {
-  onLogin: (token: string, username: string) => void;
+  onLogin: (username: string) => void;
 }
 
 export default function Auth({ onLogin }: AuthProps) {
@@ -25,7 +25,7 @@ export default function Auth({ onLogin }: AuthProps) {
     setLoading(true);
     try {
       const res = await loginUser({ username, password });
-      onLogin(res.token, res.username);
+      onLogin(res.username);
       message.success('登录成功');
     } catch (e) {
       const err = e as AxiosError<{ detail?: string }>;

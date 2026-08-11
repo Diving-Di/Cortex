@@ -227,7 +227,7 @@ func titleMatchEligible(value string) bool {
 	return len([]rune(value)) >= 4
 }
 
-func (s *Store) SaveKnowledgeAnswer(ctx context.Context, p domain.Principal, conversationID *int32, requestID, question, answer, status, errorCode, upstreamStage string, outputTokens int, sources []KnowledgeCandidate) (int32, int32, error) {
+func (s *Store) SaveKnowledgeAnswer(ctx context.Context, p domain.Principal, conversationID *int32, requestID, question, answer string, sources []KnowledgeCandidate) (int32, int32, error) {
 	var messageID, savedConversationID int32
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, p); err != nil {
@@ -253,7 +253,7 @@ func (s *Store) SaveKnowledgeAnswer(ctx context.Context, p domain.Principal, con
 		if _, err := tx.Exec(ctx, `INSERT INTO messages(tenant_id,conversation_id,role,content,status,request_id) VALUES($1,$2,'user',$3,'complete',nullif($4,''))`, p.TenantID, savedConversationID, question, requestID); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO messages(tenant_id,conversation_id,role,content,status,error_code,upstream_stage,output_tokens) VALUES($1,$2,'assistant',$3,$4,nullif($5,''),nullif($6,''),$7) RETURNING id`, p.TenantID, savedConversationID, answer, status, errorCode, upstreamStage, outputTokens).Scan(&messageID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO messages(tenant_id,conversation_id,role,content,status) VALUES($1,$2,'assistant',$3,'complete') RETURNING id`, p.TenantID, savedConversationID, answer).Scan(&messageID); err != nil {
 			return err
 		}
 		for _, src := range sources {

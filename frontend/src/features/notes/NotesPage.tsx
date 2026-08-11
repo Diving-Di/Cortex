@@ -3,18 +3,16 @@ import NoteList from './NoteList';
 import NoteEditor from './NoteEditor';
 import TemplatesPage from '../templates/TemplatesPage';
 
-export default function NotesPage({ token }: { token: string }) {
+export default function NotesPage() {
   const preferred = localStorage.getItem('diary:notes-section');
   return (
     <Routes>
       <Route
         index
-        element={
-          preferred === 'list' ? <Navigate to="list" replace /> : <TemplatesPage token={token} />
-        }
+        element={preferred === 'list' ? <Navigate to="list" replace /> : <TemplatesPage />}
       />
-      <Route path="list" element={<NoteList token={token} />} />
-      <Route path=":id" element={<NoteEditor token={token} />} />
+      <Route path="list" element={<NoteList />} />
+      <Route path=":id" element={<NoteEditor />} />
     </Routes>
   );
 }

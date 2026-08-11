@@ -7,29 +7,24 @@ import { Alert, Button, DatePicker, Input, Space, Spin, Tabs, Upload, message } 
 import dayjs from 'dayjs';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { authHeaders, http } from '../../api/http';
+import { http } from '../../api/http';
 import { getNote, saveNote } from '../../api/notes';
 import { useTheme } from '../../app/theme';
 import './Notes.css';
 
 type State = 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict';
-export default function NoteEditor({ token }: { token: string }) {
+export default function NoteEditor() {
   const { resolved } = useTheme();
   const id = Number(useParams().id),
     navigate = useNavigate(),
     qc = useQueryClient();
   const query = useQuery({
     queryKey: ['note', id],
-    queryFn: () => getNote(token, id),
+    queryFn: () => getNote(id),
   });
   const attachments = useQuery({
     queryKey: ['attachments', id],
-    queryFn: async () =>
-      (
-        await http.get<any[]>(`/api/v1/attachments/note/${id}`, {
-          headers: authHeaders(token),
-        })
-      ).data,
+    queryFn: async () => (await http.get<any[]>(`/api/v1/attachments/note/${id}`, {})).data,
   });
   const [title, setTitle] = useState(''),
     [content, setContent] = useState(''),
@@ -56,7 +51,7 @@ export default function NoteEditor({ token }: { token: string }) {
     if (!initialized.current || state === 'saving') return;
     setState('saving');
     try {
-      const n = await saveNote(token, id, {
+      const n = await saveNote(id, {
         title,
         content,
         note_date: noteDate || null,
@@ -153,7 +148,6 @@ export default function NoteEditor({ token }: { token: string }) {
           try {
             const r = await fetch(`/api/v1/attachments?note_id=${id}`, {
               method: 'POST',
-              headers: authHeaders(token),
               body: form,
             });
             if (!r.ok) throw new Error('upload failed');
@@ -174,9 +168,7 @@ export default function NoteEditor({ token }: { token: string }) {
             <Button
               size="small"
               onClick={async () => {
-                const r = await fetch(`/api/v1/attachments/${a.id}`, {
-                  headers: authHeaders(token),
-                });
+                const r = await fetch(`/api/v1/attachments/${a.id}`, {});
                 const blob = await r.blob();
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
@@ -192,11 +184,7 @@ export default function NoteEditor({ token }: { token: string }) {
               size="small"
               danger
               onClick={() =>
-                http
-                  .delete(`/api/v1/attachments/${a.id}`, {
-                    headers: authHeaders(token),
-                  })
-                  .then(() => attachments.refetch())
+                http.delete(`/api/v1/attachments/${a.id}`, {}).then(() => attachments.refetch())
               }
             >
               删除

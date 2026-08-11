@@ -72,7 +72,7 @@ $registration = @{
 } | ConvertTo-Json
 Invoke-RestMethod "$BaseURL/api/v1/auth/register" `
     -Method Post -ContentType "application/json" -Body $registration | Out-Null
-$login = Invoke-RestMethod "$BaseURL/api/v1/auth/login" `
+$login = Invoke-RestMethod "$BaseURL/api/v1/auth/token" `
     -Method Post -ContentType "application/json" `
     -Body (@{ username = $username; password = $password } | ConvertTo-Json)
 $headers = @{ Authorization = "Token $($login.token)" }

@@ -25,15 +25,15 @@ const statusText: Record<string, string> = {
   failed: '失败',
   deleting: '删除中',
 };
-export default function KnowledgePage({ token }: { token: string }) {
+export default function KnowledgePage() {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['knowledge'],
-    queryFn: () => listKnowledge(token),
+    queryFn: () => listKnowledge(),
     refetchInterval: 5000,
   });
   const upload = useMutation({
-    mutationFn: (file: File) => uploadKnowledge(token, file),
+    mutationFn: (file: File) => uploadKnowledge(file),
     onSuccess: () => {
       message.success('文件已安全保存，正在建立索引');
       queryClient.invalidateQueries({ queryKey: ['knowledge'] });
@@ -41,7 +41,7 @@ export default function KnowledgePage({ token }: { token: string }) {
     onError: () => message.error('上传失败，请检查文件格式和容量'),
   });
   const remove = useMutation({
-    mutationFn: (id: string) => deleteKnowledge(token, id),
+    mutationFn: (id: string) => deleteKnowledge(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['knowledge'] }),
   });
   const quota = query.data?.quota;

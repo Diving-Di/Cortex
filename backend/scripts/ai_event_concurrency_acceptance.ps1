@@ -18,7 +18,7 @@ for ($index = 0; $index -lt 12; $index++) {
     $username = "flash-$suffix-$index"
     Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/register" -ContentType "application/json" `
         -Body (@{ username = $username; email = "$username@example.invalid"; password = $password } | ConvertTo-Json) | Out-Null
-    $token = (Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/login" -ContentType "application/json" `
+    $token = (Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/token" -ContentType "application/json" `
         -Body (@{ username = $username; password = $password } | ConvertTo-Json)).token
     $headers = @{ Authorization = "Token $token" }
     $event = Invoke-RestMethod -Uri "$BaseUrl/api/v1/ai-events/current" -Headers $headers

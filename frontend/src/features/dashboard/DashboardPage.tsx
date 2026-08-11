@@ -43,15 +43,15 @@ function OfflineStatus() {
   );
 }
 
-export default function DashboardPage({ token }: { token: string }) {
+export default function DashboardPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const dashboard = useQuery({
     queryKey: ['dashboard'],
-    queryFn: () => getDashboard(token),
+    queryFn: () => getDashboard(),
     retry: navigator.onLine ? 1 : false,
   });
-  const aiEvent = useQuery({ queryKey: ['ai-event'], queryFn: () => getCurrentAIEvent(token) });
+  const aiEvent = useQuery({ queryKey: ['ai-event'], queryFn: () => getCurrentAIEvent() });
   const [eventOpen, setEventOpen] = useState(false);
   useEffect(() => {
     if (!aiEvent.data) return;
@@ -87,7 +87,7 @@ export default function DashboardPage({ token }: { token: string }) {
     setPreview(null);
     let out = '';
     try {
-      await streamPost(token, '/ai/organize', { content: raw }, (content) => {
+      await streamPost('/ai/organize', { content: raw }, (content) => {
         out += content;
         setDraft(out);
       });
@@ -102,7 +102,7 @@ export default function DashboardPage({ token }: { token: string }) {
   async function save() {
     if (!preview) return;
     try {
-      const note = await confirmOrganize(token, preview);
+      const note = await confirmOrganize(preview);
       message.success(`已保存笔记 #${note.id}`);
       setRaw('');
       setDraft('');

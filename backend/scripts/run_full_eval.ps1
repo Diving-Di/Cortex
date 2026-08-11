@@ -48,7 +48,7 @@ if (-not $SkipUpload) {
     }
     Write-Host "[1/4] 上传非菜谱笔记到 Diving 知识库..." -ForegroundColor Yellow
     $login = @{username="Diving";password=$DivingPassword} | ConvertTo-Json
-    $token = (Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/login" -Method POST -ContentType "application/json" -Body $login).token
+    $token = (Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/token" -Method POST -ContentType "application/json" -Body $login).token
     $headers = @{Authorization="Bearer $token";"Content-Type"="application/json"}
     
     $allNotes = @()

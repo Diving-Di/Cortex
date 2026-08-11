@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import type { Preferences } from '../../api/settings';
 import SettingsPage from './SettingsPage';
 
-const updatePreferences = vi.fn(async (_token: string, value: Preferences) => ({
+const updatePreferences = vi.fn(async (value: Preferences) => ({
   ...value,
   version: value.version + 1,
 }));
@@ -17,7 +17,7 @@ vi.mock('../../api/settings', () => ({
     marketplace_personalization: true,
     version: 1,
   })),
-  updatePreferences: (...args: [string, Preferences]) => updatePreferences(...args),
+  updatePreferences: (value: Preferences) => updatePreferences(value),
 }));
 
 afterEach(() => {
@@ -26,14 +26,14 @@ afterEach(() => {
 });
 
 test('toggles marketplace personalization from settings', async () => {
-  render(<SettingsPage token="token" />);
+  render(<SettingsPage />);
 
   const toggle = await screen.findByLabelText('个性化模板推荐');
   expect(toggle).toBeChecked();
   fireEvent.click(toggle);
 
   await waitFor(() =>
-    expect(updatePreferences).toHaveBeenCalledWith('token', {
+    expect(updatePreferences).toHaveBeenCalledWith({
       marketplace_personalization: false,
       version: 1,
     }),

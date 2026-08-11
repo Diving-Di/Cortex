@@ -32,11 +32,15 @@ data: [DONE]
 | `GET` | `/readyz` | 否 | 数据库就绪检查 |
 | `GET` | `/metrics` | 否 | Prometheus 文本指标，不包含正文或身份信息 |
 | `POST` | `/api/v1/auth/register` | 否 | 注册账号并创建个人空间 |
-| `POST` | `/api/v1/auth/login` | 否 | 登录并返回 Token |
+| `POST` | `/api/v1/auth/login` | 否 | 浏览器登录；设置 HttpOnly 会话 Cookie，只返回用户名 |
+| `POST` | `/api/v1/auth/token` | 否 | 非浏览器客户端登录并返回 Token |
 | `POST` | `/api/v1/auth/logout` | 是 | 撤销当前 Token |
 | `GET` | `/api/v1/auth/session` | 是 | 获取当前浏览器会话状态 |
 
 用户名和密码至少 6 个字符，用户名与邮箱唯一。
+`/api/v1/auth/token` 拒绝带 `Origin` 的浏览器请求；浏览器必须使用 `/api/v1/auth/login`
+建立 HttpOnly Cookie 会话，响应正文不会包含原始 Token。
+软删除个人空间后，账号登录与既有 Token 认证统一失败，不向客户端暴露租户状态。
 
 ## 个人空间与工作台
 
@@ -45,9 +49,7 @@ data: [DONE]
 | `GET` | `/api/v1/tenant` | 获取空间状态、配额与用量 |
 | `PATCH` | `/api/v1/tenant` | 修改空间显示名称 |
 | `DELETE` | `/api/v1/tenant` | 软删除个人空间 |
-| `GET` | `/api/dashboard?timezone=Asia/Shanghai` | 获取工作台统计摘要 |
-
-`/api/dashboard` 是当前保留的未版本化工作台接口；其他产品业务接口使用 `/api/v1`。
+| `GET` | `/api/v1/dashboard?timezone=Asia/Shanghai` | 获取工作台统计摘要 |
 
 ## 笔记与版本
 

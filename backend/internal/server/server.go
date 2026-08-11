@@ -58,6 +58,7 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 	router.GET("/metrics", gin.WrapF(s.metrics))
 	router.POST("/api/v1/auth/register", gin.WrapF(s.register))
 	router.POST("/api/v1/auth/login", gin.WrapF(s.login))
+	router.POST("/api/v1/auth/token", gin.WrapF(s.issueToken))
 
 	authenticated := router.Group("/")
 	authenticated.Use(s.authenticate())
@@ -74,7 +75,7 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.GET("/api/v1/tags", gin.WrapF(s.listTags))
 			active.POST("/api/v1/tags", gin.WrapF(s.createTag))
 			active.GET("/api/v1/search", gin.WrapF(s.searchNotes))
-			active.GET("/api/dashboard", gin.WrapF(s.dashboard))
+			active.GET("/api/v1/dashboard", gin.WrapF(s.dashboard))
 			active.GET("/api/v1/settings/ai", gin.WrapF(s.aiSettings))
 			active.POST("/api/v1/ai/providers", gin.WrapF(s.configureAIProvider))
 			active.POST("/api/v1/ai/stream", gin.WrapF(s.streamAI))
@@ -224,11 +225,13 @@ func (s *Server) authenticate() gin.HandlerFunc {
 		validHeader := hasHeader &&
 			(strings.ToLower(scheme) == "token" || strings.ToLower(scheme) == "bearer") &&
 			strings.TrimSpace(token) != ""
+		usedCookie := false
 		if !validHeader {
 			token = ""
 			cookie, err := c.Request.Cookie(authCookieName)
 			if err == nil {
 				token = cookie.Value
+				usedCookie = true
 			}
 		}
 		if strings.TrimSpace(token) == "" {
@@ -241,6 +244,9 @@ func (s *Server) authenticate() gin.HandlerFunc {
 		if err != nil {
 			var appErr *apierror.Error
 			if errors.As(err, &appErr) && appErr.StatusCode == http.StatusUnauthorized {
+				if usedCookie {
+					s.clearAuthCookie(c.Writer, c.Request)
+				}
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 					"detail": "Invalid or expired token.",
 				})

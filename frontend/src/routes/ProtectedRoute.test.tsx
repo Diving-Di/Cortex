@@ -28,13 +28,13 @@ test('redirects anonymous users to login', async () => {
 });
 
 test('renders protected content for authenticated users', async () => {
-  vi.mocked(getSession).mockResolvedValueOnce({ username: 'tester', tenant_active: true });
+  vi.mocked(getSession).mockResolvedValueOnce({ username: 'tester' });
   renderRoutes();
   expect(await screen.findByText('private page')).toBeInTheDocument();
 });
 
 test('redirects when an authenticated API request later returns 401', async () => {
-  vi.mocked(getSession).mockResolvedValueOnce({ username: 'tester', tenant_active: true });
+  vi.mocked(getSession).mockResolvedValueOnce({ username: 'tester' });
   renderRoutes();
   expect(await screen.findByText('private page')).toBeInTheDocument();
   window.dispatchEvent(new Event('auth:unauthorized'));

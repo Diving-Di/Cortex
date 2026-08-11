@@ -35,7 +35,7 @@ import {
   withdrawTemplate,
 } from '../../api/templates';
 
-export default function TemplatesPage({ token }: { token: string }) {
+export default function TemplatesPage() {
   const qc = useQueryClient(),
     nav = useNavigate(),
     [open, setOpen] = useState(false),
@@ -48,31 +48,31 @@ export default function TemplatesPage({ token }: { token: string }) {
     viewed = useRef(new Set<string>());
   const pub = useInfiniteQuery({
     queryKey: ['templates', 'public', ranking],
-    queryFn: ({ pageParam }) => listPublicTemplates(token, ranking, pageParam),
+    queryFn: ({ pageParam }) => listPublicTemplates(ranking, pageParam),
     initialPageParam: '',
     getNextPageParam: (last) => last.next_cursor || undefined,
   });
-  const mine = useQuery({ queryKey: ['templates', 'mine'], queryFn: () => listMyTemplates(token) });
+  const mine = useQuery({ queryKey: ['templates', 'mine'], queryFn: () => listMyTemplates() });
   useEffect(() => {
     for (const item of pub.data?.pages.flatMap((page) => page.items) || []) {
       if (!viewed.current.has(item.public_id)) {
         viewed.current.add(item.public_id);
-        void recordTemplateView(token, item.public_id);
+        void recordTemplateView(item.public_id);
       }
     }
-  }, [pub.data?.pages, token]);
+  }, [pub.data?.pages]);
   const refresh = () => qc.invalidateQueries({ queryKey: ['templates'] });
   const action = useMutation({
     mutationFn: async (v: { type: string; id?: number; publicId?: string }) => {
-      if (v.type === 'publish') return publishTemplate(token, v.id!);
-      if (v.type === 'withdraw') return withdrawTemplate(token, v.id!);
-      if (v.type === 'delete') return deleteTemplate(token, v.id!);
+      if (v.type === 'publish') return publishTemplate(v.id!);
+      if (v.type === 'withdraw') return withdrawTemplate(v.id!);
+      if (v.type === 'delete') return deleteTemplate(v.id!);
       if (v.type === 'use-private') {
-        const x = await usePrivateTemplate(token, v.id!);
+        const x = await usePrivateTemplate(v.id!);
         nav(`/notes/${x.note_id}`);
         return;
       }
-      const x = await useTemplate(token, v.publicId!);
+      const x = await useTemplate(v.publicId!);
       nav(`/notes/${x.note_id}`);
     },
     onSuccess: refresh,
@@ -127,7 +127,7 @@ export default function TemplatesPage({ token }: { token: string }) {
                             </Button>
                             <Button
                               onClick={async () => {
-                                await setTemplateReaction(token, x.public_id, 'like', !x.liked);
+                                await setTemplateReaction(x.public_id, 'like', !x.liked);
                                 refresh();
                               }}
                             >
@@ -135,12 +135,7 @@ export default function TemplatesPage({ token }: { token: string }) {
                             </Button>
                             <Button
                               onClick={async () => {
-                                await setTemplateReaction(
-                                  token,
-                                  x.public_id,
-                                  'favorite',
-                                  !x.favorited,
-                                );
+                                await setTemplateReaction(x.public_id, 'favorite', !x.favorited);
                                 refresh();
                               }}
                             >
@@ -182,7 +177,7 @@ export default function TemplatesPage({ token }: { token: string }) {
                   />
                   <Button
                     onClick={async () => {
-                      await savePublicProfile(token, nickname);
+                      await savePublicProfile(nickname);
                       message.success('公开昵称已保存');
                     }}
                   >
@@ -230,7 +225,7 @@ export default function TemplatesPage({ token }: { token: string }) {
         <Form
           layout="vertical"
           onFinish={async (v) => {
-            await createTemplate(token, v);
+            await createTemplate(v);
             setOpen(false);
             refresh();
           }}
@@ -259,7 +254,7 @@ export default function TemplatesPage({ token }: { token: string }) {
         onCancel={() => setEditing(null)}
         onOk={async () => {
           try {
-            await updateTemplate(token, editing);
+            await updateTemplate(editing);
             setEditing(null);
             refresh();
           } catch (error: any) {
@@ -295,7 +290,7 @@ export default function TemplatesPage({ token }: { token: string }) {
         onOk={async () => {
           if (!reporting) return;
           try {
-            await reportTemplate(token, reporting, reportReason, reportDetails);
+            await reportTemplate(reporting, reportReason, reportDetails);
             message.success('举报已提交');
             setReporting(null);
             setReportDetails('');

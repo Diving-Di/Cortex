@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -8,6 +9,44 @@ import (
 
 	"diary-listener/backend/internal/config"
 )
+
+func TestBrowserLoginResponseDoesNotExposeToken(t *testing.T) {
+	response := httptest.NewRecorder()
+	writeBrowserLoginResponse(response, "tester")
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["username"] != "tester" {
+		t.Fatalf("username = %#v", body["username"])
+	}
+	if _, exposed := body["token"]; exposed {
+		t.Fatal("browser login response exposed token")
+	}
+}
+
+func TestSessionResponseDoesNotExposeTenantState(t *testing.T) {
+	response := httptest.NewRecorder()
+	writeSessionResponse(response, "tester")
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if _, exposed := body["tenant_active"]; exposed {
+		t.Fatal("session response exposed tenant state")
+	}
+}
+
+func TestTokenEndpointRejectsBrowserOrigin(t *testing.T) {
+	server := &Server{}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/token", nil)
+	request.Header.Set("Origin", "https://cortex.example")
+	response := httptest.NewRecorder()
+	server.issueToken(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
 
 func TestAuthCookieIsHttpOnlyAndStrict(t *testing.T) {
 	server := &Server{cfg: config.Config{Environment: "development"}}

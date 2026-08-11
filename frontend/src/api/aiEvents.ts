@@ -1,4 +1,4 @@
-import { authHeaders, http } from './http';
+import { http } from './http';
 export interface AIEvent {
   id: string;
   event_date: string;
@@ -38,27 +38,24 @@ export interface AIEventHistoryItem {
   display_name: string;
   claimed_at: string;
 }
-const config = (token: string) => ({ headers: authHeaders(token) });
-export async function getCurrentAIEvent(token: string) {
-  return (await http.get<AIEvent>('/api/v1/ai-events/current', config(token))).data;
+export async function getCurrentAIEvent() {
+  return (await http.get<AIEvent>('/api/v1/ai-events/current')).data;
 }
-export async function getAIPointBalance(token: string) {
-  return (await http.get<AIPointBalance>('/api/v1/ai-points/balance', config(token))).data;
+export async function getAIPointBalance() {
+  return (await http.get<AIPointBalance>('/api/v1/ai-points/balance')).data;
 }
-export async function claimAIEvent(token: string, id: string) {
+export async function claimAIEvent(id: string) {
   return (
     await http.post<AIEventClaim>(
       `/api/v1/ai-events/${id}/claims`,
       {},
-      { headers: { ...authHeaders(token), 'Idempotency-Key': crypto.randomUUID() } },
+      { headers: { 'Idempotency-Key': crypto.randomUUID() } },
     )
   ).data;
 }
-export async function getMyAIEventClaim(token: string, id: string) {
-  return (await http.get<AIEventClaim>(`/api/v1/ai-events/${id}/claims/me`, config(token))).data;
+export async function getMyAIEventClaim(id: string) {
+  return (await http.get<AIEventClaim>(`/api/v1/ai-events/${id}/claims/me`)).data;
 }
-export async function getAIEventHistory(token: string) {
-  return (
-    await http.get<{ items: AIEventHistoryItem[] }>('/api/v1/ai-events/history', config(token))
-  ).data.items;
+export async function getAIEventHistory() {
+  return (await http.get<{ items: AIEventHistoryItem[] }>('/api/v1/ai-events/history')).data.items;
 }

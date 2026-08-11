@@ -1,0 +1,30 @@
+{"id":"cal-a-001","query":"Go的goroutine和操作系统线程有什么区别？","reference_answer":"Goroutine 初始栈更小并由运行时调度。","source_paths":["backend/testdata/rag/non_recipe_notes/Go并发模式学习笔记.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-a-002","query":"Go中无缓冲channel和有缓冲channel的区别是什么？","reference_answer":"无缓冲 channel 用于同步，有缓冲 channel 可解耦生产消费速度。","source_paths":["backend/testdata/rag/non_recipe_notes/Go并发模式学习笔记.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-a-003","query":"Go的Fan-Out/Fan-In并发模式如何实现？","reference_answer":"Fan-Out 并行分发，Fan-In 汇聚结果。","source_paths":["backend/testdata/rag/non_recipe_notes/Go并发模式学习笔记.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-a-004","query":"Go并发编程中goroutine泄漏如何修复？","reference_answer":"通过 context 或 done channel 提供退出路径。","source_paths":["backend/testdata/rag/non_recipe_notes/Go并发模式学习笔记.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-a-005","query":"Go中context.Context有哪些用途？","reference_answer":"用于元数据、取消、超时和截止时间。","source_paths":["backend/testdata/rag/non_recipe_notes/Go并发模式学习笔记.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-a-006","query":"知识库搜索接口P95延迟跳升的原因是什么？","reference_answer":"问题位于 SearchKnowledge 三路召回 CTE。","source_paths":["backend/testdata/rag/non_recipe_notes/SQL优化实战记录.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-a-007","query":"PostgreSQL中MATERIALIZED CTE有什么优化效果？","reference_answer":"避免 CTE 被重复执行。","source_paths":["backend/testdata/rag/non_recipe_notes/SQL优化实战记录.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-a-008","query":"SQL优化后知识库检索的P95延迟是多少？","reference_answer":"P95 从 281ms 降到 175ms。","source_paths":["backend/testdata/rag/non_recipe_notes/SQL优化实战记录.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-a-009","query":"pgvector的HNSW索引参数m和ef_construction怎么调？","reference_answer":"增大参数可提高召回或图质量，但增加资源消耗。","source_paths":["backend/testdata/rag/non_recipe_notes/SQL优化实战记录.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-a-010","query":"2025年Q3 RAG优化的三个核心改进是什么？","reference_answer":"跳过空 parent、增强标题通道、文档优先选择上下文。","source_paths":["backend/testdata/rag/non_recipe_notes/2025年度工作总结.md"],"tags":["calibration","answerable"],"answerable":true}
+{"id":"cal-u-001","query":"作者最喜欢的电影是哪一部？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-002","query":"作者小学班主任叫什么名字？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-003","query":"作者昨天晚餐花了多少钱？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-004","query":"项目是否已经部署到Kubernetes生产集群？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-005","query":"项目生产环境有多少台物理服务器？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-006","query":"Cortex公司的股票代码是什么？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-007","query":"系统2024年的实际营业收入是多少？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-008","query":"作者的护照号码是多少？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-009","query":"作者最常去的健身房地址在哪里？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-010","query":"项目的iOS客户端何时在App Store上线？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-011","query":"Cortex是否通过了SOC 2 Type II审计？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-012","query":"团队目前有多少名全职设计师？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-013","query":"作者最喜欢哪支足球队？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-014","query":"系统是否支持Oracle数据库作为正文权威来源？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-015","query":"下一次公司团建安排在哪个城市？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-016","query":"作者大学毕业论文的导师是谁？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-017","query":"生产环境每月的AWS账单精确金额是多少？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-018","query":"Cortex的Android安装包下载地址是什么？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-019","query":"作者计划明年购买什么型号的汽车？","tags":["calibration","unanswerable"],"answerable":false}
+{"id":"cal-u-020","query":"系统当前线上注册用户的实时人数是多少？","tags":["calibration","unanswerable"],"answerable":false}

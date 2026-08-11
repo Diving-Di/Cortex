@@ -51,10 +51,6 @@ import {
 import type { ResearchAsset, ResearchDraft, ResearchJob, ResearchSource } from '../../api/research';
 import './ResearchPage.css';
 
-interface Props {
-  token: string;
-}
-
 const jobStatus: Record<ResearchJob['status'], { label: string; color: string }> = {
   queued: { label: '等待处理', color: 'default' },
   collecting: { label: '正在采集', color: 'processing' },
@@ -85,7 +81,7 @@ type CreateValues = {
   search_sort?: 'general' | 'time_descending' | 'popularity_descending';
 };
 
-export default function ResearchPage({ token }: Props) {
+export default function ResearchPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [form] = Form.useForm<CreateValues>();
@@ -104,14 +100,14 @@ export default function ResearchPage({ token }: Props) {
 
   const authorization = useQuery({
     queryKey: ['xhs-authorization'],
-    queryFn: () => getXHSAuthorization(token),
+    queryFn: () => getXHSAuthorization(),
     retry: false,
   });
   const coreEnabled =
     authorization.data?.status === 'authorized' && !authorization.data.requires_reauthorization;
   const authAttempt = useQuery({
     queryKey: ['xhs-auth-attempt', authAttemptID],
-    queryFn: () => getXHSAuthAttempt(token, authAttemptID!),
+    queryFn: () => getXHSAuthAttempt(authAttemptID!),
     enabled: Boolean(authAttemptID),
     refetchInterval: (query) =>
       query.state.data &&
@@ -131,7 +127,7 @@ export default function ResearchPage({ token }: Props) {
     }
     let active = true;
     setAuthQRError(false);
-    loadXHSAuthQR(token, authAttemptID)
+    loadXHSAuthQR(authAttemptID)
       .then((url) => {
         if (!active) return URL.revokeObjectURL(url);
         setAuthQR((previous) => {
@@ -145,7 +141,7 @@ export default function ResearchPage({ token }: Props) {
     return () => {
       active = false;
     };
-  }, [authAttempt.dataUpdatedAt, authAttempt.data?.status, authAttemptID, token]);
+  }, [authAttempt.dataUpdatedAt, authAttempt.data?.status, authAttemptID]);
 
   useEffect(() => {
     if (authAttempt.data?.status === 'authorized') {
@@ -163,7 +159,7 @@ export default function ResearchPage({ token }: Props) {
   );
 
   const startAuthorization = useMutation({
-    mutationFn: () => startXHSAuthorization(token),
+    mutationFn: () => startXHSAuthorization(),
     onSuccess: (attempt) => {
       setAuthQR(undefined);
       setAuthQRError(false);
@@ -171,14 +167,14 @@ export default function ResearchPage({ token }: Props) {
     },
   });
   const verifyAuthorization = useMutation({
-    mutationFn: () => verifyXHSAuthorization(token),
+    mutationFn: () => verifyXHSAuthorization(),
     onSuccess: async () => {
       message.success('授权有效');
       await queryClient.invalidateQueries({ queryKey: ['xhs-authorization'] });
     },
   });
   const revokeAuthorization = useMutation({
-    mutationFn: () => revokeXHSAuthorization(token),
+    mutationFn: () => revokeXHSAuthorization(),
     onSuccess: async () => {
       message.success('授权已撤销');
       await queryClient.invalidateQueries({ queryKey: ['xhs-authorization'] });
@@ -187,7 +183,7 @@ export default function ResearchPage({ token }: Props) {
 
   const jobs = useQuery({
     queryKey: ['research-jobs', jobPage],
-    queryFn: () => listResearchJobs(token, jobPage),
+    queryFn: () => listResearchJobs(jobPage),
     enabled: coreEnabled,
     refetchInterval: (query) =>
       query.state.data?.items?.some((item) =>
@@ -199,7 +195,7 @@ export default function ResearchPage({ token }: Props) {
   const sources = useQuery({
     queryKey: ['research-sources', sourceStatusFilter, sourceSearch, sourceSort, sourcePage],
     queryFn: () =>
-      listResearchSources(token, {
+      listResearchSources({
         status: sourceStatusFilter,
         search: sourceSearch,
         sort: sourceSort,
@@ -209,7 +205,7 @@ export default function ResearchPage({ token }: Props) {
   });
   const selectedSource = useQuery({
     queryKey: ['research-source', selectedSourceID],
-    queryFn: () => getResearchSource(token, selectedSourceID!),
+    queryFn: () => getResearchSource(selectedSourceID!),
     enabled: coreEnabled && Boolean(selectedSourceID),
   });
   useEffect(() => {
@@ -237,7 +233,7 @@ export default function ResearchPage({ token }: Props) {
         .split(/\r?\n/)
         .map((item) => item.trim())
         .filter(Boolean);
-      return createResearchJob(token, {
+      return createResearchJob({
         mode: values.mode,
         ...(values.mode === 'keyword' ? { keywords: lines } : { urls: lines }),
         target_count: values.target_count,
@@ -253,19 +249,19 @@ export default function ResearchPage({ token }: Props) {
     },
   });
   const cancel = useMutation({
-    mutationFn: (id: number) => cancelResearchJob(token, id),
+    mutationFn: (id: number) => cancelResearchJob(id),
     onSuccess: refresh,
   });
   const retry = useMutation({
-    mutationFn: (id: number) => retryResearchJob(token, id),
+    mutationFn: (id: number) => retryResearchJob(id),
     onSuccess: refresh,
   });
   const ignore = useMutation({
-    mutationFn: (id: number) => ignoreResearchSource(token, id),
+    mutationFn: (id: number) => ignoreResearchSource(id),
     onSuccess: refresh,
   });
   const batchIgnore = useMutation({
-    mutationFn: (ids: number[]) => batchIgnoreResearchSources(token, ids),
+    mutationFn: (ids: number[]) => batchIgnoreResearchSources(ids),
     onSuccess: async () => {
       setSelectedIDs([]);
       await refresh();
@@ -277,7 +273,7 @@ export default function ResearchPage({ token }: Props) {
       draft: ResearchDraft;
       fields: Record<string, string>;
     }) =>
-      updateResearchDraft(token, value.source.id, {
+      updateResearchDraft(value.source.id, {
         summary: value.fields.summary,
         category: value.fields.category,
         key_points: splitLines(value.fields.key_points),
@@ -293,14 +289,14 @@ export default function ResearchPage({ token }: Props) {
     },
   });
   const recollect = useMutation({
-    mutationFn: (id: number) => recollectResearchSource(token, id),
+    mutationFn: (id: number) => recollectResearchSource(id),
     onSuccess: async () => {
       message.success('已创建重新采集任务');
       await refresh();
     },
   });
   const remove = useMutation({
-    mutationFn: (id: number) => deleteResearchSource(token, id),
+    mutationFn: (id: number) => deleteResearchSource(id),
     onSuccess: async () => {
       setSelectedSourceID(undefined);
       message.success('研究来源已删除，并停止参与知识检索');
@@ -491,7 +487,7 @@ export default function ResearchPage({ token }: Props) {
           footer={
             <Button
               onClick={async () => {
-                if (authAttemptID) await cancelXHSAuthorization(token, authAttemptID);
+                if (authAttemptID) await cancelXHSAuthorization(authAttemptID);
                 setAuthAttemptID(undefined);
                 startAuthorization.reset();
               }}
@@ -695,7 +691,7 @@ export default function ResearchPage({ token }: Props) {
         footer={
           <Button
             onClick={async () => {
-              if (authAttemptID) await cancelXHSAuthorization(token, authAttemptID);
+              if (authAttemptID) await cancelXHSAuthorization(authAttemptID);
               setAuthAttemptID(undefined);
             }}
           >
@@ -809,7 +805,6 @@ export default function ResearchPage({ token }: Props) {
       >
         {selectedSource.data ? (
           <ResearchDetail
-            token={token}
             source={selectedSource.data}
             form={draftForm}
             onSaveDraft={(fields) => {
@@ -829,12 +824,10 @@ export default function ResearchPage({ token }: Props) {
 }
 
 function ResearchDetail({
-  token,
   source,
   form,
   onSaveDraft,
 }: {
-  token: string;
   source: ResearchSource;
   form: FormInstance<Record<string, string>>;
   onSaveDraft: (value: Record<string, string>) => void;
@@ -886,7 +879,7 @@ function ResearchDetail({
           <Typography.Title level={4}>来源图片与 OCR</Typography.Title>
           <div className="research-assets">
             {source.assets.map((asset) => (
-              <ResearchAssetView key={asset.id} token={token} asset={asset} />
+              <ResearchAssetView key={asset.id} asset={asset} />
             ))}
           </div>
         </section>
@@ -915,11 +908,11 @@ function ResearchDetail({
   );
 }
 
-function ResearchAssetView({ token, asset }: { token: string; asset: ResearchAsset }) {
+function ResearchAssetView({ asset }: { asset: ResearchAsset }) {
   const [url, setURL] = useState<string>();
   useEffect(() => {
     let active = true;
-    loadResearchAsset(token, asset.id).then((value) => {
+    loadResearchAsset(asset.id).then((value) => {
       if (active) setURL(value);
       else URL.revokeObjectURL(value);
     });
@@ -927,7 +920,7 @@ function ResearchAssetView({ token, asset }: { token: string; asset: ResearchAss
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [asset.id, token]);
+  }, [asset.id]);
   return (
     <Card size="small">
       {url ? <Image src={url} alt={`来源图片 ${asset.position + 1}`} width={180} /> : null}

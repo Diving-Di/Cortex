@@ -34,7 +34,6 @@ const AIEventsPage = lazy(() => import('./features/aiEvents/AIEventsPage'));
 function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const token = '';
   const { session } = useOutletContext<AuthenticatedOutletContext>();
   const username = session.username;
 
@@ -79,15 +78,15 @@ function AppLayout() {
       <main className="app-content">
         <Suspense fallback={<Spin />}>
           <Routes>
-            <Route index element={<DashboardPage token={token} />} />
-            <Route path="notes/*" element={<NotesPage token={token} />} />
-            <Route path="knowledge" element={<KnowledgePage token={token} />} />
+            <Route index element={<DashboardPage />} />
+            <Route path="notes/*" element={<NotesPage />} />
+            <Route path="knowledge" element={<KnowledgePage />} />
             <Route path="recipes" element={<Navigate to="/knowledge" replace />} />
             <Route path="assistant" element={<Navigate to="/knowledge" replace />} />
-            <Route path="research" element={<ResearchPage token={token} />} />
-            <Route path="ai-events" element={<AIEventsPage token={token} />} />
-            <Route path="reports" element={<ReportsPage token={token} />} />
-            <Route path="settings" element={<SettingsPage token={token} />} />
+            <Route path="research" element={<ResearchPage />} />
+            <Route path="ai-events" element={<AIEventsPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

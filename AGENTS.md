@@ -24,7 +24,7 @@
 - 每个账号对应一个由服务端解析的个人租户。客户端提交的 `tenant_id` 不可信，不得用于选择租户。
 - 租户业务查询必须通过 `Store.WithTx`，并在同一个 `pgx.Tx` 中设置 transaction-local RLS 用户与租户上下文，同时保留显式 `tenant_id` 条件。
 - `DATABASE_URL` 必须使用低权限 `diary_app`；`MIGRATION_DATABASE_URL` 仅供迁移和 scheduler claim，使用 `diary_migrator`。
-- 跨租户资源访问统一表现为 404；软删除租户的普通业务请求返回 403。
+- 跨租户资源访问统一表现为 404；软删除租户不得通过登录或 Token 认证。
 - `backend/db/schema.sql` 是新实例初始化基线。已部署结构的变化必须新增版本化迁移，使用 advisory lock；不得用应用启动时的临时 DDL 代替迁移。
 - 附件只保存 `DIARY_DATA_DIR` 下的安全相对路径，上传须校验大小和配额，下载/删除须认证并阻止目录穿越。附件不得作为公开静态目录暴露。
 - 周报日期归一到周一，月报日期归一到月初；周期笔记按租户、类型和周期日期唯一。

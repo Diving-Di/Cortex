@@ -1,4 +1,4 @@
-import { authHeaders, http } from './http';
+import { http } from './http';
 
 export type ScheduledReportTask = {
   id: number;
@@ -21,36 +21,24 @@ export type ScheduledReportRun = {
   finished_at: string | null;
 };
 
-export async function listScheduledReports(token: string) {
-  return (
-    await http.get<ScheduledReportTask[]>('/api/v1/scheduled-reports', {
-      headers: authHeaders(token),
-    })
-  ).data;
+export async function listScheduledReports() {
+  return (await http.get<ScheduledReportTask[]>('/api/v1/scheduled-reports', {})).data;
 }
-export async function createScheduledReport(token: string, body: object) {
-  return (
-    await http.post<ScheduledReportTask>('/api/v1/scheduled-reports', body, {
-      headers: authHeaders(token),
-    })
-  ).data;
+export async function createScheduledReport(body: object) {
+  return (await http.post<ScheduledReportTask>('/api/v1/scheduled-reports', body, {})).data;
 }
-export async function setScheduledReportEnabled(token: string, id: number, enabled: boolean) {
+export async function setScheduledReportEnabled(id: number, enabled: boolean) {
   return (
     await http.patch<ScheduledReportTask>(
       `/api/v1/scheduled-reports/${id}`,
       {},
-      { params: { enabled }, headers: authHeaders(token) },
+      { params: { enabled } },
     )
   ).data;
 }
-export async function retryScheduledReport(token: string, id: number) {
-  await http.post(`/api/v1/scheduled-reports/${id}/retry`, {}, { headers: authHeaders(token) });
+export async function retryScheduledReport(id: number) {
+  await http.post(`/api/v1/scheduled-reports/${id}/retry`, {}, {});
 }
-export async function listScheduledReportRuns(token: string, id: number) {
-  return (
-    await http.get<ScheduledReportRun[]>(`/api/v1/scheduled-reports/${id}/runs`, {
-      headers: authHeaders(token),
-    })
-  ).data;
+export async function listScheduledReportRuns(id: number) {
+  return (await http.get<ScheduledReportRun[]>(`/api/v1/scheduled-reports/${id}/runs`, {})).data;
 }

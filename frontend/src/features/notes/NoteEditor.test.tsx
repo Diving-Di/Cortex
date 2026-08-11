@@ -11,7 +11,6 @@ vi.mock('../../api/notes', () => ({
 }));
 
 vi.mock('../../api/http', () => ({
-  authHeaders: () => ({}),
   http: {
     get: vi.fn().mockResolvedValue({ data: [] }),
   },
@@ -48,7 +47,7 @@ function renderEditor() {
     <MemoryRouter initialEntries={['/notes/7']}>
       <QueryClientProvider client={new QueryClient()}>
         <Routes>
-          <Route path="/notes/:id" element={<NoteEditor token="test-token" />} />
+          <Route path="/notes/:id" element={<NoteEditor />} />
           <Route path="/notes/list" element={<div>笔记本列表</div>} />
         </Routes>
       </QueryClientProvider>
@@ -94,7 +93,7 @@ test('waits for the committed save response before returning to the notebook', a
 
   expect(screen.getByText('状态：保存中')).toBeInTheDocument();
   expect(screen.queryByText('笔记本列表')).not.toBeInTheDocument();
-  expect(saveNote).toHaveBeenCalledWith('test-token', 7, {
+  expect(saveNote).toHaveBeenCalledWith(7, {
     title: '新标题',
     content: '原始正文',
     note_date: '2026-07-28',

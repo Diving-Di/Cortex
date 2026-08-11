@@ -52,7 +52,7 @@ function renderPage() {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <AIEventsPage token="t" />
+        <AIEventsPage />
       </MemoryRouter>
     </QueryClientProvider>,
   );

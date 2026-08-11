@@ -49,6 +49,7 @@ func TestLegacyRoutesAreNotRegistered(t *testing.T) {
 		{http.MethodGet, "/api/diary/"},
 		{http.MethodPost, "/api/diary/"},
 		{http.MethodDelete, "/api/diary/1/"},
+		{http.MethodGet, "/api/dashboard"},
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {

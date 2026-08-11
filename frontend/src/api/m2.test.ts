@@ -23,7 +23,7 @@ describe('streamPost', () => {
     const chunks: string[] = [];
 
     await expect(
-      streamPost('', '/ai/organize', {}, (chunk) => chunks.push(chunk)),
+      streamPost('/ai/organize', {}, (chunk) => chunks.push(chunk)),
     ).rejects.toBeInstanceOf(IncompleteStreamError);
     expect(chunks).toEqual(['partial']);
     vi.unstubAllGlobals();
@@ -36,7 +36,7 @@ describe('streamPost', () => {
     );
     const chunks: string[] = [];
 
-    await streamPost('', '/ai/organize', {}, (chunk) => chunks.push(chunk));
+    await streamPost('/ai/organize', {}, (chunk) => chunks.push(chunk));
     expect(chunks).toEqual(['ok']);
     vi.unstubAllGlobals();
   });

@@ -16,7 +16,7 @@ if ([string]::IsNullOrWhiteSpace($DivingPassword)) {
 
 $repositoryDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $login = @{username="Diving";password=$DivingPassword} | ConvertTo-Json
-$token = (Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/login" -Method POST -ContentType "application/json" -Body $login).token
+$token = (Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/token" -Method POST -ContentType "application/json" -Body $login).token
 $headers = @{Authorization="Bearer $token"}
 $notes = @()
 $page = 1

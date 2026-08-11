@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -91,6 +92,8 @@ func main() {
 	var dataset, outputRoot, caseIDs string
 	var workers, searchLimit, contextTopK int
 	var preflightOnly bool
+	var calibrateOnly bool
+	var minimumAnswerableRecall float64
 	var thresholds rageval.Thresholds
 	flag.StringVar(&dataset, "dataset", "testdata/rag/knowledge_eval_merged.jsonl", "JSONL evaluation dataset")
 	flag.StringVar(&outputRoot, "output", "../artifacts/rag-eval", "artifact output root")
@@ -99,6 +102,8 @@ func main() {
 	flag.IntVar(&contextTopK, "context-top-k", 5, "reranked contexts sent to generation and judge")
 	flag.StringVar(&caseIDs, "case-ids", "", "optional comma-separated case IDs")
 	flag.BoolVar(&preflightOnly, "preflight-only", false, "validate Diving and dataset documents without calling AI")
+	flag.BoolVar(&calibrateOnly, "calibrate-only", false, "run retrieval/rerank only and scan rejection thresholds")
+	flag.Float64Var(&minimumAnswerableRecall, "min-answerable-recall", 0.8, "minimum recall used to select a calibrated threshold")
 	flag.Float64Var(&thresholds.HitAt10, "min-hit-at-10", 0, "minimum aggregate Hit@10")
 	flag.Float64Var(&thresholds.ContextRecall, "min-context-recall", 0, "minimum context recall")
 	flag.Float64Var(&thresholds.ContextPrecision, "min-context-precision", 0, "minimum context precision")
@@ -113,7 +118,7 @@ func main() {
 	if err != nil {
 		fatal("load configuration: " + err.Error())
 	}
-	if !preflightOnly && strings.TrimSpace(cfg.AIAPIKey) == "" {
+	if !preflightOnly && !calibrateOnly && strings.TrimSpace(cfg.AIAPIKey) == "" {
 		fatal("AI_API_KEY is required")
 	}
 	cases, err := rageval.LoadCases(dataset)
@@ -153,8 +158,20 @@ func main() {
 	runnerCfg := rageval.Config{Username: evaluationUsername, Dataset: filepath.Base(dataset), SearchLimit: searchLimit, ContextTopK: contextTopK, EmbeddingModel: cfg.EmbeddingModel, RerankModel: cfg.RerankModel, Model: cfg.AIModel, JudgeModel: cfg.AIModel}
 	runner := rageval.Runner{Retriever: knowledgeRetriever{store: db, principal: principal, model: cfg.EmbeddingModel,
 		vectorTopK: cfg.RAGVectorTopK, titleTopK: cfg.RAGTitleTopK, keywordTopK: cfg.RAGKeywordTopK,
-		embedding: ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, HTTPClient: embeddingHTTPClient}, reranker: ai.LocalRerankClient{BaseURL: cfg.RerankBaseURL, Model: cfg.RerankModel, MaxDocuments: searchLimit, HTTPClient: httpClient}}, Generator: workflow, Judge: rageval.LLMJudge{Client: client, Model: cfg.AIModel}, Config: runnerCfg}
+		embedding: ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, HTTPClient: embeddingHTTPClient}, reranker: ai.LocalRerankClient{BaseURL: cfg.RerankBaseURL, Model: cfg.RerankModel, MaxDocuments: searchLimit, HTTPClient: httpClient}}, Generator: workflow, Judge: rageval.LLMJudge{Client: client, Model: cfg.AIModel}, Config: runnerCfg, RetrievalOnly: calibrateOnly}
 	results := runCases(ctx, runner, cases, workers, cfg.Environment)
+	if calibrateOnly {
+		calibration := rageval.CalibrateRerankThreshold(cases, results, minimumAnswerableRecall)
+		encoded, marshalErr := json.MarshalIndent(calibration, "", "  ")
+		if marshalErr != nil {
+			fatal("encode calibration: " + marshalErr.Error())
+		}
+		fmt.Println(string(encoded))
+		if calibration.AnswerableCases == 0 || calibration.UnanswerableCases == 0 {
+			fatal("calibration dataset must contain answerable and unanswerable cases")
+		}
+		return
+	}
 	summary := rageval.Summarize(filepath.Base(dataset), results)
 	dir := filepath.Join(outputRoot, time.Now().Format("20060102-150405"))
 	if err := rageval.WriteArtifacts(dir, runnerCfg, results, summary); err != nil {

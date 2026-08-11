@@ -110,7 +110,10 @@ func (s *Store) DeleteTenant(ctx context.Context, principal domain.Principal) ([
 				return err
 			}
 		}
-		_, err = tx.Exec(ctx, `UPDATE tenants SET status='deleted',deleted_at=now(),updated_at=now() WHERE id=$1`, principal.TenantID)
+		if _, err = tx.Exec(ctx, `UPDATE tenants SET status='deleted',deleted_at=now(),updated_at=now() WHERE id=$1`, principal.TenantID); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE auth_tokens SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, principal.UserID)
 		return err
 	})
 	return publicIDs, err

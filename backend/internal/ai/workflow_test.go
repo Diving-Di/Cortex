@@ -109,3 +109,11 @@ func TestWorkflowMapsTimeoutWithoutLeakingUpstreamError(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestExtractCitedClaimsRejectsMissingUnknownAndDuplicateCitations(t *testing.T) {
+	evidence := []KnowledgeEvidence{{Citation: "K1"}, {Citation: "K2"}}
+	claims, invalid := extractCitedClaims("PostgreSQL 是权威来源 [K1]。Redis 也存正文。未知 [K8]。重复 [K2][K2]。", evidence)
+	if len(claims) != 1 || len(invalid) != 3 {
+		t.Fatalf("claims=%#v invalid=%#v", claims, invalid)
+	}
+}

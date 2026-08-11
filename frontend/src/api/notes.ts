@@ -1,4 +1,4 @@
-import { http, authHeaders } from './http';
+import { http } from './http';
 export type Note = {
   id: number;
   type: 'normal' | 'daily' | 'weekly' | 'monthly';
@@ -12,43 +12,32 @@ export type Note = {
 };
 export type Tag = { id: number; name: string; color: string | null };
 const base = '/api/v1';
-export async function listNotes(token: string, params: Record<string, unknown> = {}) {
+export async function listNotes(params: Record<string, unknown> = {}) {
   return (
     await http.get<{ items: Note[]; total: number; page: number; page_size: number }>(
       `${base}/notes`,
-      { headers: authHeaders(token), params },
+      { params },
     )
   ).data;
 }
-export async function getNote(token: string, id: number) {
-  return (await http.get<Note>(`${base}/notes/${id}`, { headers: authHeaders(token) })).data;
+export async function getNote(id: number) {
+  return (await http.get<Note>(`${base}/notes/${id}`)).data;
 }
-export async function createNote(token: string, body: Partial<Note>) {
-  return (await http.post<Note>(`${base}/notes`, body, { headers: authHeaders(token) })).data;
+export async function createNote(body: Partial<Note>) {
+  return (await http.post<Note>(`${base}/notes`, body)).data;
 }
-export async function saveNote(
-  token: string,
-  id: number,
-  body: Partial<Note> & { expected_updated_at?: string },
-) {
-  return (await http.patch<Note>(`${base}/notes/${id}`, body, { headers: authHeaders(token) }))
-    .data;
+export async function saveNote(id: number, body: Partial<Note> & { expected_updated_at?: string }) {
+  return (await http.patch<Note>(`${base}/notes/${id}`, body)).data;
 }
-export async function deleteNote(token: string, id: number) {
-  await http.delete(`${base}/notes/${id}`, { headers: authHeaders(token) });
+export async function deleteNote(id: number) {
+  await http.delete(`${base}/notes/${id}`);
 }
-export async function listTags(token: string) {
-  return (await http.get<Tag[]>(`${base}/tags`, { headers: authHeaders(token) })).data;
+export async function listTags() {
+  return (await http.get<Tag[]>(`${base}/tags`)).data;
 }
-export async function noteTags(token: string, id: number) {
-  return (await http.get<Tag[]>(`${base}/notes/${id}/tags`, { headers: authHeaders(token) })).data;
+export async function noteTags(id: number) {
+  return (await http.get<Tag[]>(`${base}/notes/${id}/tags`)).data;
 }
-export async function setNoteTags(token: string, id: number, ids: number[]) {
-  return (
-    await http.put<Tag[]>(
-      `${base}/notes/${id}/tags`,
-      { tag_ids: ids },
-      { headers: authHeaders(token) },
-    )
-  ).data;
+export async function setNoteTags(id: number, ids: number[]) {
+  return (await http.put<Tag[]>(`${base}/notes/${id}/tags`, { tag_ids: ids })).data;
 }

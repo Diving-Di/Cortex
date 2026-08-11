@@ -7,7 +7,7 @@ $user = "market$suffix"
 $password = "acceptance-$suffix"
 $email = "$user@example.invalid"
 Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/register" -ContentType "application/json" -Body (@{username=$user;email=$email;password=$password}|ConvertTo-Json) | Out-Null
-$login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/login" -ContentType "application/json" -Body (@{username=$user;password=$password}|ConvertTo-Json)
+$login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/token" -ContentType "application/json" -Body (@{username=$user;password=$password}|ConvertTo-Json)
 $headers = @{Authorization="Token $($login.token)"}
 Invoke-RestMethod -Method Put -Uri "$BaseUrl/api/v1/public-profile" -Headers $headers -ContentType "application/json" -Body (@{nickname="验收用户";discoverable=$true}|ConvertTo-Json) | Out-Null
 $template = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/templates" -Headers $headers -ContentType "application/json" -Body (@{title="验收模板";description="模板广场验收";content_markdown="# 今日复盘`n`n- 完成事项";category="reflection"}|ConvertTo-Json)

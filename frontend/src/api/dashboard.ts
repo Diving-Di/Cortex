@@ -1,4 +1,4 @@
-import { authHeaders, http } from './http';
+import { http } from './http';
 
 export type Dashboard = {
   date: string;
@@ -23,11 +23,10 @@ export type Dashboard = {
   }>;
 };
 
-export async function getDashboard(token: string) {
+export async function getDashboard() {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai';
   return (
-    await http.get<Dashboard>('/api/dashboard', {
-      headers: authHeaders(token),
+    await http.get<Dashboard>('/api/v1/dashboard', {
       params: { timezone },
     })
   ).data;

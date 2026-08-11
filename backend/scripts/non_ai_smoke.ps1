@@ -15,7 +15,7 @@ try {
         } | ConvertTo-Json
         Invoke-RestMethod "$base/api/v1/auth/register" `
             -Method Post -ContentType "application/json" -Body $registration | Out-Null
-        $login = Invoke-RestMethod "$base/api/v1/auth/login" `
+        $login = Invoke-RestMethod "$base/api/v1/auth/token" `
             -Method Post -ContentType "application/json" `
             -Body (@{ username = $username; password = "correct-horse-battery" } | ConvertTo-Json)
         $headers += @{ Authorization = "Token $($login.token)" }
@@ -40,7 +40,7 @@ try {
     $search = Invoke-RestMethod "$base/api/v1/search?q=西湖&tag_id=$($tag.id)" `
         -Headers $headers[0]
     $isolatedSearch = Invoke-RestMethod "$base/api/v1/search?q=西湖" -Headers $headers[1]
-    $dashboard = Invoke-RestMethod "$base/api/dashboard?timezone=Asia/Shanghai" `
+    $dashboard = Invoke-RestMethod "$base/api/v1/dashboard?timezone=Asia/Shanghai" `
         -Headers $headers[0]
 
     $readme = Get-Item (Join-Path $PSScriptRoot "..\README.md")

@@ -17,7 +17,7 @@ function Wait-ServiceHealthy([string]$service) {
 try {
     Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/register" -ContentType "application/json" `
         -Body (@{ username = $user; email = "$user@example.invalid"; password = $password } | ConvertTo-Json) | Out-Null
-    $login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/login" -ContentType "application/json" `
+    $login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/token" -ContentType "application/json" `
         -Body (@{ username = $user; password = $password } | ConvertTo-Json)
     $headers = @{ Authorization = "Token $($login.token)" }
     $event = Invoke-RestMethod -Uri "$BaseUrl/api/v1/ai-events/current" -Headers $headers

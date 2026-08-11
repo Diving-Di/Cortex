@@ -35,7 +35,7 @@ function renderDashboard() {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <DashboardPage token="t" />
+        <DashboardPage />
       </MemoryRouter>
     </QueryClientProvider>,
   );

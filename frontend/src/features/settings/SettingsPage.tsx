@@ -10,16 +10,16 @@ const themeOptions = [
   { label: '深色', value: 'dark' },
 ];
 
-export default function SettingsPage({ token }: { token: string }) {
+export default function SettingsPage() {
   const { preference, setPreference } = useTheme();
   const [preferences, setPreferences] = useState<Preferences | null>(null);
   const [savingPreferences, setSavingPreferences] = useState(false);
 
   useEffect(() => {
-    void getPreferences(token)
+    void getPreferences()
       .then(setPreferences)
       .catch(() => message.error('无法加载设置'));
-  }, [token]);
+  }, []);
 
   return (
     <div className="settings-page">
@@ -55,7 +55,7 @@ export default function SettingsPage({ token }: { token: string }) {
               if (!preferences) return;
               const next = { ...preferences, marketplace_personalization: checked };
               setSavingPreferences(true);
-              void updatePreferences(token, next)
+              void updatePreferences(next)
                 .then(setPreferences)
                 .catch(() => message.error('保存失败，设置可能已在其他设备更新'))
                 .finally(() => setSavingPreferences(false));

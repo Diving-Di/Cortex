@@ -10,7 +10,7 @@ import {
   getMyAIEventClaim,
 } from '../../api/aiEvents';
 
-export default function AIEventsPage({ token }: { token: string }) {
+export default function AIEventsPage() {
   const qc = useQueryClient(),
     nav = useNavigate(),
     [clock, setClock] = useState(Date.now()),
@@ -21,13 +21,13 @@ export default function AIEventsPage({ token }: { token: string }) {
   }, []);
   const event = useQuery({
     queryKey: ['ai-event'],
-    queryFn: () => getCurrentAIEvent(token),
+    queryFn: () => getCurrentAIEvent(),
     refetchInterval: 15000,
   });
-  const balance = useQuery({ queryKey: ['ai-points'], queryFn: () => getAIPointBalance(token) });
+  const balance = useQuery({ queryKey: ['ai-points'], queryFn: () => getAIPointBalance() });
   const history = useQuery({
     queryKey: ['ai-event-history'],
-    queryFn: () => getAIEventHistory(token),
+    queryFn: () => getAIEventHistory(),
   });
   useEffect(() => {
     if (event.data?.server_time) {
@@ -43,14 +43,14 @@ export default function AIEventsPage({ token }: { token: string }) {
   }, [event]);
   const claim = useQuery({
     queryKey: ['ai-event-claim', event.data?.id],
-    queryFn: () => getMyAIEventClaim(token, event.data!.id),
+    queryFn: () => getMyAIEventClaim(event.data!.id),
     enabled: !!event.data?.claimed,
     retry: false,
     refetchInterval: (q) =>
       ['queued', 'running'].includes(q.state.data?.status || '') ? 2000 : false,
   });
   const mutation = useMutation({
-    mutationFn: () => claimAIEvent(token, event.data!.id),
+    mutationFn: () => claimAIEvent(event.data!.id),
     onSuccess: () => {
       message.success('领取成功，月报正在生成');
       qc.invalidateQueries({ queryKey: ['ai-event'] });

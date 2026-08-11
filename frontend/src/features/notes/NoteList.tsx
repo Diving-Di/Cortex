@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { createNote, listNotes } from '../../api/notes';
 import './Notes.css';
 
-export default function NoteList({ token }: { token: string }) {
+export default function NoteList() {
   const navigate = useNavigate(),
     client = useQueryClient();
   const [page, setPage] = useState(1);
@@ -15,7 +15,7 @@ export default function NoteList({ token }: { token: string }) {
   const query = useQuery({
     queryKey: ['notes', page, selectedDate],
     queryFn: () =>
-      listNotes(token, {
+      listNotes({
         page,
         page_size: 12,
         type: 'normal',
@@ -25,7 +25,7 @@ export default function NoteList({ token }: { token: string }) {
   });
   const create = useMutation({
     mutationFn: () =>
-      createNote(token, {
+      createNote({
         type: 'normal',
         title: '未命名笔记',
         content: '',

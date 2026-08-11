@@ -31,7 +31,7 @@ function Invoke-Json {
     Invoke-RestMethod @arguments
 }
 
-$login = Invoke-Json -Method Post -Uri "$BaseUrl/api/v1/auth/login" -Headers @{} -Body @{
+$login = Invoke-Json -Method Post -Uri "$BaseUrl/api/v1/auth/token" -Headers @{} -Body @{
     username = $Username
     password = $Password
 }

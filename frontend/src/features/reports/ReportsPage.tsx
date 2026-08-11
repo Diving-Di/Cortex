@@ -24,7 +24,7 @@ import {
   retryScheduledReport,
   setScheduledReportEnabled,
 } from '../../api/scheduledReports';
-export default function ReportsPage({ token }: { token: string }) {
+export default function ReportsPage() {
   const queryClient = useQueryClient();
   const [type, setType] = useState('weekly');
   const [anchor, setAnchor] = useState(dayjs());
@@ -38,11 +38,11 @@ export default function ReportsPage({ token }: { token: string }) {
   const [runsOpen, setRunsOpen] = useState(false);
   const tasks = useQuery({
     queryKey: ['scheduled-reports'],
-    queryFn: () => listScheduledReports(token),
+    queryFn: () => listScheduledReports(),
   });
   const createSchedule = useMutation({
     mutationFn: () =>
-      createScheduledReport(token, {
+      createScheduledReport({
         report_type: scheduleType,
         hour: scheduleTime.hour(),
         minute: scheduleTime.minute(),
@@ -52,7 +52,7 @@ export default function ReportsPage({ token }: { token: string }) {
   });
   async function load() {
     try {
-      const p = await previewReport(token, {
+      const p = await previewReport({
         type,
         anchor_date: anchor.format('YYYY-MM-DD'),
       });
@@ -68,7 +68,6 @@ export default function ReportsPage({ token }: { token: string }) {
     let out = '';
     try {
       await streamPost(
-        token,
         '/reports/generate',
         { type, anchor_date: anchor.format('YYYY-MM-DD') },
         (c) => {
@@ -84,7 +83,7 @@ export default function ReportsPage({ token }: { token: string }) {
   }
   async function save() {
     try {
-      await confirmReport(token, {
+      await confirmReport({
         type,
         anchor_date: anchor.format('YYYY-MM-DD'),
         title,
@@ -186,14 +185,14 @@ export default function ReportsPage({ token }: { token: string }) {
                   checkedChildren="启用"
                   unCheckedChildren="禁用"
                   onChange={async (enabled) => {
-                    await setScheduledReportEnabled(token, task.id, enabled);
+                    await setScheduledReportEnabled(task.id, enabled);
                     await tasks.refetch();
                   }}
                 />,
                 <Button
                   key="retry"
                   onClick={async () => {
-                    await retryScheduledReport(token, task.id);
+                    await retryScheduledReport(task.id);
                     message.success('任务已加入执行队列');
                   }}
                 >
@@ -202,7 +201,7 @@ export default function ReportsPage({ token }: { token: string }) {
                 <Button
                   key="runs"
                   onClick={async () => {
-                    setRuns(await listScheduledReportRuns(token, task.id));
+                    setRuns(await listScheduledReportRuns(task.id));
                     setRunsOpen(true);
                   }}
                 >

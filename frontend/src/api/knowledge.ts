@@ -1,4 +1,4 @@
-import { http, authHeaders } from './http';
+import { http } from './http';
 
 export type KnowledgeDocument = {
   id: string;
@@ -27,25 +27,17 @@ export type KnowledgeList = {
   };
 };
 
-export async function listKnowledge(token: string) {
-  return (
-    await http.get<KnowledgeList>('/api/v1/knowledge/documents', { headers: authHeaders(token) })
-  ).data;
+export async function listKnowledge() {
+  return (await http.get<KnowledgeList>('/api/v1/knowledge/documents', {})).data;
 }
-export async function uploadKnowledge(token: string, file: File) {
+export async function uploadKnowledge(file: File) {
   const body = new FormData();
   body.append('file', file);
-  return (await http.post('/api/v1/knowledge/uploads', body, { headers: authHeaders(token) })).data;
+  return (await http.post('/api/v1/knowledge/uploads', body, {})).data;
 }
-export async function deleteKnowledge(token: string, id: string) {
-  await http.delete(`/api/v1/knowledge/documents/${id}`, { headers: authHeaders(token) });
+export async function deleteKnowledge(id: string) {
+  await http.delete(`/api/v1/knowledge/documents/${id}`, {});
 }
-export async function setNoteKnowledge(token: string, noteID: number, enabled: boolean) {
-  return (
-    await http.patch(
-      `/api/v1/notes/${noteID}/knowledge`,
-      { enabled },
-      { headers: authHeaders(token) },
-    )
-  ).data;
+export async function setNoteKnowledge(noteID: number, enabled: boolean) {
+  return (await http.patch(`/api/v1/notes/${noteID}/knowledge`, { enabled }, {})).data;
 }

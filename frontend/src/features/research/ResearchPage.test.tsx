@@ -50,7 +50,7 @@ beforeEach(() => {
 test('renders research navigation content and empty jobs', async () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ResearchPage token="test-token" />
+      <ResearchPage />
     </QueryClientProvider>,
   );
   expect(await screen.findByRole('heading', { name: '小红书研究' })).toBeInTheDocument();
@@ -64,7 +64,7 @@ test('keeps rendering for an authorized tenant when legacy empty lists are null'
 
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ResearchPage token="test-token" />
+      <ResearchPage />
     </QueryClientProvider>,
   );
 
@@ -98,7 +98,7 @@ test('keeps rendering when the server returns an unfamiliar status', async () =>
 
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ResearchPage token="test-token" />
+      <ResearchPage />
     </QueryClientProvider>,
   );
 
@@ -110,7 +110,7 @@ test('shows the authorization gate before loading the research workspace', async
 
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ResearchPage token="test-token" />
+      <ResearchPage />
     </QueryClientProvider>,
   );
 
@@ -131,7 +131,7 @@ test('requires a new scan for a legacy authorized session', async () => {
 
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ResearchPage token="test-token" />
+      <ResearchPage />
     </QueryClientProvider>,
   );
 
@@ -146,7 +146,7 @@ test('creates a keyword research job from the modal', async () => {
   researchMocks.createResearchJob.mockResolvedValue({ id: 9, status: 'queued' });
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ResearchPage token="test-token" />
+      <ResearchPage />
     </QueryClientProvider>,
   );
   fireEvent.click(await screen.findByRole('button', { name: /新建研究/ }));
@@ -157,7 +157,6 @@ test('creates a keyword research job from the modal', async () => {
 
   await waitFor(() =>
     expect(researchMocks.createResearchJob).toHaveBeenCalledWith(
-      'test-token',
       expect.objectContaining({
         mode: 'keyword',
         keywords: ['Agent 面试', 'RAG 实践'],
@@ -174,7 +173,7 @@ test('shows a recoverable page error when jobs fail to load', async () => {
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ResearchPage token="test-token" />
+      <ResearchPage />
     </QueryClientProvider>,
   );
 

@@ -1,4 +1,4 @@
-import { authHeaders, http } from './http';
+import { http } from './http';
 
 export interface WritingTemplate {
   id: number;
@@ -31,92 +31,70 @@ export interface PublicProfile {
   discoverable: boolean;
   version: number;
 }
-const headers = (token: string) => ({ headers: authHeaders(token) });
-export async function listPublicTemplates(token: string, ranking = 'recommended', cursor = '') {
+export async function listPublicTemplates(ranking = 'recommended', cursor = '') {
   return (
     await http.get<{ items: PublicTemplate[]; next_cursor: string }>('/api/v1/templates/public', {
-      ...headers(token),
       params: { ranking, cursor: cursor || undefined },
     })
   ).data;
 }
-export async function listMyTemplates(token: string) {
-  const response = await http.get<{ items: WritingTemplate[] | null }>(
-    '/api/v1/templates/mine',
-    headers(token),
-  );
+export async function listMyTemplates() {
+  const response = await http.get<{ items: WritingTemplate[] | null }>('/api/v1/templates/mine');
   return response.data.items ?? [];
 }
-export async function createTemplate(
-  token: string,
-  value: Omit<WritingTemplate, 'id' | 'status' | 'version'>,
-) {
-  return (await http.post<WritingTemplate>('/api/v1/templates', value, headers(token))).data;
+export async function createTemplate(value: Omit<WritingTemplate, 'id' | 'status' | 'version'>) {
+  return (await http.post<WritingTemplate>('/api/v1/templates', value)).data;
 }
-export async function publishTemplate(token: string, id: number) {
-  return (await http.post(`/api/v1/templates/${id}/publish`, {}, headers(token))).data;
+export async function publishTemplate(id: number) {
+  return (await http.post(`/api/v1/templates/${id}/publish`, {})).data;
 }
-export async function withdrawTemplate(token: string, id: number) {
-  await http.post(`/api/v1/templates/${id}/withdraw`, {}, headers(token));
+export async function withdrawTemplate(id: number) {
+  await http.post(`/api/v1/templates/${id}/withdraw`, {});
 }
-export async function deleteTemplate(token: string, id: number) {
-  await http.delete(`/api/v1/templates/${id}`, headers(token));
+export async function deleteTemplate(id: number) {
+  await http.delete(`/api/v1/templates/${id}`);
 }
-export async function savePublicProfile(token: string, nickname: string) {
-  return (
-    await http.put<PublicProfile>(
-      '/api/v1/public-profile',
-      { nickname, discoverable: true },
-      headers(token),
-    )
-  ).data;
+export async function savePublicProfile(nickname: string) {
+  return (await http.put<PublicProfile>('/api/v1/public-profile', { nickname, discoverable: true }))
+    .data;
 }
-export async function useTemplate(token: string, id: string) {
+export async function useTemplate(id: string) {
   return (
     await http.post<{ note_id: number }>(
       `/api/v1/templates/public/${id}/use`,
       {},
-      { headers: { ...authHeaders(token), 'Idempotency-Key': crypto.randomUUID() } },
+      { headers: { 'Idempotency-Key': crypto.randomUUID() } },
     )
   ).data;
 }
-export async function usePrivateTemplate(token: string, id: number) {
+export async function usePrivateTemplate(id: number) {
   return (
     await http.post<{ note_id: number }>(
       `/api/v1/templates/${id}/use`,
       {},
-      { headers: { ...authHeaders(token), 'Idempotency-Key': crypto.randomUUID() } },
+      { headers: { 'Idempotency-Key': crypto.randomUUID() } },
     )
   ).data;
 }
-export async function setTemplateReaction(
-  token: string,
-  id: string,
-  kind: 'like' | 'favorite',
-  enabled: boolean,
-) {
+export async function setTemplateReaction(id: string, kind: 'like' | 'favorite', enabled: boolean) {
   const url = `/api/v1/templates/public/${id}/${kind}`;
-  if (enabled) await http.put(url, {}, headers(token));
-  else await http.delete(url, headers(token));
+  if (enabled) await http.put(url, {});
+  else await http.delete(url);
 }
-export async function recordTemplateView(token: string, id: string) {
-  await http.post(`/api/v1/templates/public/${id}/views`, {}, headers(token));
+export async function recordTemplateView(id: string) {
+  await http.post(`/api/v1/templates/public/${id}/views`, {});
 }
-export async function reportTemplate(token: string, id: string, reason: string, details: string) {
-  await http.post(`/api/v1/templates/public/${id}/reports`, { reason, details }, headers(token));
+export async function reportTemplate(id: string, reason: string, details: string) {
+  await http.post(`/api/v1/templates/public/${id}/reports`, { reason, details });
 }
-export async function updateTemplate(token: string, value: WritingTemplate) {
+export async function updateTemplate(value: WritingTemplate) {
   return (
-    await http.patch<WritingTemplate>(
-      `/api/v1/templates/${value.id}`,
-      {
-        title: value.title,
-        description: value.description,
-        content_markdown: value.content_markdown,
-        category: value.category,
-        expected_version: value.version,
-      },
-      headers(token),
-    )
+    await http.patch<WritingTemplate>(`/api/v1/templates/${value.id}`, {
+      title: value.title,
+      description: value.description,
+      content_markdown: value.content_markdown,
+      category: value.category,
+      expected_version: value.version,
+    })
   ).data;
 }

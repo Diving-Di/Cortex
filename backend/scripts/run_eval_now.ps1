@@ -38,7 +38,7 @@ Write-Host "  All healthy." -ForegroundColor Green
 Write-Host "`n[2] Uploading non-recipe notes..." -ForegroundColor Yellow
 
 $loginBody = @{username="Diving"; password=$DivingPassword} | ConvertTo-Json
-$loginResp = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/login" `
+$loginResp = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/token" `
     -Method POST -ContentType "application/json" -Body $loginBody
 $token = $loginResp.token
 $headers = @{Authorization = "Bearer $token"; "Content-Type" = "application/json"}
