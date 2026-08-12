@@ -31,25 +31,22 @@
 - [模板广场容量验收记录](MARKETPLACE_CAPACITY_ACCEPTANCE.md) 保存了本地容器网络环境、可复现命令、
   原始结果摘要和指标口径。
 
-仍需完成：
+已在 2026-08-12 完成：
 
-- 补 Outbox 多 worker 崩溃、续租失败和数据库完成 fencing 的 PostgreSQL 并发集成测试及租约指标。
-- 详情缓存值尚未携带发布版本；当前安全性依赖下架失效和公开列表/详情回表校验。
-- 仍无真实线上 QPS、HTTP p95/p99、缓存命中率或数据库查询下降比例。对外性能数字必须基于固定数据集、
-  HTTP 压测、原始结果及数据库/Redis/连接池指标。
+- Outbox PostgreSQL 集成测试覆盖多 worker 竞争、崩溃租约重领、续租和旧 owner 完成 fencing；新增续租、
+  租约丢失和完成 fencing 指标。
+- 详情缓存和 negative cache 命中均回 PostgreSQL 校验当前发布版本/状态，不再仅依赖失效消息保证正确性。
+- `backend/scripts/marketplace_http_capacity.ps1` 输出 QPS、p50/p95/p99 和失败数；真实线上数字仍须在目标环境运行并归档。
 
-## AI 活动削峰待办
+## AI 活动削峰实现
 
-- 当前领取在 Redis 不可用或投影未就绪时 fail-closed。若要启用数据库完整资格回源，先实现独立并发
-  舱壁、短队列、超时、熔断和连接池预算；业务性 409 不应计入熔断失败。
-- 认证仍逐请求解析 Principal 并更新 Token 最近使用时间。待实现基于 Token SHA-256 摘要的 Redis
-  Principal/无效 Token 缓存、`last_used_at` 限频、租户/Token 版本失效与受限认证 DB 回源。
-- claim 专用 IP 限流仍在认证之后。待拆分路由，使匿名洪峰先通过隐私安全的 IP 摘要限流，再认证并做
-  用户限流；Redis 故障的本地限流不能被视为多实例全局限流。
-- 数据库 fallback 应在资格查询后才以条件更新竞争库存，并保持点数、claim 和事件写入同一事务；不能
-  让大量降级请求在活动热点锁内串行计算资格。
-- 内部 reservation fencing、pending reconciler 和 fallback 后投影修复尚未实现。引入时需新增可迁移
-  数据字段、幂等 confirm/compensate Lua、单 leader 扫描和覆盖所有崩溃窗口的集成测试。
+- Redis 不可用时启用受限 PostgreSQL fallback：2 个并发槽、1.5 秒超时、连续三次基础设施失败后熔断
+  15 秒；业务 409 不计入熔断。资格先计算，库存以条件更新竞争，点数、claim、reservation 和 Outbox同事务。
+- 认证使用 Token SHA-256 摘要 Redis Principal/无效 Token 缓存，校验租户版本，`last_used_at` 最多每
+  5 分钟更新；注销和删除租户主动失效缓存。
+- claim 路由在认证前执行隐私安全的 IP 摘要限流，认证后执行用户限流。
+- 迁移 `000027_auth_and_ai_event_fencing` 增加认证版本和 reservation token/version/state；fallback 成功由
+  下一次版本化投影重建修复 Redis。
 
 ## 发布前验证
 

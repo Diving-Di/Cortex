@@ -289,12 +289,22 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 	if s.redis != nil {
 		if encoded, ok, cacheErr := s.redis.Get(r.Context(), cacheKey); cacheErr == nil && ok {
 			if encoded == "__missing__" {
-				httpx.WriteError(w, s.logger, apierror.New("PUBLIC_TEMPLATE_NOT_FOUND", "公开模板不存在", 404))
-				return
+				if _, versionErr := s.store.GetPublicTemplateVersion(r.Context(), id); versionErr != nil {
+					httpx.WriteError(w, s.logger, versionErr)
+					return
+				}
+				templateCacheMisses.Add(1)
+				_ = s.redis.Delete(r.Context(), cacheKey)
 			}
 			if json.Unmarshal([]byte(encoded), &x) == nil {
-				cacheHit = true
-				templateCacheHits.Add(1)
+				if currentVersion, versionErr := s.store.GetPublicTemplateVersion(r.Context(), id); versionErr == nil && currentVersion == x.Version {
+					cacheHit = true
+					templateCacheHits.Add(1)
+				} else if versionErr != nil {
+					err = versionErr
+				} else {
+					templateCacheMisses.Add(1)
+				}
 			}
 		} else if cacheErr != nil {
 			templateCacheErrors.Add(1)
@@ -302,7 +312,7 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 			templateCacheMisses.Add(1)
 		}
 	}
-	if !cacheHit {
+	if !cacheHit && err == nil {
 		x, err = s.store.GetPublicTemplate(r.Context(), principal, id)
 		if err == nil && s.redis != nil {
 			cached := x

@@ -412,6 +412,15 @@ func (s *Store) GetPublicTemplate(ctx context.Context, principal domain.Principa
 	return result, err
 }
 
+func (s *Store) GetPublicTemplateVersion(ctx context.Context, publicID uuid.UUID) (int, error) {
+	var version int
+	err := s.AdminPool.QueryRow(ctx, `SELECT version FROM published_template_snapshots WHERE public_template_id=$1 AND status='published'`, publicID).Scan(&version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, apierror.New("PUBLIC_TEMPLATE_NOT_FOUND", "公开模板不存在", 404)
+	}
+	return version, err
+}
+
 func (s *Store) GetPublicTemplatesByIDs(ctx context.Context, principal domain.Principal, ids []uuid.UUID) ([]PublicTemplate, error) {
 	if len(ids) == 0 {
 		return []PublicTemplate{}, nil

@@ -31,6 +31,9 @@ var aiEventProjectionBuildFailed atomic.Uint64
 var aiEventProjectionBuildAbandoned atomic.Uint64
 var aiEventProjectionBuildDurationNanos atomic.Uint64
 var aiEventProjectionVersionChanged atomic.Uint64
+var templateOutboxLeaseRenewed atomic.Uint64
+var templateOutboxLeaseLost atomic.Uint64
+var templateOutboxFinishFenced atomic.Uint64
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
@@ -61,6 +64,9 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, "diary_ai_event_projection_build_total{result=\"abandoned\"} %d\n", aiEventProjectionBuildAbandoned.Load())
 	_, _ = fmt.Fprintf(w, "diary_ai_event_projection_build_duration_seconds %.6f\n", float64(aiEventProjectionBuildDurationNanos.Load())/float64(time.Second))
 	_, _ = fmt.Fprintf(w, "diary_ai_event_projection_version_changed_total %d\n", aiEventProjectionVersionChanged.Load())
+	_, _ = fmt.Fprintf(w, "diary_template_outbox_lease_renew_total %d\n", templateOutboxLeaseRenewed.Load())
+	_, _ = fmt.Fprintf(w, "diary_template_outbox_lease_lost_total %d\n", templateOutboxLeaseLost.Load())
+	_, _ = fmt.Fprintf(w, "diary_template_outbox_finish_fenced_total %d\n", templateOutboxFinishFenced.Load())
 	if m, err := s.store.GetMarketplaceMetrics(r.Context()); err == nil {
 		_, _ = fmt.Fprintf(w, "diary_template_outbox_pending %d\n", m.PendingOutbox)
 		_, _ = fmt.Fprintf(w, "diary_template_outbox_lag_seconds %.3f\n", m.OutboxLagSeconds)

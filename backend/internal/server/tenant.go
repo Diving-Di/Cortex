@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"diary-listener/backend/internal/apierror"
 	"diary-listener/backend/internal/httpx"
@@ -41,12 +42,17 @@ func (s *Server) updateTenant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
-	ids, err := s.store.DeleteTenant(r.Context(), principalFrom(r.Context()))
+	p := principalFrom(r.Context())
+	ids, err := s.store.DeleteTenant(r.Context(), p)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	if s.redis != nil {
+		_ = s.redis.Set(r.Context(), tenantAuthVersionKey(p.TenantID), "deleted", 24*time.Hour)
+		if p.AuthCacheKey != "" {
+			_ = s.redis.Delete(r.Context(), p.AuthCacheKey)
+		}
 		for _, id := range ids {
 			_ = s.redis.DeleteTemplateProjections(r.Context(), id.String())
 		}

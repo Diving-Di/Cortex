@@ -272,6 +272,18 @@ func (s *Store) getAIEvent(ctx context.Context, p domain.Principal, publicID *uu
 }
 
 func (s *Store) ClaimAIEvent(ctx context.Context, p domain.Principal, publicID, requestID uuid.UUID) (AIFlashClaim, error) {
+	return s.claimAIEvent(ctx, p, publicID, requestID, false, "")
+}
+
+func (s *Store) ClaimAIEventFallback(ctx context.Context, p domain.Principal, publicID, requestID uuid.UUID) (AIFlashClaim, error) {
+	return s.claimAIEvent(ctx, p, publicID, requestID, true, "fallback")
+}
+
+func (s *Store) ClaimAIEventReserved(ctx context.Context, p domain.Principal, publicID, requestID uuid.UUID, projectionVersion string) (AIFlashClaim, error) {
+	return s.claimAIEvent(ctx, p, publicID, requestID, false, projectionVersion)
+}
+
+func (s *Store) claimAIEvent(ctx context.Context, p domain.Principal, publicID, requestID uuid.UUID, allowUnready bool, projectionVersion string) (AIFlashClaim, error) {
 	var result AIFlashClaim
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, p); err != nil {
@@ -284,7 +296,7 @@ func (s *Store) ClaimAIEvent(ctx context.Context, p domain.Principal, publicID, 
 		var opens, closes time.Time
 		var slots, required int
 		var cost int64
-		if err := tx.QueryRow(ctx, `SELECT id,event_date,timezone,opens_at,closes_at,total_slots,points_cost,required_streak_days,status,reservation_ready FROM ai_flash_events WHERE public_id=$1 FOR UPDATE`, publicID).Scan(&eventID, &date, &zone, &opens, &closes, &slots, &cost, &required, &eventStatus, &reservationReady); errors.Is(err, pgx.ErrNoRows) {
+		if err := tx.QueryRow(ctx, `SELECT id,event_date,timezone,opens_at,closes_at,total_slots,points_cost,required_streak_days,status,reservation_ready FROM ai_flash_events WHERE public_id=$1`, publicID).Scan(&eventID, &date, &zone, &opens, &closes, &slots, &cost, &required, &eventStatus, &reservationReady); errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("AI_EVENT_NOT_FOUND", "活动不存在", 404)
 		} else if err != nil {
 			return err
@@ -296,7 +308,7 @@ func (s *Store) ClaimAIEvent(ctx context.Context, p domain.Principal, publicID, 
 			return err
 		}
 		now := time.Now()
-		if !reservationReady || eventStatus == "paused" || eventStatus == "cancelled" {
+		if (!reservationReady && !allowUnready) || eventStatus == "paused" || eventStatus == "cancelled" {
 			return apierror.New("AI_EVENT_UNAVAILABLE", "活动暂不可用", 503)
 		}
 		if now.Before(opens) {
@@ -312,18 +324,18 @@ func (s *Store) ClaimAIEvent(ctx context.Context, p domain.Principal, publicID, 
 		if reusedRequest {
 			return apierror.New("IDEMPOTENCY_KEY_REUSED", "幂等键已用于其他活动", 409)
 		}
-		var claimedSlots int
-		if err := tx.QueryRow(ctx, `UPDATE ai_flash_events SET claimed_slots=claimed_slots+1,updated_at=now() WHERE id=$1 AND claimed_slots<total_slots RETURNING claimed_slots`, eventID).Scan(&claimedSlots); errors.Is(err, pgx.ErrNoRows) {
-			return apierror.New("AI_EVENT_SOLD_OUT", "活动名额已领完", 409)
-		} else if err != nil {
-			return err
-		}
 		streak, err := aiEventStreakDays(ctx, tx, p, date, zone, opens, required)
 		if err != nil {
 			return err
 		}
 		if streak < required {
 			return apierror.New("AI_EVENT_INELIGIBLE", "连续记录天数不足", 409)
+		}
+		var claimedSlots int
+		if err := tx.QueryRow(ctx, `UPDATE ai_flash_events SET claimed_slots=claimed_slots+1,updated_at=now() WHERE id=$1 AND claimed_slots<total_slots RETURNING claimed_slots`, eventID).Scan(&claimedSlots); errors.Is(err, pgx.ErrNoRows) {
+			return apierror.New("AI_EVENT_SOLD_OUT", "活动名额已领完", 409)
+		} else if err != nil {
+			return err
 		}
 		balance, err := ensurePointAccount(ctx, tx, p.TenantID, now)
 		if err != nil {
@@ -335,7 +347,10 @@ func (s *Store) ClaimAIEvent(ctx context.Context, p domain.Principal, publicID, 
 		if _, err := tx.Exec(ctx, `INSERT INTO ai_point_ledger(tenant_id,period_start,event_id,entry_type,points,reference_type,reference_id) VALUES($1,$2,$3,'grant',$4,'ai_flash_event_reward',$5)`, p.TenantID, balance.PeriodStart, requestID, cost, publicID.String()); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO ai_flash_claims(event_id,tenant_id,user_id,request_id,status,points_cost,streak_days_at_claim,finished_at) VALUES($1,$2,$3,$4,'succeeded',$5,$6,now()) RETURNING id,status,points_cost,streak_days_at_claim,claimed_at,finished_at,report_note_id,error_code`, eventID, p.TenantID, p.UserID, requestID, cost, streak).Scan(&result.ID, &result.Status, &result.PointsReward, &result.StreakDays, &result.ClaimedAt, &result.FinishedAt, &result.ReportNoteID, &result.ErrorCode); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO ai_flash_claims(event_id,tenant_id,user_id,request_id,status,points_cost,streak_days_at_claim,finished_at,reservation_token,reservation_version) VALUES($1,$2,$3,$4,'succeeded',$5,$6,now(),$4,$7) RETURNING id,status,points_cost,streak_days_at_claim,claimed_at,finished_at,report_note_id,error_code`, eventID, p.TenantID, p.UserID, requestID, cost, streak, projectionVersion).Scan(&result.ID, &result.Status, &result.PointsReward, &result.StreakDays, &result.ClaimedAt, &result.FinishedAt, &result.ReportNoteID, &result.ErrorCode); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO ai_event_reservations(token,event_id,tenant_id,projection_version,state,resolved_at) VALUES($1,$2,$3,$4,'confirmed',now()) ON CONFLICT(token) DO UPDATE SET state='confirmed',resolved_at=now()`, requestID, eventID, p.TenantID, projectionVersion); err != nil {
 			return err
 		}
 		result.EventID = publicID

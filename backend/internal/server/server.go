@@ -2,7 +2,11 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -22,13 +26,17 @@ import (
 )
 
 type Server struct {
-	cfg        config.Config
-	store      *store.Store
-	logger     *slog.Logger
-	version    string
-	redis      *rediscoord.Client
-	rateMu     sync.Mutex
-	localRates map[string]localRateWindow
+	cfg                    config.Config
+	store                  *store.Store
+	logger                 *slog.Logger
+	version                string
+	redis                  *rediscoord.Client
+	rateMu                 sync.Mutex
+	localRates             map[string]localRateWindow
+	aiEventFallbackSlots   chan struct{}
+	aiEventBreakerMu       sync.Mutex
+	aiEventBreakerFailures int
+	aiEventBreakerUntil    time.Time
 }
 
 type localRateWindow struct {
@@ -45,7 +53,7 @@ var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
-	s := &Server{cfg: cfg, store: db, logger: logger, version: version, localRates: make(map[string]localRateWindow)}
+	s := &Server{cfg: cfg, store: db, logger: logger, version: version, localRates: make(map[string]localRateWindow), aiEventFallbackSlots: make(chan struct{}, 2)}
 	s.redis, _ = rediscoord.New(cfg.RedisURL)
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -59,6 +67,7 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 	router.POST("/api/v1/auth/register", gin.WrapF(s.register))
 	router.POST("/api/v1/auth/login", gin.WrapF(s.login))
 	router.POST("/api/v1/auth/token", gin.WrapF(s.issueToken))
+	router.POST("/api/v1/ai-events/:eventID/claims", s.preAuthClaimIPLimit(), s.authenticate(), s.requireActiveTenant(), gin.WrapF(s.claimAIEvent))
 
 	authenticated := router.Group("/")
 	authenticated.Use(s.authenticate())
@@ -155,7 +164,6 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.GET("/api/v1/ai-events/current", gin.WrapF(s.currentAIEvent))
 			active.GET("/api/v1/ai-events/history", gin.WrapF(s.aiEventHistory))
 			active.GET("/api/v1/ai-events/:eventID", gin.WrapF(s.getAIEvent))
-			active.POST("/api/v1/ai-events/:eventID/claims", gin.WrapF(s.claimAIEvent))
 			active.GET("/api/v1/ai-events/:eventID/claims/me", gin.WrapF(s.myAIEventClaim))
 			active.GET("/api/v1/ai-event-claims/:claimID", gin.WrapF(s.getAIEventClaim))
 
@@ -240,7 +248,7 @@ func (s *Server) authenticate() gin.HandlerFunc {
 			})
 			return
 		}
-		principal, err := s.store.ResolvePrincipal(c.Request.Context(), strings.TrimSpace(token))
+		principal, err := s.resolvePrincipal(c.Request.Context(), strings.TrimSpace(token))
 		if err != nil {
 			var appErr *apierror.Error
 			if errors.As(err, &appErr) && appErr.StatusCode == http.StatusUnauthorized {
@@ -258,6 +266,62 @@ func (s *Server) authenticate() gin.HandlerFunc {
 		}
 		requestContext := context.WithValue(c.Request.Context(), principalKey, principal)
 		c.Request = c.Request.WithContext(requestContext)
+		c.Next()
+	}
+}
+
+const invalidPrincipalCache = "__invalid__"
+
+func authCacheKey(raw string) string {
+	digest := sha256.Sum256([]byte(raw))
+	return "diary:auth:principal:" + base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func tenantAuthVersionKey(id uuid.UUID) string { return "diary:auth:tenant-version:" + id.String() }
+
+func (s *Server) resolvePrincipal(ctx context.Context, raw string) (domain.Principal, error) {
+	key := authCacheKey(raw)
+	if s.redis != nil {
+		if encoded, ok, err := s.redis.Get(ctx, key); err == nil && ok {
+			if encoded == invalidPrincipalCache {
+				return domain.Principal{}, apierror.New("AUTHENTICATION_REQUIRED", "Invalid or expired token.", 401)
+			}
+			var p domain.Principal
+			if json.Unmarshal([]byte(encoded), &p) == nil && time.Now().Before(p.TokenExpiresAt) {
+				version, exists, versionErr := s.redis.Get(ctx, tenantAuthVersionKey(p.TenantID))
+				if versionErr == nil && exists && version == fmt.Sprint(p.TenantVersion) {
+					p.AuthCacheKey = key
+					return p, nil
+				}
+			}
+		}
+	}
+	p, err := s.store.ResolvePrincipal(ctx, raw)
+	if err != nil {
+		if s.redis != nil {
+			_ = s.redis.Set(ctx, key, invalidPrincipalCache, 15*time.Second)
+		}
+		return domain.Principal{}, err
+	}
+	p.AuthCacheKey = key
+	if s.redis != nil {
+		_ = s.redis.Set(ctx, tenantAuthVersionKey(p.TenantID), fmt.Sprint(p.TenantVersion), 24*time.Hour)
+		if encoded, marshalErr := json.Marshal(p); marshalErr == nil {
+			ttl := min(5*time.Minute, time.Until(p.TokenExpiresAt))
+			if ttl > 0 {
+				_ = s.redis.Set(ctx, key, string(encoded), ttl)
+			}
+		}
+	}
+	return p, nil
+}
+
+func (s *Server) preAuthClaimIPLimit() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !s.allowIPRequest(c.Request, "ai-event-claim-anonymous", 60, time.Minute) {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"code": "RATE_LIMITED", "message": "请求过于频繁"})
+			return
+		}
 		c.Next()
 	}
 }

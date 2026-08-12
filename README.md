@@ -229,6 +229,14 @@ go run ./cmd/migrate up
 
 ## 开发验证
 
+模板广场 HTTP 容量采样可运行：
+
+```powershell
+.\backend\scripts\marketplace_http_capacity.ps1 -Token <token> -Requests 1000 -Concurrency 32
+```
+
+脚本输出 QPS、p50/p95/p99 和失败数；生产指标必须在目标部署环境采集。
+
 后端：
 
 ```powershell

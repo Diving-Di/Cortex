@@ -40,6 +40,8 @@ for ($index = 0; $index -lt 12; $index++) {
 $eventID = $participants[0].EventID
 docker compose exec -T db psql -U diary_migrator -d diary_listener -v ON_ERROR_STOP=1 `
     -c "UPDATE ai_flash_events SET opens_at=now()-interval '1 second',closes_at=now()+interval '10 minutes',status='scheduled' WHERE public_id='$eventID'::uuid AND claimed_slots=0" | Out-Null
+# Acceptance runs are repeatable: discard only this event's rebuildable Redis projection.
+docker compose exec -T redis sh -c "REDISCLI_AUTH=`$REDIS_PASSWORD redis-cli --scan --pattern 'diary:ai-event:{$eventID}*' | xargs -r env REDISCLI_AUTH=`$REDIS_PASSWORD redis-cli del" | Out-Null
 docker compose restart backend | Out-Null
 Wait-ServiceHealthy "backend"
 Start-Sleep -Seconds 3

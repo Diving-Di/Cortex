@@ -116,9 +116,13 @@ func writeSessionResponse(w http.ResponseWriter, username string) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.RevokeToken(r.Context(), principalFrom(r.Context()).TokenID); err != nil {
+	p := principalFrom(r.Context())
+	if err := s.store.RevokeToken(r.Context(), p.TokenID); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
+	}
+	if s.redis != nil && p.AuthCacheKey != "" {
+		_ = s.redis.Delete(r.Context(), p.AuthCacheKey)
 	}
 	s.clearAuthCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)

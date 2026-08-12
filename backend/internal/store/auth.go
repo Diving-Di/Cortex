@@ -67,7 +67,7 @@ func (s *Store) Login(ctx context.Context, username, password string, ttl time.D
 func (s *Store) ResolvePrincipal(ctx context.Context, rawToken string) (domain.Principal, error) {
 	var principal domain.Principal
 	err := s.Pool.QueryRow(ctx, `
-		SELECT tok.id,u.id,u.username,t.id,true
+		SELECT tok.id,u.id,u.username,t.id,true,tok.auth_version,t.auth_version,tok.expires_at
         FROM auth_tokens tok
         JOIN users u ON u.id=tok.user_id
         JOIN tenants t ON t.user_id=u.id
@@ -75,7 +75,7 @@ func (s *Store) ResolvePrincipal(ctx context.Context, rawToken string) (domain.P
 		  AND t.status='active' AND t.deleted_at IS NULL
         `,
 		auth.HashToken(rawToken),
-	).Scan(&principal.TokenID, &principal.UserID, &principal.Username, &principal.TenantID, &principal.TenantActive)
+	).Scan(&principal.TokenID, &principal.UserID, &principal.Username, &principal.TenantID, &principal.TenantActive, &principal.TokenVersion, &principal.TenantVersion, &principal.TokenExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Principal{}, apierror.New(
 			"AUTHENTICATION_REQUIRED", "Invalid or expired token.", 401,
@@ -84,11 +84,11 @@ func (s *Store) ResolvePrincipal(ctx context.Context, rawToken string) (domain.P
 	if err != nil {
 		return domain.Principal{}, err
 	}
-	_, _ = s.Pool.Exec(ctx, `UPDATE auth_tokens SET last_used_at=now() WHERE id=$1`, principal.TokenID)
+	_, _ = s.Pool.Exec(ctx, `UPDATE auth_tokens SET last_used_at=now() WHERE id=$1 AND (last_used_at IS NULL OR last_used_at<now()-interval '5 minutes')`, principal.TokenID)
 	return principal, nil
 }
 
 func (s *Store) RevokeToken(ctx context.Context, tokenID int32) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE auth_tokens SET revoked_at=now() WHERE id=$1`, tokenID)
+	_, err := s.Pool.Exec(ctx, `UPDATE auth_tokens SET revoked_at=now(),auth_version=auth_version+1 WHERE id=$1`, tokenID)
 	return err
 }

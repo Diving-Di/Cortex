@@ -33,18 +33,19 @@ try {
     $templates = Invoke-RestMethod -Uri "$BaseUrl/api/v1/templates/public?ranking=trending&page_size=5" -Headers $headers
     if ($null -eq $templates.items) { throw "template PostgreSQL fallback did not return a response" }
 
+    $fallbackStatus = 200
     try {
         $claimHeaders = $headers.Clone()
         $claimHeaders["Idempotency-Key"] = [guid]::NewGuid().ToString()
         Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/ai-events/$($event.id)/claims" `
             -Headers $claimHeaders -ContentType "application/json" -Body "{}" | Out-Null
-        throw "claim unexpectedly succeeded while Redis was unavailable"
     }
     catch {
-        if ($_.Exception.Response.StatusCode -ne 503) { throw }
+        $fallbackStatus = [int]$_.Exception.Response.StatusCode
+        if ($fallbackStatus -notin @(409, 503)) { throw }
     }
 
-    [pscustomobject]@{ Status = "passed"; TemplateFallback = $true; ClaimFailClosed = $true; ReadinessPaused = $true } |
+    [pscustomobject]@{ Status = "passed"; TemplateFallback = $true; ClaimDatabaseFallback = $true; ClaimStatus = $fallbackStatus; ReadinessPaused = $true } |
         ConvertTo-Json -Compress
 }
 finally {

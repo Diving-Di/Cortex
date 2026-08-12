@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"diary-listener/backend/internal/rediscoord"
@@ -61,12 +62,14 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 					case <-ticker.C:
 						ok, renewErr := db.RenewOutboxEventLease(leaseCtx, id, owner, lease)
 						if renewErr != nil || !ok {
+							templateOutboxLeaseLost.Add(1)
 							select {
 							case leaseLost <- struct{}{}:
 							default:
 							}
 							return
 						}
+						templateOutboxLeaseRenewed.Add(1)
 					}
 				}
 			}(event.ID)
@@ -95,6 +98,9 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 			default:
 			}
 			if finishErr := db.FinishOutboxEvent(ctx, event.ID, owner, err); finishErr != nil {
+				if strings.Contains(finishErr.Error(), "lease lost") {
+					templateOutboxFinishFenced.Add(1)
+				}
 				logger.Error("finish marketplace outbox", "error", finishErr)
 			}
 		}

@@ -13,6 +13,7 @@ import (
 
 	"diary-listener/backend/internal/apierror"
 	"diary-listener/backend/internal/config"
+	"diary-listener/backend/internal/domain"
 	"diary-listener/backend/internal/httpx"
 	"diary-listener/backend/internal/rediscoord"
 	"diary-listener/backend/internal/store"
@@ -72,7 +73,7 @@ func aiEventPathID(r *http.Request) (uuid.UUID, error) {
 	return id, nil
 }
 func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
-	if !s.allowUserRequest(r, "ai-event-claim", 3, time.Minute) || !s.allowIPRequest(r, "ai-event-claim", 30, time.Minute) {
+	if !s.allowUserRequest(r, "ai-event-claim", 3, time.Minute) {
 		aiEventClaimsError.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("RATE_LIMITED", "领取请求过于频繁", 429))
 		return
@@ -89,8 +90,7 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	principal := principalFrom(r.Context())
 	if s.redis == nil {
-		aiEventClaimsError.Add(1)
-		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_UNAVAILABLE", "活动领取暂不可用", 503))
+		s.claimAIEventFallback(w, r, principal, eventID, requestID)
 		return
 	}
 	member := aiEventReservationMember(principal.TenantID)
@@ -113,8 +113,7 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if redisErr != nil {
-		aiEventClaimsError.Add(1)
-		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_UNAVAILABLE", "活动领取暂不可用", 503))
+		s.claimAIEventFallback(w, r, principal, eventID, requestID)
 		return
 	}
 	if reserved == -1 {
@@ -157,7 +156,7 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusOK, x)
 		return
 	}
-	x, err := s.store.ClaimAIEvent(r.Context(), principal, eventID, requestID)
+	x, err := s.store.ClaimAIEventReserved(r.Context(), principal, eventID, requestID, version)
 	if err != nil {
 		_ = s.redis.Compensate(r.Context(), keys.Stock, keys.Claimed, keys.Window, keys.Points, keys.Pending, member)
 		aiEventClaimsError.Add(1)
@@ -165,6 +164,49 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.redis.ConfirmReservation(r.Context(), keys.Pending, member)
+	aiEventClaimsReserved.Add(1)
+	httpx.JSON(w, http.StatusOK, x)
+}
+
+func (s *Server) claimAIEventFallback(w http.ResponseWriter, r *http.Request, principal domain.Principal, eventID, requestID uuid.UUID) {
+	s.aiEventBreakerMu.Lock()
+	open := time.Now().Before(s.aiEventBreakerUntil)
+	s.aiEventBreakerMu.Unlock()
+	if open {
+		aiEventClaimsError.Add(1)
+		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_UNAVAILABLE", "活动领取暂不可用", 503))
+		return
+	}
+	select {
+	case s.aiEventFallbackSlots <- struct{}{}:
+		defer func() { <-s.aiEventFallbackSlots }()
+	default:
+		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_BUSY", "领取请求繁忙，请稍后重试", 503))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
+	defer cancel()
+	x, err := s.store.ClaimAIEventFallback(ctx, principal, eventID, requestID)
+	if err != nil {
+		var appErr *apierror.Error
+		business := errors.As(err, &appErr) && appErr.StatusCode == http.StatusConflict
+		if !business {
+			s.aiEventBreakerMu.Lock()
+			s.aiEventBreakerFailures++
+			if s.aiEventBreakerFailures >= 3 {
+				s.aiEventBreakerUntil = time.Now().Add(15 * time.Second)
+				s.aiEventBreakerFailures = 0
+			}
+			s.aiEventBreakerMu.Unlock()
+		}
+		aiEventClaimsError.Add(1)
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	s.aiEventBreakerMu.Lock()
+	s.aiEventBreakerFailures = 0
+	s.aiEventBreakerMu.Unlock()
+	// The database is authoritative. The next projection build repairs Redis.
 	aiEventClaimsReserved.Add(1)
 	httpx.JSON(w, http.StatusOK, x)
 }

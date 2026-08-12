@@ -123,8 +123,8 @@ docker compose config --quiet
 立即使快照不可见。
 
 每日活动配置保存在 PostgreSQL，Redis Lua 负责库存和重复领取预扣，数据库唯一约束与点数账本保存
-最终事实。当前活动是免费点数领取：成功后点数即时到账。Redis 不可用时
-只关闭领取，不影响核心笔记功能；受限 PostgreSQL 完整资格回源仍是待实现能力。
+最终事实。当前活动是免费点数领取：成功后点数即时到账。Redis 不可用时通过带独立并发舱壁、短超时
+和熔断的 PostgreSQL fallback 完整校验资格并原子写入；核心笔记功能不受影响。
 
 活动参数集中保存在 `ai_flash_event_settings`。scheduler 使用 PostgreSQL 剩余名额和既有领取记录
 分批构建版本化 Redis 投影并原子切换 active pointer；领取请求先由 Redis `TIME` 裁决开放时间和库存，
