@@ -1,8 +1,8 @@
 # Cortex RAG 具体链路与策略
 
-> 状态：当前实现（2026-08-06）
+> 状态：当前实现（2026-08-12，按在线 handler、Workflow 与评测 Runner 校对）
 > 适用范围：个人知识库问答（`POST /api/v1/knowledge/chat/stream`）与离线评测
-> 最后验证：2026-08-06（164 条全量：90 菜谱 + 74 非菜谱，含分通道召回统计）
+> 最新全链路基线：2026-08-11（164 条全量：90 菜谱 + 74 非菜谱，中文 Bigram FTS）
 > 明确不包含：HyDE、Step-back Prompting、在线用户评价、外部向量数据库、跨租户共享 Prompt/响应缓存
 
 > 历史沿革：本项目的 RAG 最初服务于旧项目名时代的内置 HowToCook 菜谱问答
@@ -20,8 +20,9 @@ Cortex 的 RAG 从当前租户启用的个人知识文档（上传的 `.md`/`.zi
 2. 组合全局向量、正文全文、标题文档内向量三路召回，降低单一路径漏召；
 3. 在 child 层使用 RRF 融合不同量纲的排序，再按 parent 聚合，最后用 BGE CrossEncoder 精排；
 4. 索引重建期间保留旧版本，重建失败不中断线上检索；
-5. 线上知识问答与离线评测复用同一个 `Store.SearchKnowledge` / `SelectKnowledgeContexts`，
-   防止评测逻辑与生产逻辑漂移。
+5. 线上知识问答与离线评测复用 `Store.SearchKnowledge`、相同 rerank 输入和
+   `SelectKnowledgeContexts`；在线额外执行对话 Query 改写、证据阈值门控与生成后核验，
+   这些差异在第 8 节单独列出，避免把离线 Runner 误写成完整线上链路。
 
 系统不提供在线评测 API、用户点评入口或评测后台。离线结果只写入本地
 `artifacts/rag-eval/`，不进入业务数据库，也不含供应商密钥或完整正文之外的敏感信息。
@@ -34,17 +35,20 @@ flowchart LR
     Chunk --> Embed["GTE Embedding 512 维"]
     Embed --> Index[("knowledge_child_chunks<br/>pgvector + FTS + 版本化")]
 
-    Query["已认证问题"] --> V["全局向量召回 Top 15"]
-    Query --> F["全文召回 Top 15"]
-    Query --> T["标题命中文档内向量召回 Top 10"]
+    Query["已认证问题 + 最近 5 轮对话"] --> Rewrite["有历史时做指代消解式 Query 改写"]
+    Rewrite --> V["全局向量召回 Top 15"]
+    Rewrite --> F["中文 Bigram 全文召回 Top 5"]
+    Rewrite --> T["标题命中文档内向量召回 Top 10"]
     V --> RRF["child 层 RRF 融合"]
     F --> RRF
     T --> RRF
     RRF --> Agg["按 parent 聚合 Top 20"]
     Agg --> Rerank["BGE CrossEncoder 精排"]
-    Rerank --> Ctx["文档优先选择章节 Top 5"]
-    Ctx --> Gen["AnswerKnowledge 流式生成"]
-    Gen --> Cite["来源写入 knowledge_message_sources"]
+    Rerank --> Gate["最低分 / 最少证据 / 可选 Margin 门控"]
+    Gate --> Ctx["文档优先选择章节 Top 4"]
+    Ctx --> Gen["生成草稿并缓冲"]
+    Gen --> Verify["引用结构 + LLM entailment 核验；最多重写一次"]
+    Verify --> Cite["核验通过后发送正文并保存来源"]
 ```
 
 ## 3. 语料来源与索引构建
@@ -98,11 +102,19 @@ flowchart LR
 
 ## 4. Query 处理策略
 
-当前知识问答**不对 query 做 LLM 改写，也不做确定性意图扩展**：query 原样进入向量与全文召回
-（菜谱时代保留的 `Featured Rewrite` / `ExpandRetrievalQueries` 已随 `internal/recipe` 移除）。
+没有 `conversation_id` 或历史为空时，query 原样进入检索，不调用改写模型。存在会话历史时，
+handler 最多读取最近 5 轮、总计不超过 8000 个 Unicode 字符，调用
+`Workflow.RewriteKnowledgeQuery` 将问题分类为 `follow_up`、`new_topic` 或 `ambiguous`：
 
-这意味着查询词本身的质量直接决定召回上限，也意味着“同义/领域词扩展、无监督改写”是后续
-优化空间之一（见第 12 节），但不会引入 HyDE 或 Step-back。
+- `new_topic` 强制使用当前原问题，防止历史污染新话题；
+- `follow_up` / `ambiguous` 只允许做指代消解，使问题可独立检索；若结果没有包含最近一次用户
+  话题，服务端会追加该话题作为检索保护；
+- 改写后的 query 仅用于 embedding、三路召回、rerank 与上下文选择；最终生成仍回答用户原问题；
+- 历史被包在不可信数据边界内，Prompt 明确禁止执行其中的命令；非法 JSON、未知分类、空 query
+  或超长 query 会以 `AI_INVALID_STRUCTURED_OUTPUT` 失败，不静默退回不可信结果。
+
+当前仍不做领域词表扩展、HyDE 或 Step-back Prompting。离线主评测集是单轮 query，当前不会覆盖
+这条会话改写链路，这是第 8.3 节列出的评测缺口。
 
 ## 5. 混合召回策略
 
@@ -154,6 +166,9 @@ RRF score = Σ 1 / (60 + route_rank)
 | `RAG_KEYWORD_TOP_K` | 5 |
 | `RAG_FUSION_TOP_K` | 20 |
 | `RAG_CONTEXT_PARENT_TOP_K` | 4 |
+| `RAG_RERANK_MIN_SCORE` | Compose 默认 `0.5038954`；应用未配置时关闭 |
+| `RAG_RERANK_MIN_MARGIN` | 默认未配置，即关闭 |
+| `RAG_MIN_QUALIFIED_EVIDENCE` | 1 |
 
 ## 6. Rerank 与生成上下文
 
@@ -172,6 +187,11 @@ RRF score = Σ 1 / (60 + route_rank)
 reranker 返回的 index 必须完整、唯一且在候选范围内；缺失、重复或越界会使本次问答失败，
 不静默采用不完整结果。
 
+在线 handler 按精排分数降序后执行证据门控：过滤低于 `RAG_RERANK_MIN_SCORE` 的候选，要求
+剩余数量不少于 `RAG_MIN_QUALIFIED_EVIDENCE`；配置了 `RAG_RERANK_MIN_MARGIN` 时，还要求
+Top-1 与 Top-2 的分差不小于该值。任一条件不满足均返回 `KNOWLEDGE_NO_EVIDENCE`，不会调用生成。
+离线 `rag-eval` 当前记录 rerank 分数并支持阈值校准，但普通全链路评测不会执行这三个在线门控。
+
 ### 6.2 文档优先的上下文选择
 
 精排后由 `SelectKnowledgeContexts`（`backend/internal/store/knowledge_retrieval.go`）选择
@@ -180,19 +200,29 @@ reranker 返回的 index 必须完整、唯一且在候选范围内；缺失、�
 1. 先确定文档：**至少 4 字符的明确标题命中时只从第一名文档选择**（`query` 通用归一化后包含第一名标题），
    否则最多保留三个高分文档；
 2. 在选中文档内按其最高分 parent 依次填充，再用剩余预算补充这些文档的其他相关章节；
-3. 总预算 `RAG_CONTEXT_PARENT_TOP_K`（默认 5），相同 parent 去重。
+3. 总预算 `RAG_CONTEXT_PARENT_TOP_K`（默认 4），相同 parent 去重。
 
 该策略把“召回哪个文档”和“取文档哪一章”解耦，是本轮 Context Recall 与 Context Precision
 同时提升的关键（见第 9 节）。
 
 ### 6.3 生成与来源保存
 
-最终 parent 转为 `KnowledgeEvidence`（引用 `K1`…`Kn`），由
-`AIWorkflow.AnswerKnowledge`（`backend/internal/ai/workflow.go`）经 LiteLLM 逻辑模型
-`diary-default`（Compose 中映射 DeepSeek，Kimi/OpenAI 兜底）流式生成。业务层继续负责来源
-约束、引用校验、配额与审计；供应商真实密钥不会进入前端、日志、评测集或报告配置。
+最终 parent 转为 `KnowledgeEvidence`（引用 `K1`…`Kn`），在线调用
+`Workflow.AnswerKnowledgeGrounded`。该流程先通过 `AnswerKnowledge` 生成完整草稿并在服务端缓冲，
+不会把未经验证的 token 直接输出；随后执行两层核验：
 
-SSE 事件序列为 `retrieval → delta* → sources → done`；回答与来源写入
+1. 确定性引用结构检查：每个按句号、问号、感叹号或换行切分的事实声明都必须引用当前证据中的
+   `[K序号]`，未知引用、同句重复引用或无引用声明均视为失败；
+2. 使用 `RAG_VERIFIER_MODEL`（默认继承 `AI_MODEL`）通过 LiteLLM 判断每条 claim 是否被 evidence
+   `entailed`。`contradicted`、`insufficient`、非法结构或结果数量不匹配均不通过。
+
+首次核验失败时，Workflow 把失败声明作为删除约束再生成一次；第二次仍失败则发送 `rejected`，
+保存失败结果并返回 `KNOWLEDGE_NO_EVIDENCE`。核验通过后才把完整正文作为 `verified` 事件发送。
+业务层同时负责配额与审计；供应商真实密钥不会进入前端、日志、评测集或报告配置。
+
+正常 SSE 事件序列为 `retrieval → verifying → verified → sources → done`；生成或核验失败时分别以
+`error` 或 `rejected` 结束。由于正文是核验后一次性发送，旧的 `delta*` 描述不再代表当前正常链路。
+回答与来源写入
 `knowledge_message_sources`（含 `document_id`、`note_id`、标题、摘要、`index_version` 与
 `rank`）。保存时若来源文档已失效，返回 `KNOWLEDGE_SOURCE_INVALID`。
 
@@ -205,7 +235,10 @@ SSE 事件序列为 `retrieval → delta* → sources → done`；回答与来�
 | query embedding 未配置或失败 | 返回 `KNOWLEDGE_EMBEDDING_UNAVAILABLE`，检索不继续 |
 | 没有候选 | 返回 `KNOWLEDGE_NO_EVIDENCE`，不生成无来源答案 |
 | reranker 未配置、调用失败或返回不完整 | 返回 `KNOWLEDGE_RERANK_UNAVAILABLE`，不静默用粗排结果 |
+| 精排分数、合格证据数或可选 Margin 不达标 | 返回 `KNOWLEDGE_NO_EVIDENCE`，不调用生成 |
 | 上下文选择后为空 | 同“没有候选”，返回无依据语义 |
+| Query 改写返回非法结构 | 返回 `AI_INVALID_STRUCTURED_OUTPUT`，不使用非法改写 |
+| 生成结果引用或语义核验失败 | 最多重写一次；仍失败发送 `rejected` 并保存失败结果 |
 | 来源在保存时失效 | 返回 `KNOWLEDGE_SOURCE_INVALID`，提示重新提问 |
 | 索引构建失败 | 未完成文档继续使用旧活动版本 |
 | LiteLLM 不可用 | AI 问答不可用；笔记、搜索、附件和导出保持可用 |
@@ -233,7 +266,7 @@ flowchart LR
     Search --> Before["保存精排前候选"]
     Before --> Rerank["生产 Retriever.Rerank"]
     Rerank --> RetrievalMetrics["Hit@K / MRR"]
-    Rerank --> Ctx["SelectKnowledgeContexts Top 5"]
+    Rerank --> Ctx["SelectKnowledgeContexts Top 4"]
     Ctx --> Generate["生产 AnswerKnowledge"]
     Generate --> Judge["LiteLLM 结构化 Judge"]
     Judge --> Quality["Recall / Precision / Faithfulness / Relevancy"]
@@ -243,7 +276,22 @@ flowchart LR
 偶发返回的外层 `json` Markdown code fence；未知字段、非法 rank、缺失数组和越界分数仍会被
 拒绝。
 
-### 8.3 指标定义
+### 8.3 与在线链路的已知差异
+
+离线 Runner 复用生产召回、rerank 文本格式、上下文选择和基础生成 Prompt，但它不是在线 handler
+的逐字复制，当前有以下有意保留且必须在解读指标时说明的差异：
+
+- 评测用例是独立单轮 query，不加载会话历史，也不调用 `RewriteKnowledgeQuery`；
+- 普通评测不应用在线的 `RAG_RERANK_MIN_SCORE`、`RAG_RERANK_MIN_MARGIN` 和
+  `RAG_MIN_QUALIFIED_EVIDENCE` 拒答门控；`--calibrate-only` 只用于扫描候选阈值；
+- Generator 调用 `AnswerKnowledge`，不运行在线 `AnswerKnowledgeGrounded` 的引用结构检查、
+  verifier 和最多一次重写；Faithfulness 来自离线 Judge，而非线上 verifier 的通过率；
+- 离线 embedding 调用有最多 3 次指数退避重试，在线 query embedding 当前不做同级重试。
+
+因此 Hit@K、MRR 和上下文指标可以直接评价生产检索；Faithfulness / Answer Relevancy 评价的是
+基础生成 Prompt。线上最终可交付率、拒答率、改写正确率和 verifier 通过率尚未纳入主评测门禁。
+
+### 8.4 指标定义
 
 | 指标 | 定义 |
 |---|---|
@@ -263,7 +311,7 @@ flowchart LR
 Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候选、生成答案、Judge 判断和阶段
 耗时，便于区分粗召回、rerank、上下文选择与生成问题。
 
-### 8.4 运行与产物
+### 8.5 运行与产物
 
 ```powershell
 .\backend\scripts\rag_eval.ps1 -Workers 1
@@ -295,13 +343,36 @@ Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候
 .\backend\scripts\run_full_eval.ps1 -Workers 2 -SkipUpload
 ```
 
-## 9. 评测结果对照分析（2026-08-05 / 2026-08-06）
+## 9. 评测结果与当前基线
+
+### 9.0 当前有效基线（2026-08-11）
+
+当前回归门禁应以 164 条合并集的 Unicode 中文 Bigram FTS 基线为准，完整配置、数据集哈希、
+分层结果和七组检索消融见
+`docs/rag-baselines/20260811-125254-chinese-bigram-fts.md`：
+
+| 指标 | 当前基线 |
+|---|---:|
+| Hit@1 | 0.993902 |
+| Hit@3 / Hit@5 / Hit@10 | 1.000000 |
+| MRR（rerank 前 / 后） | 0.943462 / 0.996951 |
+| Context Recall | 0.857885 |
+| Context Precision | 0.864668 |
+| Faithfulness | 0.966236 |
+| Answer Relevancy | 0.939085 |
+| Retrieval p50 / p95 | 182 ms / 336 ms |
+| Total p50 / p95 | 6,533 ms / 9,347 ms |
+
+第 9.1～9.5 节保留 2026-08-05/06 的历史演进，用于解释 Parent-Child、RRF 和上下文策略为何
+形成；其中旧 Fulltext=0、`context_top_k=5` 和 0.4756 标题命中率都不是当前实现基线。
+
+### 9.1 历史演进环境（2026-08-05 / 2026-08-06）
 
 评测环境：用户 `Diving`，数据集 90 条，`search_limit=20`、`context_top_k=5`，Embedding
 `iic/nlp_gte_sentence-embedding_chinese-small`，Reranker `BAAI/bge-reranker-v2-m3`，生成与
 Judge 均走 LiteLLM。以下按运行目录演进对照。
 
-### 9.1 演进阶段
+### 9.2 演进阶段
 
 | 运行目录 | 阶段 | 说明 |
 |---|---|---|
@@ -309,9 +380,9 @@ Judge 均走 LiteLLM。以下按运行目录演进对照。
 | `20260805-084256` | 升级后 | 修复 Judge context 缺失；reranker 补齐标题/来源/章节 |
 | `20260805-091638` | 无效运行 | 4 workers 触发 LiteLLM 限流，46/90 失败；**已删除，不计入对比** |
 | `20260805-092823` | 文档优先（固定 3 文档）中间态 | Context Recall 提升但 Context Precision 下降，用于定位上下文策略 |
-| `20260805-094202` | RAG v3 最终 | 标题确定性门控 + 文档优先 + 章节预算，当前基线 |
+| `20260805-094202` | RAG v3 最终 | 标题确定性门控 + 文档优先 + 章节预算，当时的 90 条基线 |
 
-### 9.2 指标对照
+### 9.3 指标对照
 
 | 指标 | 081806 升级前 | 084256 升级后 | 092823 文档优先中间态 | 094202 RAG v3 最终 |
 |---|---:|---:|---:|---:|
@@ -330,7 +401,7 @@ Judge 均走 LiteLLM。以下按运行目录演进对照。
 
 `*` 升级前 Judge 没有收到 context 正文，这三项只能作为故障运行记录，不能作为可信质量基线。
 
-### 9.3 排序与失败对照
+### 9.4 排序与失败对照
 
 | 项目 | 081806 | 084256 | 094202 |
 |---|---:|---:|---:|
@@ -339,7 +410,7 @@ Judge 均走 LiteLLM。以下按运行目录演进对照。
 | rerank 排名回退案例 | 12 | 4 | 0 |
 | Hit@5 miss | 6 | 1 | 0 |
 
-### 9.4 关键结论
+### 9.5 关键结论
 
 1. **Judge 必须携带 context**：081806 的 Context Recall/Precision/Faithfulness 因 Judge
    缺上下文而失真；修复后 084256 三项才成为可信基线。
@@ -359,10 +430,10 @@ Judge 均走 LiteLLM。以下按运行目录演进对照。
    当前主要剩余问题从“gold 文档找不到”转向“最终 Top-5 上下文对参考事实的覆盖仍差约 10%”
    以及低分案例的章节选择。
 
-### 9.5 分通道召回评测（2026-08-06，164 条合并集）
+### 9.6 历史分通道召回评测（2026-08-06，164 条合并集）
 
 评测环境：用户 `Diving`，`knowledge_eval_merged.jsonl` = 90 条菜谱（v1）+ 74 条非菜谱（v2 45 条
-+ extra 29 条），`search_limit=20`、`context_top_k=5`，Embedding/Reranker/生成/Judge 与 9.2
++ extra 29 条），`search_limit=20`、`context_top_k=5`，Embedding/Reranker/生成/Judge 与上述历史环境
 一致。运行目录 `20260806-132544`（`rag_eval.ps1` 直跑）与 `20260806-134152`
 （`run_full_eval.ps1` 全流程，含基线对比报告）。
 
@@ -388,10 +459,10 @@ Judge 均走 LiteLLM。以下按运行目录演进对照。
 > 该标题通道数据来自移除菜谱专用“的做法”规则之前的基线。通用分级标题匹配上线后必须重跑
 > 164 条评测并建立新基线，不能沿用 0.4756 作为当前实现指标。
 
-> **关键结论（通道来源追踪的首次量化结果）**：164 条用例的 rerank 前候选中没有任何一条带
+> **历史结论（通道来源追踪的首次量化结果，已由 2026-08-11 基线取代）**：164 条用例的 rerank 前候选中没有任何一条带
 > `route=2`（全文）标记。根因是 `to_tsvector('simple')` / `plainto_tsquery('simple')` 对
 > 无空格中文整句不做分词：查询词被整体视为单个 token，与 chunk 文本中的整句 token 无法命中。
-> 全文通道当前是**零贡献通道**，向量 + 标题两路已覆盖全部 gold（Hit@10 = 1.0）。建议结合
+> 全文通道在该历史实现中是**零贡献通道**，向量 + 标题两路已覆盖全部 gold（Hit@10 = 1.0）。后续已按
 > 第 12.2 节在 `simple` 之外引入中文分词（如 `zhparser`）或 2-gram 确定性切词后再评估是否保留
 > 该通道；在引入中文分词前该通道不参与命中，但也不影响召回上限（由向量/标题兜底）。
 >
@@ -410,11 +481,11 @@ Judge 均走 LiteLLM。以下按运行目录演进对照。
 | 索引任务与租户数据 | `backend/internal/store/knowledge.go`、`knowledge_jobs.go` |
 | 在线问答 handler | `backend/internal/server/knowledge.go`（`knowledgeChat`） |
 | 异步索引 worker | `backend/internal/server/knowledge_worker.go` |
-| 生成 Prompt 与 SSE | `backend/internal/ai/workflow.go`（`AnswerKnowledge`） |
+| Query 改写、生成 Prompt 与核验 | `backend/internal/ai/workflow.go`（`RewriteKnowledgeQuery`、`AnswerKnowledgeGrounded`） |
 | 离线评测入口 | `backend/cmd/rag-eval/main.go` |
 | 指标、Judge 与报告 | `backend/internal/rageval/evaluation.go` |
 | v2/v3 数据库迁移 | `backend/internal/migrations/sql/000017_personal_knowledge_v2.up.sql`、`000019_knowledge_retrieval_v3.up.sql` |
-| 评测脚本与数据集 | `backend/scripts/rag_eval.ps1`、`backend/testdata/rag/recipe_eval_v1.jsonl` |
+| 评测脚本与主数据集 | `backend/scripts/rag_eval.ps1`、`backend/testdata/rag/knowledge_eval_merged.jsonl` |
 
 历史菜谱链路（`backend/internal/recipe`、`store/recipes.go`、迁移 `000016_recipe_retrieval_v2`
 等）已于 2026-08-05 随菜谱功能删除，不再作为当前实现。
@@ -501,22 +572,28 @@ docker compose config --quiet
   2. 把“标题门控”从只判断第一名扩展到前 N 名文档的标题重合度，验证多文档场景；
   3. 对同一文档内章节预算做上限约束（如单文档最多 3 个 parent），避免一个长文档独占上下文。
 
-### 12.4 Query 确定性增强（中优先）
+### 12.4 Query 改写与条件保护（中优先）
 
-- **现状**：query 原样召回，没有领域词扩展，也没有针对否定/数字/单位等条件的保护。
-- **建议**：参考已移除的菜谱链路，实现**确定性**意图扩展（仅追加领域词、不删除原始条件、
-  不调用 LLM），先覆盖“材料/用量/步骤/技巧/原因”等高频意图，用评测集对比增量命中；禁止
-  使用 HyDE 或 Step-back。
+- **现状**：单轮问题原样召回；有历史时已通过 LLM 分类并只做指代消解，但主评测集没有多轮
+  follow-up、话题切换和错误改写样例。系统仍没有领域词扩展，也没有对否定、数字、单位等条件
+  做确定性保真检查。
+- **建议**：
+  1. 建立多轮改写专项集，分别统计 follow-up 指代消解准确率、新话题原问题保持率和检索增益；
+  2. 在改写结果上增加数字、单位、否定词及专有名词不丢失的确定性检查；
+  3. 如需领域词扩展，只追加词、不删除原始条件，并通过 `--retrieval-only` 消融验证；继续禁止
+     HyDE 和 Step-back。
 
 ### 12.5 评测与生成稳定性（中优先）
 
-- **现状**：多 worker 会触发 LiteLLM 限流；Judge 全部依赖单一模型；生成对
-  “context 中没有的替代建议”仍可能夹带。
+- **现状**：embedding 评测已带最多 3 次指数退避，但多 worker 的生成/Judge 仍可能触发 LiteLLM
+  限流；Judge 全部依赖单一模型。线上已有引用结构检查和 LLM verifier，离线主 Runner 尚未复用，
+  因而无法量化首次通过率、重写率、最终拒绝率与误拒率。
 - **建议**：
   1. 评测运行增加指数退避重试，或对 LiteLLM 限流做队列化，使 4 workers 也可安全跑全量；
-  2. 收紧 `AnswerKnowledge` prompt，明确“只回答 context 中出现的内容，不补充替代做法”，
-     用 Faithfulness 与 Answer Relevancy 验证；
-  3. 增加 Judge 一致性抽样：人工复核低分与临界案例，防止指标被单一 Judge 模型偏差主导。
+  2. 给离线 Runner 增加可选 online-parity 模式，复用证据阈值、`AnswerKnowledgeGrounded` 和
+     verifier，输出拒答混淆矩阵、首次通过率及重写后通过率；
+  3. 增加 Judge 一致性抽样：人工复核低分、阈值临界和 verifier 拒绝案例，防止指标被单一
+     Judge/Verifier 模型偏差主导。
 
 ### 12.6 延迟与容量（低优先）
 
@@ -527,7 +604,7 @@ docker compose config --quiet
   3. 语料规模扩大后，监控 pgvector 索引膨胀与 `RAG_FUSION_TOP_K` 的扫描成本。
 
 总体原则：**不通过无上限增加上下文来掩盖召回问题**；任何改动都必须先在
-`artifacts/rag-eval` 上跑出不低于当前基线的对照结果再合入。菜谱 90 条基线（2026-08-05）：
-Hit@5/10 = 1.0、Context Recall ≥ 0.8998、Context Precision ≥ 0.9335；合并集 164 条基线
-（2026-08-06，`20260806-134152`）：Hit@5/10 = 1.0、Context Recall ≥ 0.8538、Context
-Precision ≥ 0.9032，**同一数据集内对比**。
+`artifacts/rag-eval` 上跑出不低于当前基线的对照结果再合入。当前有效对照是 2026-08-11 的
+164 条合并集：Hit@10 = 1.0、Context Recall = 0.857885、Context Precision = 0.864668、
+Faithfulness = 0.966236、Answer Relevancy = 0.939085；自动门禁仍使用第 11 节列出的阈值。
+历史 90 条和 2026-08-06 合并集只用于演进分析，不应作为当前发布基线。
