@@ -18,3 +18,12 @@ test('drops HTML, unsafe links and remote images', () => {
     'nofollow noopener noreferrer',
   );
 });
+
+test('wraps rendered markdown in the shared typography scope', () => {
+  const { container } = render(<SafeMarkdown>{'# 一级标题\n\n## 二级标题'}</SafeMarkdown>);
+
+  const article = container.querySelector('article.markdown-content');
+  expect(article).not.toBeNull();
+  expect(article?.querySelector('h1')).toHaveTextContent('一级标题');
+  expect(article?.querySelector('h2')).toHaveTextContent('二级标题');
+});

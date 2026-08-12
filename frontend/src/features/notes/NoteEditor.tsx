@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { Alert, Button, DatePicker, Input, Space, Spin, Tabs, Upload, message } from 'antd';
 import dayjs from 'dayjs';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -10,6 +8,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { http } from '../../api/http';
 import { getNote, saveNote } from '../../api/notes';
 import { useTheme } from '../../app/theme';
+import SafeMarkdown from '../../components/SafeMarkdown';
 import './Notes.css';
 
 type State = 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict';
@@ -211,11 +210,7 @@ export default function NoteEditor() {
           {
             key: 'preview',
             label: '预览',
-            children: (
-              <article className="markdown-preview">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-              </article>
-            ),
+            children: <SafeMarkdown>{content}</SafeMarkdown>,
           },
         ]}
       />

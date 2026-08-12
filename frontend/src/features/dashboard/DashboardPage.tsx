@@ -16,10 +16,10 @@ import {
 } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
 import { getDashboard } from '../../api/dashboard';
 import { confirmOrganize, streamPost } from '../../api/m2';
 import { getCurrentAIEvent } from '../../api/aiEvents';
+import SafeMarkdown from '../../components/SafeMarkdown';
 import './Dashboard.css';
 
 function OfflineStatus() {
@@ -213,7 +213,7 @@ export default function DashboardPage() {
                     value={preview.content}
                     onChange={(event) => setPreview({ ...preview, content: event.target.value })}
                   />
-                  <ReactMarkdown>{preview.content}</ReactMarkdown>
+                  <SafeMarkdown>{preview.content}</SafeMarkdown>
                 </>
               ) : (
                 <>

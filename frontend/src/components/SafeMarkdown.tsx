@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import './SafeMarkdown.css';
 
 const safeURL = (value?: string) => {
   if (!value) return undefined;
@@ -13,20 +14,22 @@ const safeURL = (value?: string) => {
 
 export default function SafeMarkdown({ children }: { children: string }) {
   return (
-    <ReactMarkdown
-      skipHtml
-      remarkPlugins={[remarkGfm]}
-      urlTransform={(url) => safeURL(url) || ''}
-      components={{
-        a: ({ href, children: label }) => (
-          <a href={safeURL(href)} rel="nofollow noopener noreferrer" target="_blank">
-            {label}
-          </a>
-        ),
-        img: () => null,
-      }}
-    >
-      {children}
-    </ReactMarkdown>
+    <article className="markdown-content">
+      <ReactMarkdown
+        skipHtml
+        remarkPlugins={[remarkGfm]}
+        urlTransform={(url) => safeURL(url) || ''}
+        components={{
+          a: ({ href, children: label }) => (
+            <a href={safeURL(href)} rel="nofollow noopener noreferrer" target="_blank">
+              {label}
+            </a>
+          ),
+          img: () => null,
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </article>
   );
 }
