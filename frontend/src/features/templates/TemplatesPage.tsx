@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -22,11 +22,11 @@ import SafeMarkdown from '../../components/SafeMarkdown';
 import {
   createTemplate,
   deleteTemplate,
+  getPublicTemplate,
   listMyTemplates,
   listPublicTemplates,
   publishTemplate,
   recordTemplateView,
-  reportTemplate,
   savePublicProfile,
   setTemplateReaction,
   updateTemplate,
@@ -41,18 +41,35 @@ export default function TemplatesPage() {
     [open, setOpen] = useState(false),
     [nickname, setNickname] = useState(''),
     [ranking, setRanking] = useState('recommended'),
+    [searchInput, setSearchInput] = useState(''),
+    [query, setQuery] = useState(''),
+    [category, setCategory] = useState(''),
+    [detailId, setDetailId] = useState<string | null>(null),
     [editing, setEditing] = useState<any>(null),
-    [reporting, setReporting] = useState<string | null>(null),
-    [reportReason, setReportReason] = useState('inappropriate'),
-    [reportDetails, setReportDetails] = useState(''),
     viewed = useRef(new Set<string>());
   const pub = useInfiniteQuery({
-    queryKey: ['templates', 'public', ranking],
-    queryFn: ({ pageParam }) => listPublicTemplates(ranking, pageParam),
+    queryKey: ['templates', 'public', ranking, query, category],
+    queryFn: ({ pageParam }) => listPublicTemplates(ranking, pageParam, query, category),
     initialPageParam: '',
     getNextPageParam: (last) => last.next_cursor || undefined,
   });
+  const detail = useQuery({
+    queryKey: ['templates', 'public', 'detail', detailId],
+    queryFn: () => getPublicTemplate(detailId!),
+    enabled: !!detailId,
+  });
   const mine = useQuery({ queryKey: ['templates', 'mine'], queryFn: () => listMyTemplates() });
+  const categories = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (pub.data?.pages.flatMap((page) => page.items) || [])
+            .map((item) => item.category)
+            .filter(Boolean),
+        ),
+      ).sort(),
+    [pub.data?.pages],
+  );
   useEffect(() => {
     for (const item of pub.data?.pages.flatMap((page) => page.items) || []) {
       if (!viewed.current.has(item.public_id)) {
@@ -98,18 +115,39 @@ export default function TemplatesPage() {
             label: '模板广场',
             children: (
               <>
-                <Select
-                  aria-label="榜单"
-                  style={{ width: 160, marginBottom: 16 }}
-                  value={ranking}
-                  onChange={setRanking}
-                  options={[
-                    { value: 'recommended', label: '为你推荐' },
-                    { value: 'daily', label: '今日热门' },
-                    { value: 'trending', label: '近期趋势' },
-                    { value: 'new', label: '最新上架' },
-                  ]}
-                />
+                <Space wrap style={{ marginBottom: 16 }}>
+                  <Input.Search
+                    aria-label="搜索模板"
+                    allowClear
+                    placeholder="搜索标题或说明"
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    onSearch={(value) => setQuery(value.trim())}
+                    style={{ width: 280 }}
+                  />
+                  <Select
+                    aria-label="分类"
+                    allowClear
+                    showSearch
+                    placeholder="全部分类"
+                    value={category || undefined}
+                    onChange={(value) => setCategory(value || '')}
+                    options={categories.map((value) => ({ value, label: value }))}
+                    style={{ width: 160 }}
+                  />
+                  <Select
+                    aria-label="榜单"
+                    style={{ width: 160 }}
+                    value={ranking}
+                    onChange={setRanking}
+                    options={[
+                      { value: 'recommended', label: '为你推荐' },
+                      { value: 'daily', label: '今日热门' },
+                      { value: 'trending', label: '近期趋势' },
+                      { value: 'new', label: '最新上架' },
+                    ]}
+                  />
+                </Space>
                 <Row gutter={[16, 16]}>
                   {pub.data?.pages
                     .flatMap((page) => page.items)
@@ -117,8 +155,8 @@ export default function TemplatesPage() {
                       <Col xs={24} lg={12} key={x.public_id}>
                         <Card title={x.title} extra={<Tag>{x.category}</Tag>}>
                           <p>{x.description}</p>
-                          <SafeMarkdown>{x.content_markdown}</SafeMarkdown>
                           <Space>
+                            <Button onClick={() => setDetailId(x.public_id)}>查看详情</Button>
                             <Button
                               type="primary"
                               onClick={() => action.mutate({ type: 'use', publicId: x.public_id })}
@@ -141,7 +179,6 @@ export default function TemplatesPage() {
                             >
                               {x.favorited ? '取消收藏' : '收藏'} {x.favorite_count}
                             </Button>
-                            <Button onClick={() => setReporting(x.public_id)}>举报</Button>
                             <span>
                               {x.author_nickname} · 使用 {x.usage_count}
                             </span>
@@ -221,6 +258,27 @@ export default function TemplatesPage() {
           },
         ]}
       />
+      <Modal
+        open={!!detailId}
+        title={detail.data?.title || '模板详情'}
+        footer={null}
+        width={760}
+        onCancel={() => setDetailId(null)}
+      >
+        {detail.isLoading && <div>详情加载中...</div>}
+        {detail.isError && <Alert type="error" message="模板详情加载失败" />}
+        {detail.data && (
+          <>
+            <Space wrap style={{ marginBottom: 12 }}>
+              <Tag>{detail.data.category}</Tag>
+              <span>{detail.data.author_nickname}</span>
+              <span>使用 {detail.data.usage_count}</span>
+            </Space>
+            {detail.data.description && <p>{detail.data.description}</p>}
+            <SafeMarkdown>{detail.data.content_markdown}</SafeMarkdown>
+          </>
+        )}
+      </Modal>
       <Modal open={open} footer={null} onCancel={() => setOpen(false)} title="新建模板">
         <Form
           layout="vertical"
@@ -281,44 +339,6 @@ export default function TemplatesPage() {
           onChange={(e) => setEditing({ ...editing, content_markdown: e.target.value })}
         />
         {editing?.content_markdown && <SafeMarkdown>{editing.content_markdown}</SafeMarkdown>}
-      </Modal>
-      <Modal
-        open={!!reporting}
-        title="举报模板"
-        okText="提交"
-        onCancel={() => setReporting(null)}
-        onOk={async () => {
-          if (!reporting) return;
-          try {
-            await reportTemplate(reporting, reportReason, reportDetails);
-            message.success('举报已提交');
-            setReporting(null);
-            setReportDetails('');
-          } catch (error: any) {
-            message.error(error?.response?.data?.message || '举报失败');
-          }
-        }}
-      >
-        <Select
-          aria-label="举报原因"
-          value={reportReason}
-          onChange={setReportReason}
-          style={{ width: '100%', marginBottom: 12 }}
-          options={[
-            { value: 'inappropriate', label: '不适当内容' },
-            { value: 'spam', label: '垃圾内容' },
-            { value: 'copyright', label: '版权问题' },
-            { value: 'privacy', label: '隐私问题' },
-            { value: 'other', label: '其他' },
-          ]}
-        />
-        <Input.TextArea
-          aria-label="举报说明"
-          rows={4}
-          maxLength={1000}
-          value={reportDetails}
-          onChange={(event) => setReportDetails(event.target.value)}
-        />
       </Modal>
       {pub.error && <Alert type="error" message="模板广场加载失败" />}
     </div>

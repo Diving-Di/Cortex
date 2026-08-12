@@ -55,7 +55,7 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 ### 模板与限量 AI 活动
 
 - 创建私有 Markdown 模板，并由作者自主上架或下架公开快照。
-- 从公开模板幂等创建笔记，支持点赞、收藏、使用统计和举报反馈。
+- 从公开模板幂等创建笔记，支持点赞、收藏和使用统计。
 - 每天 20:00 开放 10 分钟的免费 AI 点数活动，限 10 个名额，每次赠送 100 点。
 - Redis 负责高峰原子预扣，PostgreSQL 保存点数和领取的最终事实。
 - AI 活动投影通过版本键离线分批构建并原子切换；可用 `AI_EVENT_PROJECTION_BUILD_BATCH_SIZE`（默认 250）和 `AI_EVENT_PROJECTION_BUILD_LEASE_SECONDS`（默认 60）调节批次与构建租约。

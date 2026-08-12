@@ -133,5 +133,5 @@ Outbox 幂等投影到 ZSet/HLL，Redis 清空后可从公开统计重建，公�
 Marketplace worker 只领取模板 aggregate，处理期间续租，数据库完成更新要求 owner 与未过期租约匹配。
 `new` / `trending` 排行使用候选版本键离线分批构建和 active pointer CAS 原子切换；daily ZSet 与匿名
 UV HLL 保留 8 天，UV 由统计接口通过 `PFCOUNT` 读取。Redis 客户端使用最大 64 条连接的有界复用池。
-trending 采用 7 天半衰期衰减；公开模板包含匹配由迁移 000025 的 trigram GIN 索引支持。举报已经有
-数据库审核状态机，但管理员身份和管理端不在当前产品范围，因此不向普通租户开放审核 API。
+trending 采用 7 天半衰期衰减；公开模板包含匹配由迁移 000025 的 trigram GIN 索引支持。模板举报
+功能不属于产品范围，迁移 000026 已删除对应表、API、服务端逻辑和前端入口。

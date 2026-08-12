@@ -151,7 +151,6 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.DELETE("/api/v1/templates/public/:publicID/favorite", gin.WrapF(s.unfavoriteTemplate))
 			active.POST("/api/v1/templates/public/:publicID/use", gin.WrapF(s.useTemplate))
 			active.POST("/api/v1/templates/public/:publicID/views", gin.WrapF(s.viewTemplate))
-			active.POST("/api/v1/templates/public/:publicID/reports", gin.WrapF(s.reportTemplate))
 			active.GET("/api/v1/ai-points/balance", gin.WrapF(s.aiPointBalance))
 			active.GET("/api/v1/ai-events/current", gin.WrapF(s.currentAIEvent))
 			active.GET("/api/v1/ai-events/history", gin.WrapF(s.aiEventHistory))

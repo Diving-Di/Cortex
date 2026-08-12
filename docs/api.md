@@ -197,7 +197,6 @@ claim 保证同一到期任务只生成一条运行记录。
 | `PUT` / `DELETE` | `/api/v1/templates/public/{public_id}/favorite` | 收藏或取消收藏 |
 | `POST` | `/api/v1/templates/public/{public_id}/use` | 携带 `Idempotency-Key` 原子创建笔记 |
 | `POST` | `/api/v1/templates/public/{public_id}/views` | 记录有效浏览 |
-| `POST` | `/api/v1/templates/public/{public_id}/reports` | 提交举报反馈，不自动上下架 |
 | `GET` | `/api/v1/templates/public/{public_id}/stats?day=YYYYMMDD` | 查询指定日期匿名 UV；Redis 不可用时返回 `unique_visitors_available=false` |
 
 模板排行 `new` / `trending` 使用版本化 Redis ZSet 和 `active_version` 原子切换；`trending` 为 7 天

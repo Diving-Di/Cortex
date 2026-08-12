@@ -374,8 +374,7 @@ func (s *Store) ListPublicTemplates(ctx context.Context, principal domain.Princi
 		FROM published_template_snapshots p LEFT JOIN template_public_stats st ON st.public_template_id=p.public_template_id
 		WHERE p.status='published' AND ($2='' OR p.title ILIKE $3 OR p.description ILIKE $3) AND ($4='' OR p.category=$4)
 		AND ($8<>'recommended' OR (
-			NOT EXISTS(SELECT 1 FROM template_reports tr WHERE tr.tenant_id=$1 AND tr.user_id=$9 AND tr.public_template_id=p.public_template_id)
-			AND NOT EXISTS(SELECT 1 FROM template_usages tu WHERE tu.tenant_id=$1 AND tu.user_id=$9 AND tu.public_template_id=p.public_template_id AND tu.created_at>=now()-interval '7 days')
+			NOT EXISTS(SELECT 1 FROM template_usages tu WHERE tu.tenant_id=$1 AND tu.user_id=$9 AND tu.public_template_id=p.public_template_id AND tu.created_at>=now()-interval '7 days')
 		))
 		AND ($5::double precision IS NULL OR ` + score + `<$5 OR (` + score + `=$5 AND p.public_template_id<$6))
 		ORDER BY ` + score + ` DESC,p.public_template_id DESC LIMIT $7`
@@ -585,41 +584,4 @@ func (s *Store) RecordTemplateView(ctx context.Context, principal domain.Princip
 		_, err = tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'template',$2,'template.viewed',jsonb_build_object('delta',1,'visitor',$3::text))`, uuid.New(), publicID.String(), hex.EncodeToString(visitorDigest[:8]))
 		return err
 	})
-}
-
-func (s *Store) ReportPublicTemplate(ctx context.Context, principal domain.Principal, publicID uuid.UUID, reason, details string) error {
-	reason = strings.TrimSpace(reason)
-	details = strings.TrimSpace(details)
-	if reason == "" || len(reason) > 30 || utf8.RuneCountInString(details) > 1000 {
-		return apierror.Validation(nil)
-	}
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
-		var exists bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM published_template_snapshots WHERE public_template_id=$1 AND status='published')`, publicID).Scan(&exists); err != nil {
-			return err
-		}
-		if !exists {
-			return apierror.New("PUBLIC_TEMPLATE_NOT_FOUND", "公开模板不存在", 404)
-		}
-		_, err := tx.Exec(ctx, `INSERT INTO template_reports(tenant_id,user_id,public_template_id,reason,details) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, principal.TenantID, principal.UserID, publicID, reason, details)
-		return err
-	})
-}
-
-// ReviewTemplateReport is intentionally an administrative-store operation. The
-// HTTP layer must only expose it after the product has an authenticated admin
-// principal; ordinary tenant principals must never be accepted here.
-func (s *Store) ReviewTemplateReport(ctx context.Context, reportID int64, reviewerID int32, from, to, note string) (bool, error) {
-	allowed := map[string]map[string]bool{
-		"pending":   {"reviewing": true, "resolved": true, "rejected": true},
-		"reviewing": {"resolved": true, "rejected": true},
-	}
-	if reportID <= 0 || reviewerID <= 0 || !allowed[from][to] || utf8.RuneCountInString(note) > 1000 {
-		return false, apierror.Validation(nil)
-	}
-	tag, err := s.AdminPool.Exec(ctx, `UPDATE template_reports SET status=$2,reviewer_id=$3,review_note=$4,reviewed_at=CASE WHEN $2 IN('resolved','rejected') THEN now() ELSE NULL END WHERE id=$1 AND status=$5`, reportID, to, reviewerID, strings.TrimSpace(note), from)
-	return err == nil && tag.RowsAffected() == 1, err
 }

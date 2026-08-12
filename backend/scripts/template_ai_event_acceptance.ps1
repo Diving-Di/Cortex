@@ -36,9 +36,6 @@ foreach ($ranking in @("daily","trending","new")) {
 }
 $recommendedAfterUse = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/templates/public?ranking=recommended&page_size=100" -Headers $headers
 if (@($recommendedAfterUse.items | Where-Object { $_.public_id -eq $published.public_id }).Count -ne 0) { throw "recently used template remained in recommendations" }
-Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/templates/public/$($published.public_id)/reports" -Headers $headers -ContentType "application/json" -Body (@{reason="other";details="acceptance"}|ConvertTo-Json) | Out-Null
-$recommendedAfterReport = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/templates/public?ranking=recommended&page_size=100" -Headers $headers
-if (@($recommendedAfterReport.items | Where-Object { $_.public_id -eq $published.public_id }).Count -ne 0) { throw "reported template remained in recommendations" }
 $detail = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/templates/public/$($published.public_id)" -Headers $headers
 if (!$detail.liked -or !$detail.favorited) { throw "template reactions were not persisted" }
 $event = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/ai-events/current" -Headers $headers

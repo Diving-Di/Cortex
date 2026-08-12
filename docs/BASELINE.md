@@ -43,8 +43,8 @@
 - 客户端不得提交或选择可信 `tenant_id`。
 - `backend/db/schema.sql` 是经过空库验收的初始化基线。
 - 后续 Schema 变化必须新增版本化迁移，不得直接修改已部署数据库。
-- `000025_marketplace_hardening` 新增公开模板 trigram GIN 索引，以及举报
-  `pending/reviewing/resolved/rejected` 审核状态字段与索引。
+- `000025_marketplace_hardening` 新增公开模板 trigram GIN 索引；`000026_remove_template_reports`
+  删除模板举报表及整条举报链路。
 
 ## 配置与密钥
 

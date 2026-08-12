@@ -26,7 +26,8 @@
 - daily ZSet 和 UV HLL 保留 8 天；`GET /api/v1/templates/public/{public_id}/stats` 使用 `PFCOUNT`
   返回指定日期匿名 UV。浏览去重 key 使用后端稳定摘要，不包含原始 tenant UUID。
 - Redis RESP 客户端使用最大 64 条连接的有界复用池；迁移 `000025_marketplace_hardening` 新增公开模板
-  trigram 搜索索引和举报审核状态字段；trending 使用 7 天半衰期分数。
+  trigram 搜索索引；trending 使用 7 天半衰期分数。迁移 `000026_remove_template_reports` 删除模板举报
+  表及对应 API、服务端逻辑和前端入口。
 - [模板广场容量验收记录](MARKETPLACE_CAPACITY_ACCEPTANCE.md) 保存了本地容器网络环境、可复现命令、
   原始结果摘要和指标口径。
 
@@ -34,7 +35,6 @@
 
 - 补 Outbox 多 worker 崩溃、续租失败和数据库完成 fencing 的 PostgreSQL 并发集成测试及租约指标。
 - 详情缓存值尚未携带发布版本；当前安全性依赖下架失效和公开列表/详情回表校验。
-- 举报数据库状态机已经存在，但产品尚无管理员身份与管理端，因此没有向普通租户暴露审核 API。
 - 仍无真实线上 QPS、HTTP p95/p99、缓存命中率或数据库查询下降比例。对外性能数字必须基于固定数据集、
   HTTP 压测、原始结果及数据库/Redis/连接池指标。
 

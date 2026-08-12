@@ -64,10 +64,6 @@ type templateRequest struct {
 	Category        string `json:"category"`
 	ExpectedVersion *int   `json:"expected_version"`
 }
-type templateReportRequest struct {
-	Reason  string `json:"reason"`
-	Details string `json:"details"`
-}
 
 func (s *Server) getPublicProfile(w http.ResponseWriter, r *http.Request) {
 	x, err := s.store.GetPublicProfile(r.Context(), principalFrom(r.Context()))
@@ -446,28 +442,6 @@ func (s *Server) viewTemplate(w http.ResponseWriter, r *http.Request) {
 	templatePublicViews.Add(1)
 	w.WriteHeader(http.StatusNoContent)
 }
-func (s *Server) reportTemplate(w http.ResponseWriter, r *http.Request) {
-	if !s.allowUserRequest(r, "template-report", 20, 24*time.Hour) {
-		httpx.WriteError(w, s.logger, apierror.New("RATE_LIMITED", "操作过于频繁", 429))
-		return
-	}
-	id, err := publicTemplatePathID(r)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	var request templateReportRequest
-	if decodeErr := httpx.DecodeJSON(r, &request); decodeErr != nil {
-		httpx.WriteError(w, s.logger, decodeErr)
-		return
-	}
-	if err = s.store.ReportPublicTemplate(r.Context(), principalFrom(r.Context()), id, request.Reason, request.Details); err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (s *Server) allowUserRequest(r *http.Request, scope string, limit int, window time.Duration) bool {
 	p := principalFrom(r.Context())
 	digest := sha256.Sum256([]byte(p.TenantID.String() + ":" + strconv.FormatInt(int64(p.UserID), 10)))

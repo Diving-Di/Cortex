@@ -4,13 +4,14 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, test, vi } from 'vitest';
 import TemplatesPage from './TemplatesPage';
 import {
+  getPublicTemplate,
   listMyTemplates,
   listPublicTemplates,
   recordTemplateView,
-  reportTemplate,
 } from '../../api/templates';
 
 vi.mock('../../api/templates', () => ({
+  getPublicTemplate: vi.fn(),
   listPublicTemplates: vi.fn().mockResolvedValue({
     items: [
       {
@@ -36,7 +37,6 @@ vi.mock('../../api/templates', () => ({
   deleteTemplate: vi.fn(),
   publishTemplate: vi.fn(),
   recordTemplateView: vi.fn(),
-  reportTemplate: vi.fn(),
   savePublicProfile: vi.fn(),
   useTemplate: vi.fn(),
   usePrivateTemplate: vi.fn(),
@@ -46,6 +46,21 @@ vi.mock('../../api/templates', () => ({
 }));
 afterEach(cleanup);
 test('renders public templates with interactions', async () => {
+  vi.mocked(getPublicTemplate).mockResolvedValueOnce({
+    public_id: 'p1',
+    author_nickname: '作者',
+    version: 1,
+    title: '每日复盘',
+    description: '说明',
+    content_markdown: '# 详情内容',
+    category: '复盘',
+    published_at: '2026-08-01T00:00:00Z',
+    like_count: 1,
+    favorite_count: 2,
+    usage_count: 3,
+    liked: false,
+    favorited: false,
+  });
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
@@ -57,13 +72,11 @@ test('renders public templates with interactions', async () => {
   expect(screen.getByText(/使用模板/)).toBeInTheDocument();
   expect(screen.getByText(/点赞/)).toBeInTheDocument();
   expect(screen.getByText(/收藏/)).toBeInTheDocument();
+  expect(screen.queryByText('内容')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '查看详情' }));
+  expect(await screen.findByText('详情内容')).toBeInTheDocument();
+  expect(getPublicTemplate).toHaveBeenCalledWith('p1');
   await waitFor(() => expect(recordTemplateView).toHaveBeenCalledWith('p1'));
-  fireEvent.click(screen.getByRole('button', { name: /举\s*报/ }));
-  fireEvent.change(screen.getByLabelText('举报说明'), { target: { value: '需要检查' } });
-  fireEvent.click(screen.getByRole('button', { name: /提\s*交/ }));
-  await waitFor(() =>
-    expect(reportTemplate).toHaveBeenCalledWith('p1', 'inappropriate', '需要检查'),
-  );
 });
 
 test('loads the next signed-cursor page', async () => {
@@ -119,7 +132,45 @@ test('loads the next signed-cursor page', async () => {
   expect(await screen.findByText('第一页模板')).toBeInTheDocument();
   fireEvent.click(screen.getByText('加载更多'));
   expect(await screen.findByText('第二页模板')).toBeInTheDocument();
-  expect(listPublicTemplates).toHaveBeenLastCalledWith('recommended', 'signed-cursor');
+  expect(listPublicTemplates).toHaveBeenLastCalledWith('recommended', 'signed-cursor', '', '');
+});
+
+test('searches public templates through the list API', async () => {
+  vi.mocked(listPublicTemplates).mockResolvedValue({
+    items: [
+      {
+        public_id: 'p1',
+        author_nickname: '作者',
+        version: 1,
+        title: '每日复盘',
+        description: '说明',
+        content_markdown: '# 内容',
+        category: '复盘',
+        published_at: '2026-08-01T00:00:00Z',
+        like_count: 1,
+        favorite_count: 2,
+        usage_count: 3,
+        liked: false,
+        favorited: false,
+      },
+    ],
+    next_cursor: '',
+  });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <TemplatesPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText('每日复盘')).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索模板' }), {
+    target: { value: '周报' },
+  });
+  fireEvent.keyDown(screen.getByRole('searchbox', { name: '搜索模板' }), { key: 'Enter' });
+  await waitFor(() =>
+    expect(listPublicTemplates).toHaveBeenLastCalledWith('recommended', '', '周报', ''),
+  );
 });
 
 test('renders an empty private-template list when the legacy API returns null', async () => {

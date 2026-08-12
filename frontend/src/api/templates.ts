@@ -31,12 +31,25 @@ export interface PublicProfile {
   discoverable: boolean;
   version: number;
 }
-export async function listPublicTemplates(ranking = 'recommended', cursor = '') {
+export async function listPublicTemplates(
+  ranking = 'recommended',
+  cursor = '',
+  query = '',
+  category = '',
+) {
   return (
     await http.get<{ items: PublicTemplate[]; next_cursor: string }>('/api/v1/templates/public', {
-      params: { ranking, cursor: cursor || undefined },
+      params: {
+        ranking,
+        cursor: cursor || undefined,
+        query: query || undefined,
+        category: category || undefined,
+      },
     })
   ).data;
+}
+export async function getPublicTemplate(id: string) {
+  return (await http.get<PublicTemplate>(`/api/v1/templates/public/${id}`)).data;
 }
 export async function listMyTemplates() {
   const response = await http.get<{ items: WritingTemplate[] | null }>('/api/v1/templates/mine');
@@ -83,9 +96,6 @@ export async function setTemplateReaction(id: string, kind: 'like' | 'favorite',
 }
 export async function recordTemplateView(id: string) {
   await http.post(`/api/v1/templates/public/${id}/views`, {});
-}
-export async function reportTemplate(id: string, reason: string, details: string) {
-  await http.post(`/api/v1/templates/public/${id}/reports`, { reason, details });
 }
 export async function updateTemplate(value: WritingTemplate) {
   return (

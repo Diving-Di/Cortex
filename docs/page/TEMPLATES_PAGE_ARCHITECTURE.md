@@ -8,7 +8,7 @@
 - 目标：把日记/复盘等结构化 Markdown 沉淀为可复用模板，并通过公开广场分享；使用模板时由
   服务端原子创建笔记并记录可信统计。
 - 范围：私有模板 CRUD、作者自主上架/下架、公开模板榜单（推荐/今日热门/近期趋势/最新上架）、
-  点赞/收藏/使用/浏览/举报、从模板创建笔记、公开昵称。
+  点赞/收藏/使用/浏览、从模板创建笔记、公开昵称。
 - 非目标：管理员审核、团队协作、公开图片上传、关注/私信/评论，以及把公开内容写入笔记正文
   之外的地方。
 
@@ -30,7 +30,6 @@
 - 浏览上报：首次看到某公开模板时调用 `POST .../views` 上报（仅一次，防重复）。
 - 我的模板：创建、编辑（Markdown 编辑与预览）、上架、下架、删除；编辑/上架使用乐观锁版本。
 - 公开昵称：上架前必须先设置公开昵称（`/api/v1/public-profile`）。
-- 举报：在公开模板上提交举报与原因，举报不自动下架，由后续处理决定。
 - 使用模板：确认后调用服务端原子创建接口，成功后跳转 `/notes/{note_id}`。
 
 ## 前端数据流
@@ -57,14 +56,13 @@
 | `PUT` / `DELETE` | `/api/v1/templates/public/{public_id}/favorite` | 收藏 / 取消收藏（幂等） |
 | `POST` | `/api/v1/templates/public/{public_id}/use` | 携带 `Idempotency-Key` 原子创建笔记 |
 | `POST` | `/api/v1/templates/public/{public_id}/views` | 上报有效浏览（可采样） |
-| `POST` | `/api/v1/templates/public/{public_id}/reports` | 提交举报反馈 |
 | `GET` | `/api/v1/templates/public/{public_id}/stats?day=YYYYMMDD` | 查询指定日期匿名 UV |
 
 ## 后端组件与持久化模型
 
 - 表：`writing_templates`（私有原稿）、`template_publications`（发布记录）、
   `published_template_snapshots`（公开快照）、`template_reactions`（点赞/收藏）、
-  `template_usages`（使用记录）、`template_reports`（举报）、`template_public_stats`（聚合榜）、
+  `template_usages`（使用记录）、`template_public_stats`（聚合榜）、
   `outbox_events`（统计投影事件）。
 - Redis：公开详情 Cache Aside、排行榜 ZSet、UV 的 HLL；Outbox worker 幂等投影到排行与统计，
   Redis 清空后从公开统计重建。
@@ -126,9 +124,7 @@ Markdown 正文和公开昵称，不携带租户 ID、登录名或私有笔记�
    telemetry 和连接健康能力。
 4. 搜索 SQL 仍使用包含匹配语义，但迁移 000025 已建立对应 trigram GIN 索引；需用生产规模数据执行
    `EXPLAIN (ANALYZE, BUFFERS)` 验证计划稳定性。
-5. 举报已有 `pending/reviewing/resolved/rejected` 数据库状态机和 store fencing；管理员身份与管理端不在
-   当前产品范围，因此没有公开审核 API。
-6. 本地可复现容量结果见 `docs/MARKETPLACE_CAPACITY_ACCEPTANCE.md`。仓库仍没有真实线上 QPS、HTTP
+5. 本地可复现容量结果见 `docs/MARKETPLACE_CAPACITY_ACCEPTANCE.md`。仓库仍没有真实线上 QPS、HTTP
    p95/p99、缓存命中率证据，不得把本地 Go 测试 wall time 表述为线上性能。
 
 ## 代码定位
@@ -143,4 +139,5 @@ Markdown 正文和公开昵称，不携带租户 ID、登录名或私有笔记�
 | `backend/internal/server/marketplace_worker.go` | 启动重建与持续消费 |
 | `backend/internal/rediscoord/client.go` | ZSet、详情缓存、HLL、Lua 和排行重建 |
 | `backend/internal/migrations/sql/000014_template_marketplace_ai_events.up.sql` | 表、索引、约束、RLS 和授权 |
-| `backend/internal/migrations/sql/000025_marketplace_hardening.up.sql` | 搜索索引与举报审核状态机 |
+| `backend/internal/migrations/sql/000025_marketplace_hardening.up.sql` | 公开模板 trigram 搜索索引 |
+| `backend/internal/migrations/sql/000026_remove_template_reports.up.sql` | 删除模板举报表 |
