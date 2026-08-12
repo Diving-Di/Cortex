@@ -225,40 +225,42 @@ func (s *Server) listPublicTemplates(w http.ResponseWriter, r *http.Request) {
 	var scores []float64
 	usedRedis := false
 	if s.redis != nil && r.URL.Query().Get("query") == "" && r.URL.Query().Get("category") == "" && ranking != "recommended" {
-		key := "diary:tpl:rank:" + ranking
+		key, keyOK, keyErr := s.redis.ActiveTemplateRankingKey(r.Context(), ranking, "")
 		if ranking == "daily" {
 			zone, _ := time.LoadLocation("Asia/Shanghai")
-			key = "diary:tpl:rank:daily:" + time.Now().In(zone).Format("20060102")
+			key, keyOK, keyErr = s.redis.ActiveTemplateRankingKey(r.Context(), ranking, time.Now().In(zone).Format("20060102"))
 		}
-		if ranked, cacheErr := s.redis.RankingPage(r.Context(), key, afterScore, limit+1); cacheErr == nil && len(ranked) > 0 {
-			ids := make([]uuid.UUID, 0, len(ranked))
-			scoreByID := map[uuid.UUID]float64{}
-			for _, item := range ranked {
-				id, e := uuid.Parse(item.Member)
-				if e != nil {
-					continue
-				}
-				if afterScore != nil && afterID != nil && item.Score == *afterScore && id.String() >= afterID.String() {
-					continue
-				}
-				ids = append(ids, id)
-				scoreByID[id] = item.Score
-				if len(ids) >= limit+1 {
-					break
-				}
-			}
-			if fetched, e := s.store.GetPublicTemplatesByIDs(r.Context(), principalFrom(r.Context()), ids); e == nil {
-				byID := map[uuid.UUID]store.PublicTemplate{}
-				for _, item := range fetched {
-					byID[item.PublicID] = item
-				}
-				for _, id := range ids {
-					if item, ok := byID[id]; ok {
-						x = append(x, item)
-						scores = append(scores, scoreByID[id])
+		if keyErr == nil && keyOK {
+			if ranked, cacheErr := s.redis.RankingPage(r.Context(), key, afterScore, limit+1); cacheErr == nil && len(ranked) > 0 {
+				ids := make([]uuid.UUID, 0, len(ranked))
+				scoreByID := map[uuid.UUID]float64{}
+				for _, item := range ranked {
+					id, e := uuid.Parse(item.Member)
+					if e != nil {
+						continue
+					}
+					if afterScore != nil && afterID != nil && item.Score == *afterScore && id.String() >= afterID.String() {
+						continue
+					}
+					ids = append(ids, id)
+					scoreByID[id] = item.Score
+					if len(ids) >= limit+1 {
+						break
 					}
 				}
-				usedRedis = true
+				if fetched, e := s.store.GetPublicTemplatesByIDs(r.Context(), principalFrom(r.Context()), ids); e == nil {
+					byID := map[uuid.UUID]store.PublicTemplate{}
+					for _, item := range fetched {
+						byID[item.PublicID] = item
+					}
+					for _, id := range ids {
+						if item, ok := byID[id]; ok {
+							x = append(x, item)
+							scores = append(scores, scoreByID[id])
+						}
+					}
+					usedRedis = true
+				}
 			}
 		}
 	}
@@ -332,6 +334,36 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, 200, x)
 }
+func (s *Server) getPublicTemplateStats(w http.ResponseWriter, r *http.Request) {
+	id, err := publicTemplatePathID(r)
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	day := strings.TrimSpace(r.URL.Query().Get("day"))
+	if day == "" {
+		zone, _ := time.LoadLocation("Asia/Shanghai")
+		day = time.Now().In(zone).Format("20060102")
+	}
+	if len(day) != 8 {
+		httpx.WriteError(w, s.logger, apierror.Validation(nil))
+		return
+	}
+	if _, err = time.Parse("20060102", day); err != nil {
+		httpx.WriteError(w, s.logger, apierror.Validation(nil))
+		return
+	}
+	if s.redis == nil {
+		httpx.JSON(w, http.StatusOK, map[string]any{"day": day, "unique_visitors_available": false})
+		return
+	}
+	uv, err := s.redis.TemplateUniqueVisitors(r.Context(), id.String(), day)
+	if err != nil {
+		httpx.JSON(w, http.StatusOK, map[string]any{"day": day, "unique_visitors_available": false})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"day": day, "unique_visitors": uv, "unique_visitors_available": true})
+}
 func (s *Server) templateReaction(w http.ResponseWriter, r *http.Request, kind string, enabled bool) {
 	if !s.allowUserRequest(r, "template-reaction", 30, time.Minute) {
 		httpx.WriteError(w, s.logger, apierror.New("RATE_LIMITED", "操作过于频繁", 429))
@@ -395,7 +427,9 @@ func (s *Server) viewTemplate(w http.ResponseWriter, r *http.Request) {
 	id, err := publicTemplatePathID(r)
 	if err == nil && s.redis != nil {
 		principal := principalFrom(r.Context())
-		accepted, redisErr := s.redis.Once(r.Context(), "diary:tpl:view:"+id.String()+":"+principal.TenantID.String(), 10*time.Minute)
+		visitor := aiEventReservationMember(principal.TenantID) + ":" + strconv.FormatInt(int64(principal.UserID), 10)
+		digest := sha256.Sum256([]byte(visitor))
+		accepted, redisErr := s.redis.Once(r.Context(), "diary:tpl:view:"+id.String()+":"+base64.RawURLEncoding.EncodeToString(digest[:12]), 10*time.Minute)
 		if redisErr != nil || !accepted {
 			w.WriteHeader(http.StatusNoContent)
 			return

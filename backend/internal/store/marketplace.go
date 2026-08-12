@@ -360,7 +360,7 @@ func (s *Store) ListPublicTemplates(ctx context.Context, principal domain.Princi
 		case "daily":
 			score = `(SELECT count(*)::double precision FROM outbox_events oe WHERE oe.aggregate_type='template' AND oe.aggregate_id=p.public_template_id::text AND oe.event_type='template.viewed' AND (oe.occurred_at AT TIME ZONE 'Asia/Shanghai')::date=(now() AT TIME ZONE 'Asia/Shanghai')::date)`
 		case "trending":
-			score = `(COALESCE(st.view_count,0)+3*COALESCE(st.like_count,0)+5*COALESCE(st.favorite_count,0)+8*COALESCE(st.usage_count,0))::double precision`
+			score = `((COALESCE(st.view_count,0)+3*COALESCE(st.like_count,0)+5*COALESCE(st.favorite_count,0)+8*COALESCE(st.usage_count,0))/power(2.0,GREATEST(0,extract(epoch FROM now()-p.published_at))/604800.0))::double precision`
 		case "recommended":
 			score = `((COALESCE(st.like_count,0)+2*COALESCE(st.favorite_count,0)+3*COALESCE(st.usage_count,0)) + CASE WHEN COALESCE((SELECT marketplace_personalization FROM user_preferences WHERE tenant_id=$1 AND user_id=(SELECT user_id FROM tenants WHERE id=$1)),true) AND EXISTS(SELECT 1 FROM template_reactions rr JOIN published_template_snapshots pp ON pp.public_template_id=rr.public_template_id WHERE rr.tenant_id=$1 AND rr.kind IN ('like','favorite') AND pp.category=p.category) THEN 20 ELSE 0 END)::double precision`
 		case "new":
@@ -607,4 +607,19 @@ func (s *Store) ReportPublicTemplate(ctx context.Context, principal domain.Princ
 		_, err := tx.Exec(ctx, `INSERT INTO template_reports(tenant_id,user_id,public_template_id,reason,details) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, principal.TenantID, principal.UserID, publicID, reason, details)
 		return err
 	})
+}
+
+// ReviewTemplateReport is intentionally an administrative-store operation. The
+// HTTP layer must only expose it after the product has an authenticated admin
+// principal; ordinary tenant principals must never be accepted here.
+func (s *Store) ReviewTemplateReport(ctx context.Context, reportID int64, reviewerID int32, from, to, note string) (bool, error) {
+	allowed := map[string]map[string]bool{
+		"pending":   {"reviewing": true, "resolved": true, "rejected": true},
+		"reviewing": {"resolved": true, "rejected": true},
+	}
+	if reportID <= 0 || reviewerID <= 0 || !allowed[from][to] || utf8.RuneCountInString(note) > 1000 {
+		return false, apierror.Validation(nil)
+	}
+	tag, err := s.AdminPool.Exec(ctx, `UPDATE template_reports SET status=$2,reviewer_id=$3,review_note=$4,reviewed_at=CASE WHEN $2 IN('resolved','rejected') THEN now() ELSE NULL END WHERE id=$1 AND status=$5`, reportID, to, reviewerID, strings.TrimSpace(note), from)
+	return err == nil && tag.RowsAffected() == 1, err
 }

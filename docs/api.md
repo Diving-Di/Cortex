@@ -122,6 +122,8 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 
 流式生成只有收到 `done`（知识问答）或 `[DONE]`（通用 AI）才算完成。上游在已输出内容后失败时发送 `error` 事件，不再发送完成标记；载荷包含 `incomplete`、`output_tokens` 和 `upstream_stage`。知识问答会把部分回答以 `failed` 状态保存，客户端应复用 `request_id` 查询/展示同一次请求，不得自动从头重试。供应商 continuation token 未接入前不执行续写。
 
+AI 限量活动的 Redis 投影使用 `active_version` 指针和版本化数据键。领取在 Lua 中先校验指针；切换并发导致版本变化时最多重试一次，连续变化返回 `AI_EVENT_BUSY`（503）。投影构建使用活动级 owner fencing 租约、分批 Pipeline 和常数复杂度 CAS 切换，不会删除线上 active 版本；旧版本仍有 pending reservation 时禁止清理。
+
 客户端提交的 `tenant_id` 始终被忽略；无当前租户证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
 已有活动索引的文档在重建期间仍返回 `Status: "ready"`；`index_job_status` 单独表示
 `queued`、`running`、`success` 或 `failed`。重建失败通过 `last_index_failure_code` 暴露，旧索引
@@ -196,6 +198,11 @@ claim 保证同一到期任务只生成一条运行记录。
 | `POST` | `/api/v1/templates/public/{public_id}/use` | 携带 `Idempotency-Key` 原子创建笔记 |
 | `POST` | `/api/v1/templates/public/{public_id}/views` | 记录有效浏览 |
 | `POST` | `/api/v1/templates/public/{public_id}/reports` | 提交举报反馈，不自动上下架 |
+| `GET` | `/api/v1/templates/public/{public_id}/stats?day=YYYYMMDD` | 查询指定日期匿名 UV；Redis 不可用时返回 `unique_visitors_available=false` |
+
+模板排行 `new` / `trending` 使用版本化 Redis ZSet 和 `active_version` 原子切换；`trending` 为 7 天
+半衰期衰减分数。daily ZSet 与 UV HLL 保留 8 天。统计接口的 `day` 使用 `YYYYMMDD`，省略时按
+`Asia/Shanghai` 当日计算；HLL 是近似去重统计，不是严格访问日志。
 
 ## 每日限量免费点数活动
 
@@ -218,7 +225,9 @@ claim 保证同一到期任务只生成一条运行记录。
 `ai_flash_event_settings`，默认分别为 `Asia/Shanghai` 20:00、10 分钟、10 名、赠送 100 点、5 天和
 每月 1,000 点。scheduler 预热 Redis 后才开放领取；未预热时领取 fail-closed。
 数据库字段 `reservation_ready` 记录本场预热状态；预热失败时活动详情返回 `paused`，恢复后由
-worker 重新聚合资格和点数镜像并自动置为就绪。
+worker 分批构建版本化资格和点数投影、原子切换 active pointer 并自动置为就绪。Redis 不可用、Key
+缺失或版本切换时领取返回稳定 503（`AI_EVENT_UNAVAILABLE` / `AI_EVENT_BUSY`）；当前没有数据库资格
+回源。`remaining_slots_approx` 仅供展示，不能作为领取成功承诺。
 
 ## 内容导出
 

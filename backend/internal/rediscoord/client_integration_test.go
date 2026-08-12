@@ -26,11 +26,17 @@ func TestRedisCoordinationIntegration(t *testing.T) {
 	preparedStock, preparedClaimed, preparedWindow := "prepared:{"+suffix+"}:stock", "prepared:{"+suffix+"}:claimed", "prepared:{"+suffix+"}:window"
 	preparedEligible, preparedPoints := "prepared:{"+suffix+"}:eligible", "prepared:{"+suffix+"}:points"
 	preparedPending := "prepared:{" + suffix + "}:pending"
+	versionStable := AIEventKeys("integration-"+suffix, "")
+	versionOne := AIEventKeys("integration-"+suffix, "v1")
+	versionTwo := AIEventKeys("integration-"+suffix, "v2")
 	loadStock, loadClaimed, loadWindow := "load:{"+suffix+"}:stock", "load:{"+suffix+"}:claimed", "load:{"+suffix+"}:window"
 	loadEligible, loadPoints := "load:{"+suffix+"}:eligible", "load:{"+suffix+"}:points"
 	loadPending := "load:{" + suffix + "}:pending"
 	defer func() {
-		_ = c.Delete(ctx, stock, claimed, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, loadStock, loadClaimed, loadWindow, loadEligible, loadPoints, loadPending, "test:cache:"+suffix, "test:rate:"+suffix, "diary:outbox:processed:event-"+suffix, "diary:outbox:processed:projection-"+suffix, "diary:outbox:processed:projection-next-"+suffix)
+		keys := append(versionOne.DataKeys(), versionTwo.DataKeys()...)
+		keys = append(keys, versionStable.ActiveVersion, versionStable.BuildLock)
+		keys = append(keys, stock, claimed, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, loadStock, loadClaimed, loadWindow, loadEligible, loadPoints, loadPending, "test:cache:"+suffix, "test:rate:"+suffix, "diary:outbox:processed:event-"+suffix, "diary:outbox:processed:projection-"+suffix, "diary:outbox:processed:projection-next-"+suffix)
+		_ = c.Delete(ctx, keys...)
 		_, _ = c.commands(ctx, []string{"ZREM", "diary:tpl:rank:trending", "public-" + suffix})
 	}()
 	var accepted atomic.Int64
@@ -72,6 +78,43 @@ func TestRedisCoordinationIntegration(t *testing.T) {
 	if err := c.WarmEvent(ctx, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, time.Now().Add(-time.Minute), time.Now().Add(time.Minute), 3, 100, nil, eligible, time.Minute); err != nil {
 		t.Fatal(err)
 	}
+	locked, err := c.AcquireAIEventBuildLock(ctx, versionStable.BuildLock, "owner-1", time.Minute)
+	if err != nil || !locked {
+		t.Fatalf("build lock locked=%v err=%v", locked, err)
+	}
+	if err = c.BuildAIEventVersion(ctx, versionOne, time.Now().Add(-time.Minute), time.Now().Add(time.Minute), 2, 100, nil, eligible, time.Minute, 2); err != nil {
+		t.Fatal(err)
+	}
+	if switched, e := c.SwitchAIEventVersion(ctx, versionStable, "", "v1", "wrong-owner"); e != nil || switched != -1 {
+		t.Fatalf("wrong owner switch=%d err=%v", switched, e)
+	}
+	if switched, e := c.SwitchAIEventVersion(ctx, versionStable, "", "v1", "owner-1"); e != nil || switched != 1 {
+		t.Fatalf("switch=%d err=%v", switched, e)
+	}
+	if got, e := c.ReservePreparedVersioned(ctx, versionOne, "stale", "a"); e != nil || got != VersionChanged {
+		t.Fatalf("stale reserve=%d err=%v", got, e)
+	}
+	if got, e := c.ReservePreparedVersioned(ctx, versionOne, "v1", "a"); e != nil || got != 1 {
+		t.Fatalf("version reserve=%d err=%v", got, e)
+	}
+	if deleted, e := c.CleanupAIEventVersion(ctx, versionOne, "v1"); e != nil || deleted {
+		t.Fatalf("active cleanup deleted=%v err=%v", deleted, e)
+	}
+	if err = c.BuildAIEventVersion(ctx, versionTwo, time.Now().Add(-time.Minute), time.Now().Add(time.Minute), 2, 100, nil, eligible, time.Minute, 2); err != nil {
+		t.Fatal(err)
+	}
+	if switched, e := c.SwitchAIEventVersion(ctx, versionStable, "v1", "v2", "owner-1"); e != nil || switched != 1 {
+		t.Fatalf("second switch=%d err=%v", switched, e)
+	}
+	if deleted, e := c.CleanupAIEventVersion(ctx, versionOne, "v1"); e != nil || deleted {
+		t.Fatalf("pending cleanup deleted=%v err=%v", deleted, e)
+	}
+	if err = c.ConfirmReservation(ctx, versionOne.Pending, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if deleted, e := c.CleanupAIEventVersion(ctx, versionOne, "v1"); e != nil || !deleted {
+		t.Fatalf("settled cleanup deleted=%v err=%v", deleted, e)
+	}
 	for i, want := range []int{1, 1, 1, -4} {
 		got, err := c.ReservePrepared(ctx, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, string(rune('a'+i)))
 		if err != nil || got != want {
@@ -91,6 +134,9 @@ func TestRedisCoordinationIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := c.ConfirmReservation(ctx, preparedPending, "b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ConfirmReservation(ctx, preparedPending, "c"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.commands(ctx, []string{"ZADD", preparedPending, strconv.FormatInt(time.Now().Add(-31*time.Second).Unix(), 10), "orphan"}); err != nil {
@@ -143,13 +189,20 @@ func TestRedisCoordinationIntegration(t *testing.T) {
 	}
 	event := "event-" + suffix
 	publicID := "public-" + suffix
-	if err := c.ApplyTemplateEvent(ctx, event, publicID, "template.like", "", 1, time.Now()); err != nil {
+	if err := c.RebuildTemplateRankings(ctx, []RankingProjection{{PublicID: publicID, PublishedAt: time.Now(), TrendingScore: 3}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.ApplyTemplateEvent(ctx, event, publicID, "template.like", "", 1, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if score, ok, err := c.Score(ctx, "diary:tpl:rank:trending", publicID); err != nil || !ok || score != 3 {
+	if err := c.ApplyTemplateEvent(ctx, event, publicID, "template.like", "", 1, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	trendingKey, ok, err := c.ActiveTemplateRankingKey(ctx, "trending", "")
+	if err != nil || !ok {
+		t.Fatalf("active ranking key ok=%v err=%v", ok, err)
+	}
+	if score, ok, err := c.Score(ctx, trendingKey, publicID); err != nil || !ok || score != 3 {
 		t.Fatalf("idempotent score=%v ok=%v err=%v", score, ok, err)
 	}
 	projectionID := "projection-" + suffix
@@ -159,17 +212,20 @@ func TestRedisCoordinationIntegration(t *testing.T) {
 	if err := c.ApplyTemplateProjection(ctx, projectionID, publicID, "template.like", "", time.Now(), 99, 4); err != nil {
 		t.Fatal(err)
 	}
-	if score, ok, err := c.Score(ctx, "diary:tpl:rank:trending", publicID); err != nil || !ok || score != 17 {
+	if score, ok, err := c.Score(ctx, trendingKey, publicID); err != nil || !ok || score != 17 {
 		t.Fatalf("absolute idempotent score=%v ok=%v err=%v", score, ok, err)
 	}
 	if err := c.ApplyTemplateProjection(ctx, "projection-next-"+suffix, publicID, "template.favorite", "", time.Now(), 17, 4); err != nil {
 		t.Fatal(err)
 	}
-	if score, ok, err := c.Score(ctx, "diary:tpl:rank:trending", publicID); err != nil || !ok || score != 17 {
+	if score, ok, err := c.Score(ctx, trendingKey, publicID); err != nil || !ok || score != 17 {
 		t.Fatalf("absolute replay score=%v ok=%v err=%v", score, ok, err)
 	}
-	if items, err := c.RankingPage(ctx, "diary:tpl:rank:trending", nil, 10); err != nil || len(items) == 0 {
+	if items, err := c.RankingPage(ctx, trendingKey, nil, 10); err != nil || len(items) == 0 {
 		t.Fatalf("ranking items=%v err=%v", items, err)
+	}
+	if uv, err := c.TemplateUniqueVisitors(ctx, publicID, time.Now().In(time.FixedZone("CST", 8*3600)).Format("20060102")); err != nil || uv != 0 {
+		t.Fatalf("unexpected UV %d err=%v", uv, err)
 	}
 	for i := 0; i < 3; i++ {
 		allowed, err := c.Allow(ctx, "test:rate:"+suffix, 2, time.Minute)

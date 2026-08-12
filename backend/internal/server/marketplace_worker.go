@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -31,6 +32,7 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 	}
 	go func() {
 		owner := uuid.NewString()
+		lease := 30 * time.Second
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
@@ -39,7 +41,7 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 				return
 			case <-ticker.C:
 			}
-			event, err := db.ClaimOutboxEvent(ctx, owner)
+			event, err := db.ClaimOutboxEvent(ctx, "template", owner, lease)
 			if err != nil {
 				logger.Error("claim marketplace outbox", "error", err)
 				continue
@@ -47,9 +49,28 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 			if event == nil {
 				continue
 			}
-			if event.AggregateType != "template" {
-				err = nil
-			} else if event.EventType == "template.withdrawn" || event.EventType == "template.deleted" {
+			leaseCtx, cancelLease := context.WithCancel(ctx)
+			leaseLost := make(chan struct{}, 1)
+			go func(id string) {
+				ticker := time.NewTicker(lease / 3)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-leaseCtx.Done():
+						return
+					case <-ticker.C:
+						ok, renewErr := db.RenewOutboxEventLease(leaseCtx, id, owner, lease)
+						if renewErr != nil || !ok {
+							select {
+							case leaseLost <- struct{}{}:
+							default:
+							}
+							return
+						}
+					}
+				}
+			}(event.ID)
+			if event.EventType == "template.withdrawn" || event.EventType == "template.deleted" {
 				err = redis.DeleteTemplateProjections(ctx, event.AggregateID)
 			} else {
 				payload := struct {
@@ -66,6 +87,12 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 				} else {
 					err = redis.ApplyTemplateProjection(ctx, event.ID, event.AggregateID, event.EventType, payload.Visitor, projection.PublishedAt, projection.TrendingScore, projection.DailyScore)
 				}
+			}
+			cancelLease()
+			select {
+			case <-leaseLost:
+				err = errors.New("outbox lease lost")
+			default:
 			}
 			if finishErr := db.FinishOutboxEvent(ctx, event.ID, owner, err); finishErr != nil {
 				logger.Error("finish marketplace outbox", "error", finishErr)

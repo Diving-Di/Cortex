@@ -71,6 +71,8 @@ type Config struct {
 	KnowledgeMaxDepth            int
 	KnowledgeMaxCompressionRatio int
 	RedisURL                     string
+	AIEventBuildBatchSize        int
+	AIEventBuildLease            time.Duration
 }
 
 func Load() (Config, error) {
@@ -213,6 +215,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	aiEventProjectionBuildBatchSize, err := positiveInt("AI_EVENT_PROJECTION_BUILD_BATCH_SIZE", 250)
+	if err != nil {
+		return Config{}, err
+	}
+	aiEventProjectionBuildLeaseSeconds, err := positiveInt("AI_EVENT_PROJECTION_BUILD_LEASE_SECONDS", 60)
+	if err != nil {
+		return Config{}, err
+	}
 	ragVectorTopK, err := positiveInt("RAG_VECTOR_TOP_K", 15)
 	if err != nil {
 		return Config{}, err
@@ -305,6 +315,8 @@ func Load() (Config, error) {
 		KnowledgeMaxDepth:            knowledgeMaxDepth,
 		KnowledgeMaxCompressionRatio: knowledgeMaxCompressionRatio,
 		RedisURL:                     valueOrDefault("REDIS_URL", "redis://redis:6379/0"),
+		AIEventBuildBatchSize:        aiEventProjectionBuildBatchSize,
+		AIEventBuildLease:            time.Duration(aiEventProjectionBuildLeaseSeconds) * time.Second,
 	}, nil
 }
 

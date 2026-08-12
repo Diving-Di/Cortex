@@ -1,7 +1,7 @@
 # Cortex 工程基线
 
 > 状态：当前有效
-> 更新日期：2026-08-05
+> 更新日期：2026-08-12
 
 ## 产品范围
 
@@ -10,7 +10,7 @@
 - AI 整理、报告、来源引用和回忆问答。
 - 每个账号对应一个服务端解析的个人租户。
 - Markdown ZIP 内容导出和笔记版本恢复。
-- 用户自主上架的 Markdown 模板广场，以及每日限量 AI 深度月报活动。
+- 用户自主上架的 Markdown 模板广场，以及每日限量免费 AI 点数活动。
 - 个人知识库：上传 Markdown / Markdown ZIP、知识集合、个人笔记入库开关与混合问答（每租户 3 GiB 配额）。
 
 桌面组件、团队协作、计费和数据库/Markdown 双向同步不属于当前范围。
@@ -30,6 +30,7 @@
 | 知识检索 | 个人知识库 GTE 中文 Embedding（512 维）、BGE CrossEncoder Reranker、pgvector 混合召回 |
 | 部署 | Docker Compose、多阶段静态 Go 镜像 |
 | 活动协调 | Redis 7、Lua 原子预扣；PostgreSQL 保存最终事实 |
+| 模板投影 | Outbox 类型隔离、租约续期/完成 fencing、排行版本键双缓冲、Redis 64 连接复用池 |
 
 后端唯一入口为 `backend/cmd/server/main.go`。仓库不保留 Python 后端或 Alembic。
 
@@ -42,6 +43,8 @@
 - 客户端不得提交或选择可信 `tenant_id`。
 - `backend/db/schema.sql` 是经过空库验收的初始化基线。
 - 后续 Schema 变化必须新增版本化迁移，不得直接修改已部署数据库。
+- `000025_marketplace_hardening` 新增公开模板 trigram GIN 索引，以及举报
+  `pending/reviewing/resolved/rejected` 审核状态字段与索引。
 
 ## 配置与密钥
 
@@ -76,4 +79,6 @@ docker compose up -d --build
 - `db`、`llm-gateway` 和 `backend` 必须为 healthy。
 - 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
 - 新 PostgreSQL 空库必须完成全部版本化迁移（当前 51 张表）、RLS、注册和登录验收。
+- 模板广场还需验证 Outbox 类型隔离、排行 active pointer 原子切换、daily/HLL 8 天 TTL、匿名 UV
+  读取和 Redis 故障回表降级。本地容量结果不能作为线上 QPS 或 p95/p99。
 - 个人知识库上传、索引、混合问答、跨租户隔离和 3 GiB 配额验收通过。

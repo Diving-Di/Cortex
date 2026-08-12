@@ -16,6 +16,35 @@ import (
 type Client struct {
 	address, username, password string
 	database                    int
+	pool                        chan net.Conn
+	slots                       chan struct{}
+}
+
+const VersionChanged = -6
+
+type AIEventVersionKeys struct {
+	ActiveVersion, BuildLock                          string
+	Window, Stock, Eligible, Points, Claimed, Pending string
+	PendingMeta                                       string
+}
+
+func AIEventKeys(eventID, version string) AIEventVersionKeys {
+	base := "diary:ai-event:{" + eventID + "}"
+	suffix := ""
+	if version != "" {
+		suffix = ":" + version
+	}
+	return AIEventVersionKeys{
+		ActiveVersion: base + ":active_version", BuildLock: base + ":build_lock",
+		Window: base + ":window" + suffix, Stock: base + ":stock" + suffix,
+		Eligible: base + ":eligible" + suffix, Points: base + ":points" + suffix,
+		Claimed: base + ":claimed" + suffix, Pending: base + ":pending" + suffix,
+		PendingMeta: base + ":pending_meta" + suffix,
+	}
+}
+
+func (k AIEventVersionKeys) DataKeys() []string {
+	return []string{k.Window, k.Stock, k.Eligible, k.Points, k.Claimed, k.Pending, k.PendingMeta}
 }
 
 func New(raw string) (*Client, error) {
@@ -39,7 +68,66 @@ func New(raw string) (*Client, error) {
 		username = u.User.Username()
 		password, _ = u.User.Password()
 	}
-	return &Client{address: u.Host, username: username, password: password, database: db}, nil
+	return &Client{address: u.Host, username: username, password: password, database: db, pool: make(chan net.Conn, 64), slots: make(chan struct{}, 64)}, nil
+}
+
+func (c *Client) acquire(ctx context.Context) (net.Conn, error) {
+	for {
+		select {
+		case conn := <-c.pool:
+			return conn, nil
+		default:
+		}
+		select {
+		case conn := <-c.pool:
+			return conn, nil
+		case c.slots <- struct{}{}:
+			goto dial
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+dial:
+	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", c.address)
+	if err != nil {
+		<-c.slots
+		return nil, err
+	}
+	reader := bufio.NewReader(conn)
+	commands := make([][]string, 0, 2)
+	if c.password != "" {
+		auth := []string{"AUTH", c.password}
+		if c.username != "" {
+			auth = []string{"AUTH", c.username, c.password}
+		}
+		commands = append(commands, auth)
+	}
+	if c.database != 0 {
+		commands = append(commands, []string{"SELECT", strconv.Itoa(c.database)})
+	}
+	for _, cmd := range commands {
+		if _, err = conn.Write(encode(cmd...)); err == nil {
+			_, err = readReply(reader)
+		}
+		if err != nil {
+			conn.Close()
+			<-c.slots
+			return nil, err
+		}
+	}
+	return conn, nil
+}
+
+func (c *Client) release(conn net.Conn, healthy bool) {
+	if healthy {
+		select {
+		case c.pool <- conn:
+			return
+		default:
+		}
+	}
+	_ = conn.Close()
+	<-c.slots
 }
 func encode(args ...string) []byte {
 	var b strings.Builder
@@ -77,23 +165,14 @@ func readReply(r *bufio.Reader) (int64, error) {
 	}
 }
 func (c *Client) commands(ctx context.Context, commands ...[]string) ([]int64, error) {
-	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", c.address)
+	conn, err := c.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	healthy := false
+	defer func() { c.release(conn, healthy) }()
 	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 	all := commands
-	if c.password != "" {
-		auth := []string{"AUTH", c.password}
-		if c.username != "" {
-			auth = []string{"AUTH", c.username, c.password}
-		}
-		all = append([][]string{auth}, all...)
-	}
-	if c.database != 0 {
-		all = append([][]string{{"SELECT", strconv.Itoa(c.database)}}, all...)
-	}
 	for _, cmd := range all {
 		if _, err = conn.Write(encode(cmd...)); err != nil {
 			return nil, err
@@ -108,6 +187,7 @@ func (c *Client) commands(ctx context.Context, commands ...[]string) ([]int64, e
 		}
 		results = append(results, x)
 	}
+	healthy = true
 	return results, nil
 }
 func (c *Client) Reserve(ctx context.Context, stockKey, claimedKey, member string, total int, ttl time.Duration) (int, error) {
@@ -130,6 +210,96 @@ func (c *Client) ReservePrepared(ctx context.Context, stockKey, claimedKey, wind
 		return 0, err
 	}
 	return int(result[len(result)-1]), nil
+}
+
+// ReservePreparedVersioned atomically verifies the active pointer before touching
+// a version snapshot. This prevents a pointer switch from splitting a reservation
+// across old and new projections.
+func (c *Client) ReservePreparedVersioned(ctx context.Context, keys AIEventVersionKeys, version, member string) (int, error) {
+	script := `if redis.call('GET',KEYS[1])~=ARGV[1] then return -6 end if redis.call('EXISTS',KEYS[4])==0 then return -1 end local w=redis.call('HMGET',KEYS[4],'opens','closes') local now=tonumber(redis.call('TIME')[1]) if now<tonumber(w[1]) then return -2 end if now>=tonumber(w[2]) then return -3 end if redis.call('SISMEMBER',KEYS[3],ARGV[2])==1 then return 2 end if redis.call('SISMEMBER',KEYS[5],ARGV[2])==0 then return -4 end local n=tonumber(redis.call('GET',KEYS[2]) or '0') if n<=0 then return 0 end redis.call('DECR',KEYS[2]) redis.call('SADD',KEYS[3],ARGV[2]) redis.call('ZADD',KEYS[7],now,ARGV[2]) return 1`
+	result, err := c.commands(ctx, []string{"EVAL", script, "7", keys.ActiveVersion, keys.Stock, keys.Claimed, keys.Window, keys.Eligible, keys.Points, keys.Pending, version, member})
+	if err != nil {
+		return 0, err
+	}
+	return int(result[len(result)-1]), nil
+}
+
+func (c *Client) AcquireAIEventBuildLock(ctx context.Context, key, owner string, lease time.Duration) (bool, error) {
+	script := `if redis.call('SET',KEYS[1],ARGV[1],'NX','PX',ARGV[2]) then return 1 end return 0`
+	r, err := c.commands(ctx, []string{"EVAL", script, "1", key, owner, strconv.FormatInt(max(1, lease.Milliseconds()), 10)})
+	return err == nil && r[len(r)-1] == 1, err
+}
+
+func (c *Client) ReleaseAIEventBuildLock(ctx context.Context, key, owner string) error {
+	script := `if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) end return 0`
+	_, err := c.commands(ctx, []string{"EVAL", script, "1", key, owner})
+	return err
+}
+
+func (c *Client) RenewAIEventBuildLock(ctx context.Context, key, owner string, lease time.Duration) (bool, error) {
+	script := `if redis.call('GET',KEYS[1])==ARGV[1] then redis.call('PEXPIRE',KEYS[1],ARGV[2]) return 1 end return 0`
+	r, err := c.commands(ctx, []string{"EVAL", script, "1", key, owner, strconv.FormatInt(max(1, lease.Milliseconds()), 10)})
+	return err == nil && r[len(r)-1] == 1, err
+}
+
+func (c *Client) BuildAIEventVersion(ctx context.Context, keys AIEventVersionKeys, opensAt, closesAt time.Time, remaining int, cost int64, claimed []string, eligible map[string]int64, ttl time.Duration, batchSize int) error {
+	seconds := strconv.Itoa(max(1, int(ttl.Seconds())))
+	if _, err := c.commands(ctx,
+		[]string{"HSET", keys.Window, "opens", strconv.FormatInt(opensAt.Unix(), 10), "closes", strconv.FormatInt(closesAt.Unix(), 10), "cost", strconv.FormatInt(cost, 10)},
+		[]string{"SET", keys.Stock, strconv.Itoa(remaining), "EX", seconds}); err != nil {
+		return err
+	}
+	batchSize = max(1, batchSize)
+	commands := make([][]string, 0, batchSize*2)
+	flush := func() error {
+		if len(commands) == 0 {
+			return nil
+		}
+		_, err := c.commands(ctx, commands...)
+		commands = commands[:0]
+		return err
+	}
+	for _, member := range claimed {
+		commands = append(commands, []string{"SADD", keys.Claimed, member})
+		if len(commands) >= batchSize {
+			if err := flush(); err != nil {
+				return fmt.Errorf("build claimed projection: %w", err)
+			}
+		}
+	}
+	for member, points := range eligible {
+		commands = append(commands, []string{"SADD", keys.Eligible, member}, []string{"HSET", keys.Points, member, strconv.FormatInt(points, 10)})
+		if len(commands) >= batchSize {
+			if err := flush(); err != nil {
+				return fmt.Errorf("build eligible projection: %w", err)
+			}
+		}
+	}
+	if err := flush(); err != nil {
+		return err
+	}
+	commands = commands[:0]
+	for _, key := range keys.DataKeys() {
+		commands = append(commands, []string{"EXPIRE", key, seconds})
+	}
+	_, err := c.commands(ctx, commands...)
+	return err
+}
+
+// SwitchAIEventVersion performs only pointer CAS plus owner fencing.
+func (c *Client) SwitchAIEventVersion(ctx context.Context, keys AIEventVersionKeys, expected, next, owner string) (int, error) {
+	script := `local current=redis.call('GET',KEYS[1]) if (current or '')~=ARGV[1] then return 0 end if redis.call('GET',KEYS[2])~=ARGV[3] then return -1 end redis.call('SET',KEYS[1],ARGV[2]) return 1`
+	r, err := c.commands(ctx, []string{"EVAL", script, "2", keys.ActiveVersion, keys.BuildLock, expected, next, owner})
+	if err != nil {
+		return 0, err
+	}
+	return int(r[len(r)-1]), nil
+}
+
+func (c *Client) CleanupAIEventVersion(ctx context.Context, keys AIEventVersionKeys, version string) (bool, error) {
+	script := `if redis.call('GET',KEYS[1])==ARGV[1] then return 0 end if redis.call('ZCARD',KEYS[2])>0 then return 0 end redis.call('UNLINK',KEYS[2],KEYS[3],KEYS[4],KEYS[5],KEYS[6],KEYS[7],KEYS[8]) return 1`
+	r, err := c.commands(ctx, []string{"EVAL", script, "8", keys.ActiveVersion, keys.Pending, keys.Window, keys.Stock, keys.Eligible, keys.Points, keys.Claimed, keys.PendingMeta, version})
+	return err == nil && r[len(r)-1] == 1, err
 }
 
 func (c *Client) WarmEvent(ctx context.Context, stockKey, claimedKey, windowKey, eligibleKey, pointsKey, pendingKey string, opensAt, closesAt time.Time, remaining int, cost int64, members []string, eligible map[string]int64, ttl time.Duration) error {
@@ -169,15 +339,37 @@ func (c *Client) ApplyTemplateEvent(ctx context.Context, eventID, publicID, even
 func (c *Client) ApplyTemplateProjection(ctx context.Context, eventID, publicID, eventType, visitor string, publishedAt time.Time, trending, daily float64) error {
 	zone, _ := time.LoadLocation("Asia/Shanghai")
 	day := time.Now().In(zone).Format("20060102")
-	script := `if not redis.call('SET',KEYS[1],'1','NX','EX',ARGV[1]) then return 0 end redis.call('ZADD',KEYS[2],ARGV[2],ARGV[5]) redis.call('ZADD',KEYS[3],ARGV[3],ARGV[5]) redis.call('ZADD',KEYS[4],ARGV[4],ARGV[5]) if ARGV[6]=='template.viewed' and ARGV[7]~='' then redis.call('PFADD',KEYS[5],ARGV[7]) end return 1`
-	_, err := c.commands(ctx, []string{"EVAL", script, "5", "diary:outbox:processed:" + eventID, "diary:tpl:rank:new", "diary:tpl:rank:trending", "diary:tpl:rank:daily:" + day, "diary:tpl:uv:" + publicID + ":" + day, "691200", strconv.FormatInt(publishedAt.Unix(), 10), strconv.FormatFloat(trending, 'f', -1, 64), strconv.FormatFloat(daily, 'f', -1, 64), publicID, eventType, visitor})
+	newKey, ok, err := c.ActiveTemplateRankingKey(ctx, "new", day)
+	if err != nil || !ok {
+		if err == nil {
+			err = errors.New("template ranking is not active")
+		}
+		return err
+	}
+	trendingKey, _, err := c.ActiveTemplateRankingKey(ctx, "trending", day)
+	if err != nil {
+		return err
+	}
+	script := `if not redis.call('SET',KEYS[1],'1','NX','EX',ARGV[1]) then return 0 end redis.call('ZADD',KEYS[2],ARGV[2],ARGV[5]) redis.call('ZADD',KEYS[3],ARGV[3],ARGV[5]) redis.call('ZADD',KEYS[4],ARGV[4],ARGV[5]) redis.call('EXPIRE',KEYS[4],ARGV[8]) if ARGV[6]=='template.viewed' and ARGV[7]~='' then redis.call('PFADD',KEYS[5],ARGV[7]) redis.call('EXPIRE',KEYS[5],ARGV[8]) end return 1`
+	_, err = c.commands(ctx, []string{"EVAL", script, "5", "diary:outbox:processed:" + eventID, newKey, trendingKey, TemplateRankingKey("daily", day), "diary:tpl:uv:" + publicID + ":" + day, "691200", strconv.FormatInt(publishedAt.Unix(), 10), strconv.FormatFloat(trending, 'f', -1, 64), strconv.FormatFloat(daily, 'f', -1, 64), publicID, eventType, visitor, "691200"})
 	return err
 }
 
 func (c *Client) DeleteTemplateProjections(ctx context.Context, publicID string) error {
-	_, err := c.commands(ctx,
-		[]string{"ZREM", "diary:tpl:rank:new", publicID},
-		[]string{"ZREM", "diary:tpl:rank:trending", publicID},
+	newKey, ok, err := c.ActiveTemplateRankingKey(ctx, "new", "")
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return c.Delete(ctx, "diary:tpl:detail:"+publicID)
+	}
+	trendingKey, _, err := c.ActiveTemplateRankingKey(ctx, "trending", "")
+	if err != nil {
+		return err
+	}
+	_, err = c.commands(ctx,
+		[]string{"ZREM", newKey, publicID},
+		[]string{"ZREM", trendingKey, publicID},
 		[]string{"DEL", "diary:tpl:detail:" + publicID})
 	return err
 }
@@ -212,6 +404,14 @@ func (c *Client) Score(ctx context.Context, key, member string) (float64, bool, 
 	}
 	score, err := strconv.ParseFloat(value, 64)
 	return score, true, err
+}
+
+func (c *Client) TemplateUniqueVisitors(ctx context.Context, publicID, day string) (int64, error) {
+	r, err := c.commands(ctx, []string{"PFCOUNT", "diary:tpl:uv:" + publicID + ":" + day})
+	if err != nil {
+		return 0, err
+	}
+	return r[len(r)-1], nil
 }
 
 func (c *Client) stringCommand(ctx context.Context, args ...string) (string, bool, error) {
@@ -280,6 +480,26 @@ type RankingProjection struct {
 	PublicID      string
 	PublishedAt   time.Time
 	TrendingScore float64
+}
+
+const templateRankingActiveKey = "diary:tpl:rank:active_version"
+
+func TemplateRankingKey(ranking, version string) string {
+	if ranking == "daily" {
+		return "diary:tpl:rank:daily:" + version
+	}
+	return "diary:tpl:rank:{global}:" + ranking + ":" + version
+}
+
+func (c *Client) ActiveTemplateRankingKey(ctx context.Context, ranking string, day string) (string, bool, error) {
+	if ranking == "daily" {
+		return TemplateRankingKey("daily", day), true, nil
+	}
+	version, ok, err := c.Get(ctx, templateRankingActiveKey)
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	return TemplateRankingKey(ranking, version), true, nil
 }
 
 type RankedItem struct {
@@ -367,18 +587,32 @@ func (c *Client) arrayCommand(ctx context.Context, args ...string) ([]string, er
 }
 
 func (c *Client) RebuildTemplateRankings(ctx context.Context, items []RankingProjection) error {
-	if _, err := c.commands(ctx, []string{"DEL", "diary:tpl:rank:new", "diary:tpl:rank:trending"}); err != nil {
-		return err
-	}
+	version := "v" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	newKey, trendingKey := TemplateRankingKey("new", version), TemplateRankingKey("trending", version)
 	for start := 0; start < len(items); start += 100 {
 		end := min(len(items), start+100)
 		commands := make([][]string, 0, (end-start)*2)
 		for _, item := range items[start:end] {
-			commands = append(commands, []string{"ZADD", "diary:tpl:rank:new", strconv.FormatInt(item.PublishedAt.Unix(), 10), item.PublicID}, []string{"ZADD", "diary:tpl:rank:trending", strconv.FormatFloat(item.TrendingScore, 'f', -1, 64), item.PublicID})
+			commands = append(commands, []string{"ZADD", newKey, strconv.FormatInt(item.PublishedAt.Unix(), 10), item.PublicID}, []string{"ZADD", trendingKey, strconv.FormatFloat(item.TrendingScore, 'f', -1, 64), item.PublicID})
 		}
 		if _, err := c.commands(ctx, commands...); err != nil {
 			return err
 		}
+	}
+	previous, ok, err := c.Get(ctx, templateRankingActiveKey)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		previous = ""
+	}
+	script := `local current=redis.call('GET',KEYS[1]) if (current or '')~=ARGV[1] then return 0 end redis.call('SET',KEYS[1],ARGV[2]) return 1`
+	r, err := c.commands(ctx, []string{"EVAL", script, "1", templateRankingActiveKey, previous, version})
+	if err != nil {
+		return err
+	}
+	if r[len(r)-1] != 1 {
+		return errors.New("template ranking version changed")
 	}
 	return nil
 }

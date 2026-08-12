@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync/atomic"
+	"time"
 )
 
 var researchJobsCompleted atomic.Uint64
@@ -25,6 +26,11 @@ var aiEventClaimsSoldOut atomic.Uint64
 var aiEventClaimsIneligible atomic.Uint64
 var aiEventClaimsDuplicate atomic.Uint64
 var aiEventClaimsError atomic.Uint64
+var aiEventProjectionBuildSuccess atomic.Uint64
+var aiEventProjectionBuildFailed atomic.Uint64
+var aiEventProjectionBuildAbandoned atomic.Uint64
+var aiEventProjectionBuildDurationNanos atomic.Uint64
+var aiEventProjectionVersionChanged atomic.Uint64
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
@@ -50,6 +56,11 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, "diary_ai_event_claim_requests_total{result=\"ineligible\"} %d\n", aiEventClaimsIneligible.Load())
 	_, _ = fmt.Fprintf(w, "diary_ai_event_claim_requests_total{result=\"duplicate\"} %d\n", aiEventClaimsDuplicate.Load())
 	_, _ = fmt.Fprintf(w, "diary_ai_event_claim_requests_total{result=\"error\"} %d\n", aiEventClaimsError.Load())
+	_, _ = fmt.Fprintf(w, "diary_ai_event_projection_build_total{result=\"success\"} %d\n", aiEventProjectionBuildSuccess.Load())
+	_, _ = fmt.Fprintf(w, "diary_ai_event_projection_build_total{result=\"failed\"} %d\n", aiEventProjectionBuildFailed.Load())
+	_, _ = fmt.Fprintf(w, "diary_ai_event_projection_build_total{result=\"abandoned\"} %d\n", aiEventProjectionBuildAbandoned.Load())
+	_, _ = fmt.Fprintf(w, "diary_ai_event_projection_build_duration_seconds %.6f\n", float64(aiEventProjectionBuildDurationNanos.Load())/float64(time.Second))
+	_, _ = fmt.Fprintf(w, "diary_ai_event_projection_version_changed_total %d\n", aiEventProjectionVersionChanged.Load())
 	if m, err := s.store.GetMarketplaceMetrics(r.Context()); err == nil {
 		_, _ = fmt.Fprintf(w, "diary_template_outbox_pending %d\n", m.PendingOutbox)
 		_, _ = fmt.Fprintf(w, "diary_template_outbox_lag_seconds %.3f\n", m.OutboxLagSeconds)

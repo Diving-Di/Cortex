@@ -136,6 +136,7 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.PUT("/api/v1/public-profile", gin.WrapF(s.upsertPublicProfile))
 			active.GET("/api/v1/templates/public", gin.WrapF(s.listPublicTemplates))
 			active.GET("/api/v1/templates/public/:publicID", gin.WrapF(s.getPublicTemplate))
+			active.GET("/api/v1/templates/public/:publicID/stats", gin.WrapF(s.getPublicTemplateStats))
 			active.GET("/api/v1/templates/mine", gin.WrapF(s.listMyTemplates))
 			active.POST("/api/v1/templates", gin.WrapF(s.createTemplate))
 			active.GET("/api/v1/templates/:templateID", gin.WrapF(s.getTemplate))

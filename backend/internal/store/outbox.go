@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type OutboxEvent struct {
@@ -40,7 +41,7 @@ type TemplateEventProjection struct {
 func (s *Store) GetTemplateEventProjection(ctx context.Context, publicID string) (TemplateEventProjection, error) {
 	var x TemplateEventProjection
 	x.PublicID = publicID
-	err := s.AdminPool.QueryRow(ctx, `SELECT p.status='published',p.published_at,(COALESCE(st.view_count,0)+3*COALESCE(st.like_count,0)+5*COALESCE(st.favorite_count,0)+8*COALESCE(st.usage_count,0))::double precision,(SELECT count(*)::double precision FROM outbox_events oe WHERE oe.aggregate_type='template' AND oe.aggregate_id=p.public_template_id::text AND oe.event_type='template.viewed' AND (oe.occurred_at AT TIME ZONE 'Asia/Shanghai')::date=(now() AT TIME ZONE 'Asia/Shanghai')::date) FROM published_template_snapshots p LEFT JOIN template_public_stats st ON st.public_template_id=p.public_template_id WHERE p.public_template_id=$1::uuid ORDER BY p.version DESC LIMIT 1`, publicID).Scan(&x.Published, &x.PublishedAt, &x.TrendingScore, &x.DailyScore)
+	err := s.AdminPool.QueryRow(ctx, `SELECT p.status='published',p.published_at,((COALESCE(st.view_count,0)+3*COALESCE(st.like_count,0)+5*COALESCE(st.favorite_count,0)+8*COALESCE(st.usage_count,0))/power(2.0,GREATEST(0,extract(epoch FROM now()-p.published_at))/604800.0))::double precision,(SELECT count(*)::double precision FROM outbox_events oe WHERE oe.aggregate_type='template' AND oe.aggregate_id=p.public_template_id::text AND oe.event_type='template.viewed' AND (oe.occurred_at AT TIME ZONE 'Asia/Shanghai')::date=(now() AT TIME ZONE 'Asia/Shanghai')::date) FROM published_template_snapshots p LEFT JOIN template_public_stats st ON st.public_template_id=p.public_template_id WHERE p.public_template_id=$1::uuid ORDER BY p.version DESC LIMIT 1`, publicID).Scan(&x.Published, &x.PublishedAt, &x.TrendingScore, &x.DailyScore)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return x, nil
 	}
@@ -48,7 +49,7 @@ func (s *Store) GetTemplateEventProjection(ctx context.Context, publicID string)
 }
 
 func (s *Store) ListTemplateRankingProjections(ctx context.Context) ([]TemplateRankingProjection, error) {
-	rows, err := s.AdminPool.Query(ctx, `SELECT p.public_template_id::text,p.published_at,(COALESCE(st.view_count,0)+3*COALESCE(st.like_count,0)+5*COALESCE(st.favorite_count,0)+8*COALESCE(st.usage_count,0))::double precision FROM published_template_snapshots p LEFT JOIN template_public_stats st ON st.public_template_id=p.public_template_id WHERE p.status='published'`)
+	rows, err := s.AdminPool.Query(ctx, `SELECT p.public_template_id::text,p.published_at,((COALESCE(st.view_count,0)+3*COALESCE(st.like_count,0)+5*COALESCE(st.favorite_count,0)+8*COALESCE(st.usage_count,0))/power(2.0,GREATEST(0,extract(epoch FROM now()-p.published_at))/604800.0))::double precision FROM published_template_snapshots p LEFT JOIN template_public_stats st ON st.public_template_id=p.public_template_id WHERE p.status='published'`)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +84,10 @@ func (s *Store) GetMarketplaceMetrics(ctx context.Context) (MarketplaceMetrics, 
 	return m, err
 }
 
-func (s *Store) ClaimOutboxEvent(ctx context.Context, owner string) (*OutboxEvent, error) {
+func (s *Store) ClaimOutboxEvent(ctx context.Context, aggregateType, owner string, lease time.Duration) (*OutboxEvent, error) {
+	if aggregateType == "" || owner == "" || lease <= 0 {
+		return nil, errors.New("invalid outbox consumer")
+	}
 	tx, err := s.AdminPool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -92,8 +96,8 @@ func (s *Store) ClaimOutboxEvent(ctx context.Context, owner string) (*OutboxEven
 	var id uuid.UUID
 	var event OutboxEvent
 	err = tx.QueryRow(ctx, `SELECT id,aggregate_type,aggregate_id,event_type,occurred_at,payload FROM outbox_events
-		WHERE processed_at IS NULL AND available_at<=now() AND (lease_until IS NULL OR lease_until<now())
-		ORDER BY occurred_at FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&id, &event.AggregateType, &event.AggregateID, &event.EventType, &event.OccurredAt, &event.Payload)
+		WHERE aggregate_type=$1 AND processed_at IS NULL AND available_at<=now() AND (lease_until IS NULL OR lease_until<now())
+		ORDER BY occurred_at FOR UPDATE SKIP LOCKED LIMIT 1`, aggregateType).Scan(&id, &event.AggregateType, &event.AggregateID, &event.EventType, &event.OccurredAt, &event.Payload)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -101,7 +105,7 @@ func (s *Store) ClaimOutboxEvent(ctx context.Context, owner string) (*OutboxEven
 		return nil, err
 	}
 	event.ID = id.String()
-	if _, err = tx.Exec(ctx, `UPDATE outbox_events SET lease_owner=$2,lease_until=now()+interval '30 seconds',attempt_count=attempt_count+1 WHERE id=$1`, id, owner); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE outbox_events SET lease_owner=$2,lease_until=now()+$3::interval,attempt_count=attempt_count+1 WHERE id=$1`, id, owner, lease.String()); err != nil {
 		return nil, err
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -110,15 +114,32 @@ func (s *Store) ClaimOutboxEvent(ctx context.Context, owner string) (*OutboxEven
 	return &event, nil
 }
 
+func (s *Store) RenewOutboxEventLease(ctx context.Context, id, owner string, lease time.Duration) (bool, error) {
+	eventID, err := uuid.Parse(id)
+	if err != nil || owner == "" || lease <= 0 {
+		return false, errors.New("invalid outbox lease")
+	}
+	tag, err := s.AdminPool.Exec(ctx, `UPDATE outbox_events SET lease_until=now()+$3::interval WHERE id=$1 AND lease_owner=$2 AND processed_at IS NULL AND lease_until>=now()`, eventID, owner, lease.String())
+	return err == nil && tag.RowsAffected() == 1, err
+}
+
 func (s *Store) FinishOutboxEvent(ctx context.Context, id, owner string, processingErr error) error {
 	eventID, err := uuid.Parse(id)
 	if err != nil {
 		return err
 	}
 	if processingErr == nil {
-		_, err = s.AdminPool.Exec(ctx, `UPDATE outbox_events SET processed_at=now(),lease_owner=NULL,lease_until=NULL,last_error_code=NULL WHERE id=$1 AND lease_owner=$2`, eventID, owner)
+		var tag pgconn.CommandTag
+		tag, err = s.AdminPool.Exec(ctx, `UPDATE outbox_events SET processed_at=now(),lease_owner=NULL,lease_until=NULL,last_error_code=NULL WHERE id=$1 AND lease_owner=$2 AND processed_at IS NULL AND lease_until>=now()`, eventID, owner)
+		if err == nil && tag.RowsAffected() != 1 {
+			err = errors.New("outbox lease lost")
+		}
 	} else {
-		_, err = s.AdminPool.Exec(ctx, `UPDATE outbox_events SET available_at=now()+least(interval '5 minutes',interval '2 seconds'*power(2,least(attempt_count,7))),lease_owner=NULL,lease_until=NULL,last_error_code='PROJECTION_UNAVAILABLE' WHERE id=$1 AND lease_owner=$2`, eventID, owner)
+		var tag pgconn.CommandTag
+		tag, err = s.AdminPool.Exec(ctx, `UPDATE outbox_events SET available_at=now()+least(interval '5 minutes',interval '2 seconds'*power(2,least(attempt_count,7))),lease_owner=NULL,lease_until=NULL,last_error_code='PROJECTION_UNAVAILABLE' WHERE id=$1 AND lease_owner=$2 AND processed_at IS NULL AND lease_until>=now()`, eventID, owner)
+		if err == nil && tag.RowsAffected() != 1 {
+			err = errors.New("outbox lease lost")
+		}
 	}
 	return err
 }

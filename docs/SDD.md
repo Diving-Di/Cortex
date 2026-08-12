@@ -122,10 +122,16 @@ docker compose config --quiet
 私有模板受租户 RLS 保护，作者明确上架时生成不含租户标识的公开快照；作者下架或删除租户时
 立即使快照不可见。
 
-每日活动配置保存在 PostgreSQL，Redis Lua 负责库存和重复领取预扣，数据库唯一约束、点数
-账本与 claim/job 状态机保存最终事实。Worker 使用有限租约领取任务，成功后自动写入带来源的
-月报；最终失败释放冻结点数但不返普通名额。Redis 不可用时只关闭领取，不影响核心笔记功能。
+每日活动配置保存在 PostgreSQL，Redis Lua 负责库存和重复领取预扣，数据库唯一约束与点数账本保存
+最终事实。当前活动是免费点数领取：成功后点数即时到账。Redis 不可用时
+只关闭领取，不影响核心笔记功能；受限 PostgreSQL 完整资格回源仍是待实现能力。
 
 活动参数集中保存在 `ai_flash_event_settings`。scheduler 使用 PostgreSQL 剩余名额和既有领取记录
-预热带时间窗的 Redis Key；领取请求先由 Redis `TIME` 裁决开放时间和库存，只有预扣成功的少量
-请求进入 PostgreSQL。模板排行由 outbox 幂等投影到 ZSet/HLL，Redis 清空后从公开统计重建。
+分批构建版本化 Redis 投影并原子切换 active pointer；领取请求先由 Redis `TIME` 裁决开放时间和库存，
+只有预扣成功的少量请求进入 PostgreSQL。模板公开内容采用私有原稿与版本化公开快照分离；排行由
+Outbox 幂等投影到 ZSet/HLL，Redis 清空后可从公开统计重建，公开读取仍回 PostgreSQL 校验发布状态。
+Marketplace worker 只领取模板 aggregate，处理期间续租，数据库完成更新要求 owner 与未过期租约匹配。
+`new` / `trending` 排行使用候选版本键离线分批构建和 active pointer CAS 原子切换；daily ZSet 与匿名
+UV HLL 保留 8 天，UV 由统计接口通过 `PFCOUNT` 读取。Redis 客户端使用最大 64 条连接的有界复用池。
+trending 采用 7 天半衰期衰减；公开模板包含匹配由迁移 000025 的 trigram GIN 索引支持。举报已经有
+数据库审核状态机，但管理员身份和管理端不在当前产品范围，因此不向普通租户开放审核 API。

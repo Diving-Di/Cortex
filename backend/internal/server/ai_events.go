@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -92,14 +93,25 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_UNAVAILABLE", "活动领取暂不可用", 503))
 		return
 	}
-	stockKey := "diary:ai-event:{" + eventID.String() + "}:stock"
-	claimedKey := "diary:ai-event:{" + eventID.String() + "}:claimed"
-	windowKey := "diary:ai-event:{" + eventID.String() + "}:window"
-	eligibleKey := "diary:ai-event:{" + eventID.String() + "}:eligible"
-	pointsKey := "diary:ai-event:{" + eventID.String() + "}:points"
-	pendingKey := "diary:ai-event:{" + eventID.String() + "}:pending"
 	member := aiEventReservationMember(principal.TenantID)
-	reserved, redisErr := s.redis.ReservePrepared(r.Context(), stockKey, claimedKey, windowKey, eligibleKey, pointsKey, pendingKey, member)
+	stable := rediscoord.AIEventKeys(eventID.String(), "")
+	version, ok, redisErr := s.redis.Get(r.Context(), stable.ActiveVersion)
+	if redisErr == nil && !ok {
+		redisErr = errors.New("AI event projection is not active")
+	}
+	reserved := -1
+	var keys rediscoord.AIEventVersionKeys
+	if redisErr == nil {
+		keys = rediscoord.AIEventKeys(eventID.String(), version)
+		reserved, redisErr = s.redis.ReservePreparedVersioned(r.Context(), keys, version, member)
+		if redisErr == nil && reserved == rediscoord.VersionChanged {
+			aiEventProjectionVersionChanged.Add(1)
+			if version, ok, redisErr = s.redis.Get(r.Context(), stable.ActiveVersion); redisErr == nil && ok {
+				keys = rediscoord.AIEventKeys(eventID.String(), version)
+				reserved, redisErr = s.redis.ReservePreparedVersioned(r.Context(), keys, version, member)
+			}
+		}
+	}
 	if redisErr != nil {
 		aiEventClaimsError.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_UNAVAILABLE", "活动领取暂不可用", 503))
@@ -108,6 +120,11 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 	if reserved == -1 {
 		aiEventClaimsError.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_UNAVAILABLE", "活动领取尚未就绪", 503))
+		return
+	}
+	if reserved == rediscoord.VersionChanged {
+		aiEventClaimsError.Add(1)
+		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_BUSY", "活动投影正在切换，请稍后重试", 503))
 		return
 	}
 	if reserved == -2 {
@@ -142,12 +159,12 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	x, err := s.store.ClaimAIEvent(r.Context(), principal, eventID, requestID)
 	if err != nil {
-		_ = s.redis.Compensate(r.Context(), stockKey, claimedKey, windowKey, pointsKey, pendingKey, member)
+		_ = s.redis.Compensate(r.Context(), keys.Stock, keys.Claimed, keys.Window, keys.Points, keys.Pending, member)
 		aiEventClaimsError.Add(1)
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	_ = s.redis.ConfirmReservation(r.Context(), pendingKey, member)
+	_ = s.redis.ConfirmReservation(r.Context(), keys.Pending, member)
 	aiEventClaimsReserved.Add(1)
 	httpx.JSON(w, http.StatusOK, x)
 }
@@ -184,6 +201,7 @@ func (s *Server) getAIEventClaim(w http.ResponseWriter, r *http.Request) {
 
 func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, logger *slog.Logger) {
 	coord, _ := rediscoord.New(cfg.RedisURL)
+	builder := &aiEventProjectionBuilder{redis: coord, batchSize: cfg.AIEventBuildBatchSize, lease: cfg.AIEventBuildLease}
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
@@ -192,27 +210,10 @@ func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, 
 			if state, err := db.GetAIEventReservationState(ctx); err == nil {
 				ready := false
 				if coord != nil {
-					members := make([]string, 0, len(state.Tenants))
-					for _, tenant := range state.Tenants {
-						members = append(members, aiEventReservationMember(tenant))
-					}
-					ttl := time.Until(state.ClosesAt) + 48*time.Hour
-					if ttl > 0 {
-						stock := "diary:ai-event:{" + state.PublicID.String() + "}:stock"
-						claimed := "diary:ai-event:{" + state.PublicID.String() + "}:claimed"
-						window := "diary:ai-event:{" + state.PublicID.String() + "}:window"
-						eligibleKey := "diary:ai-event:{" + state.PublicID.String() + "}:eligible"
-						pointsKey := "diary:ai-event:{" + state.PublicID.String() + "}:points"
-						pendingKey := "diary:ai-event:{" + state.PublicID.String() + "}:pending"
-						eligible := make(map[string]int64, len(state.Eligible))
-						for _, item := range state.Eligible {
-							eligible[aiEventReservationMember(item.TenantID)] = item.Available
-						}
-						if err := coord.WarmEvent(ctx, stock, claimed, window, eligibleKey, pointsKey, pendingKey, state.OpensAt, state.ClosesAt, state.Remaining, state.PointsReward, members, eligible, ttl); err != nil {
-							logger.Error("warm AI event reservation", "error", err)
-						} else {
-							ready = true
-						}
+					if err := builder.Build(ctx, state); err != nil {
+						logger.Error("build AI event projection", "error", err)
+					} else {
+						ready = true
 					}
 				}
 				if err := db.SetAIEventReservationReady(ctx, state.PublicID, ready); err != nil {
