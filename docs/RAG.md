@@ -608,3 +608,15 @@ docker compose config --quiet
 164 条合并集：Hit@10 = 1.0、Context Recall = 0.857885、Context Precision = 0.864668、
 Faithfulness = 0.966236、Answer Relevancy = 0.939085；自动门禁仍使用第 11 节列出的阈值。
 历史 90 条和 2026-08-06 合并集只用于演进分析，不应作为当前发布基线。
+## 13. 线上反馈与回归集晋升
+
+知识问答完成或以 partial/failed 状态保存时，会在同一 RLS 事务中写入脱敏 trace。trace 保存检索配置、
+模型逻辑名、来源资源 ID、索引版本、route/rank、内容 SHA-256、状态和 token 数，不复制问题、回答或来源正文。
+
+用户反馈经本人复核后才允许晋升。晋升接口要求用户主动提交最小化 query、期望答案和证据 hash；
+用例 canonical JSON 计算独立 SHA-256。数据集冻结时按 `case_id` 排序计算 manifest SHA-256，冻结版本不可修改。
+租户删除时 trace、反馈、数据集和用例随租户级外键级联删除；普通日志不保存这些正文内容。
+
+仓库中的 `backend/testdata/rag/regression/public_v1.jsonl` 是完全合成、无私人正文的确定性 fixture。
+`go run ./cmd/rag-regression-check` 校验 schema、case 唯一性、证据 hash、逐 case hash、文件 hash 与 manifest；
+CI 每次 push/PR 执行该命令。该门禁只保证评测资产结构与完整性，不声称替代受控环境中的真实检索或 LLM Judge 质量评测。

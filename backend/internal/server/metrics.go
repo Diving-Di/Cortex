@@ -34,6 +34,14 @@ var aiEventProjectionVersionChanged atomic.Uint64
 var templateOutboxLeaseRenewed atomic.Uint64
 var templateOutboxLeaseLost atomic.Uint64
 var templateOutboxFinishFenced atomic.Uint64
+var knowledgeFeedbackCreated atomic.Uint64
+var knowledgeIndexLeaseLost atomic.Uint64
+var knowledgeNoEvidence atomic.Uint64
+var knowledgeRerankFailed atomic.Uint64
+var knowledgeStreamIncomplete atomic.Uint64
+var knowledgeSourceInvalid atomic.Uint64
+var scheduledReportLeaseLost atomic.Uint64
+var scheduledReportRunsFailed atomic.Uint64
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
@@ -67,6 +75,29 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, "diary_template_outbox_lease_renew_total %d\n", templateOutboxLeaseRenewed.Load())
 	_, _ = fmt.Fprintf(w, "diary_template_outbox_lease_lost_total %d\n", templateOutboxLeaseLost.Load())
 	_, _ = fmt.Fprintf(w, "diary_template_outbox_finish_fenced_total %d\n", templateOutboxFinishFenced.Load())
+	_, _ = fmt.Fprintf(w, "cortex_knowledge_feedback_created_total %d\n", knowledgeFeedbackCreated.Load())
+	_, _ = fmt.Fprintf(w, "cortex_knowledge_index_lease_lost_total %d\n", knowledgeIndexLeaseLost.Load())
+	_, _ = fmt.Fprintf(w, "cortex_knowledge_no_evidence_total %d\n", knowledgeNoEvidence.Load())
+	_, _ = fmt.Fprintf(w, "cortex_knowledge_rerank_failed_total %d\n", knowledgeRerankFailed.Load())
+	_, _ = fmt.Fprintf(w, "cortex_knowledge_stream_incomplete_total %d\n", knowledgeStreamIncomplete.Load())
+	_, _ = fmt.Fprintf(w, "cortex_knowledge_source_invalid_total %d\n", knowledgeSourceInvalid.Load())
+	_, _ = fmt.Fprintf(w, "cortex_scheduled_report_lease_lost_total %d\n", scheduledReportLeaseLost.Load())
+	_, _ = fmt.Fprintf(w, "cortex_scheduled_report_runs_failed_total %d\n", scheduledReportRunsFailed.Load())
+	ready := 0
+	if err := s.store.Pool.Ping(r.Context()); err == nil {
+		ready = 1
+	}
+	_, _ = fmt.Fprintf(w, "cortex_database_ready %d\n", ready)
+	if m, err := s.store.GetOperationsMetrics(r.Context()); err == nil {
+		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"queued\"} %d\n", m.KnowledgeQueued)
+		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"running\"} %d\n", m.KnowledgeRunning)
+		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"failed\"} %d\n", m.KnowledgeFailed)
+		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_oldest_queued_seconds %.3f\n", m.KnowledgeOldestQueuedSeconds)
+		_, _ = fmt.Fprintf(w, "cortex_scheduled_report_tasks_due %d\n", m.ScheduledDue)
+		_, _ = fmt.Fprintf(w, "cortex_scheduled_report_runs{status=\"running\"} %d\n", m.ScheduledRunning)
+		_, _ = fmt.Fprintf(w, "cortex_scheduled_report_runs{status=\"failed\"} %d\n", m.ScheduledFailed)
+		_, _ = fmt.Fprintf(w, "cortex_scheduled_report_oldest_due_seconds %.3f\n", m.ScheduledOldestDueSeconds)
+	}
 	if m, err := s.store.GetMarketplaceMetrics(r.Context()); err == nil {
 		_, _ = fmt.Fprintf(w, "diary_template_outbox_pending %d\n", m.PendingOutbox)
 		_, _ = fmt.Fprintf(w, "diary_template_outbox_lag_seconds %.3f\n", m.OutboxLagSeconds)

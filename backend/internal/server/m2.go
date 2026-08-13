@@ -158,6 +158,7 @@ func (s *Server) confirmReport(w http.ResponseWriter, r *http.Request) {
 	result, err := s.store.ConfirmReport(
 		r.Context(), principalFrom(r.Context()), request.Type, anchor,
 		request.Title, request.Content, request.SourceIDs, request.Overwrite,
+		nil, 0,
 	)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)

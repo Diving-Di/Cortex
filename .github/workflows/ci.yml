@@ -26,6 +26,7 @@ jobs:
           cache-dependency-path: backend/go.sum
       - run: go vet ./...
       - run: go test ./...
+      - run: go run ./cmd/rag-regression-check
       - run: go build ./cmd/server
 
   frontend:
@@ -61,3 +62,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet
+      - run: pwsh ./backend/scripts/validate_prometheus_rules.ps1

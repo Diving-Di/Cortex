@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"diary-listener/backend/internal/domain"
@@ -14,8 +15,11 @@ type KnowledgeIndexJob struct {
 	ID                                     int64
 	TenantID, DocumentID                   uuid.UUID
 	TargetVersion                          int
+	LeaseOwner                             uuid.UUID
 	Title, SourceType, StoredPath, Content string
 }
+
+var ErrKnowledgeIndexLeaseLost = errors.New("knowledge index lease lost")
 
 func (s *Store) ClaimKnowledgeJobs(ctx context.Context, owner uuid.UUID, limit int, lease time.Duration) ([]KnowledgeIndexJob, error) {
 	tx, err := s.AdminPool.BeginTx(ctx, pgx.TxOptions{})
@@ -23,14 +27,14 @@ func (s *Store) ClaimKnowledgeJobs(ctx context.Context, owner uuid.UUID, limit i
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `WITH c AS (SELECT id FROM knowledge_index_jobs WHERE (status='queued' AND available_at<=now()) OR (status='running' AND lease_until<now()) ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE knowledge_index_jobs j SET status='running',lease_owner=$2,lease_until=now()+$3::interval,attempts=attempts+1,updated_at=now() FROM c WHERE j.id=c.id RETURNING j.id,j.tenant_id,j.document_id,j.target_index_version`, limit, owner, lease.String())
+	rows, err := tx.Query(ctx, `WITH c AS (SELECT id FROM knowledge_index_jobs WHERE (status='queued' AND available_at<=now()) OR (status='running' AND lease_until<now()) ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE knowledge_index_jobs j SET status='running',lease_owner=$2,lease_until=now()+$3::interval,attempts=attempts+1,updated_at=now() FROM c WHERE j.id=c.id RETURNING j.id,j.tenant_id,j.document_id,j.target_index_version,j.lease_owner`, limit, owner, lease.String())
 	if err != nil {
 		return nil, err
 	}
 	var jobs []KnowledgeIndexJob
 	for rows.Next() {
 		var j KnowledgeIndexJob
-		if err := rows.Scan(&j.ID, &j.TenantID, &j.DocumentID, &j.TargetVersion); err != nil {
+		if err := rows.Scan(&j.ID, &j.TenantID, &j.DocumentID, &j.TargetVersion, &j.LeaseOwner); err != nil {
 			return nil, err
 		}
 		jobs = append(jobs, j)
@@ -57,8 +61,19 @@ func domainPrincipal(tenant uuid.UUID) domain.Principal {
 	return domain.Principal{TenantID: tenant, TenantActive: true}
 }
 func (s *Store) WriteKnowledgeChunks(ctx context.Context, j KnowledgeIndexJob, parents []knowledge.ParentChunk, vectors [][][]float32, model string) error {
+	return s.writeKnowledgeChunks(ctx, j, parents, vectors, model, nil)
+}
+
+func (s *Store) writeKnowledgeChunks(ctx context.Context, j KnowledgeIndexJob, parents []knowledge.ParentChunk, vectors [][][]float32, model string, beforeActivate func() error) error {
 	return s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, domainPrincipal(j.TenantID)); err != nil {
+			return err
+		}
+		var fencedID int64
+		if err := tx.QueryRow(ctx, `UPDATE knowledge_index_jobs SET status='success',lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='running' AND lease_owner=$3 AND lease_until>now() RETURNING id`, j.TenantID, j.ID, j.LeaseOwner).Scan(&fencedID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrKnowledgeIndexLeaseLost
+			}
 			return err
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM knowledge_parent_chunks WHERE tenant_id=$1 AND document_id=$2 AND index_version=$3`, j.TenantID, j.DocumentID, j.TargetVersion); err != nil {
@@ -79,10 +94,12 @@ func (s *Store) WriteKnowledgeChunks(ctx context.Context, j KnowledgeIndexJob, p
 				}
 			}
 		}
-		if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET active_index_version=$3,status='ready',failure_code=NULL,failure_summary=NULL,last_index_failure_code=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.DocumentID, j.TargetVersion); err != nil {
-			return err
+		if beforeActivate != nil {
+			if err := beforeActivate(); err != nil {
+				return err
+			}
 		}
-		if _, err := tx.Exec(ctx, `UPDATE knowledge_index_jobs SET status='success',lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.ID); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET active_index_version=$3,status='ready',failure_code=NULL,failure_summary=NULL,last_index_failure_code=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.DocumentID, j.TargetVersion); err != nil {
 			return err
 		}
 		// Keep the active version and its immediate predecessor. Version N-2 is
@@ -102,7 +119,10 @@ func (s *Store) FailKnowledgeJob(ctx context.Context, j KnowledgeIndexJob, code 
 	}
 	defer tx.Rollback(ctx)
 	var jobStatus string
-	if err := tx.QueryRow(ctx, `UPDATE knowledge_index_jobs SET status=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,available_at=now()+make_interval(secs=>least(3600,attempts*attempts*10)),failure_code=$2,lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 RETURNING status`, j.ID, code).Scan(&jobStatus); err != nil {
+	if err := tx.QueryRow(ctx, `UPDATE knowledge_index_jobs SET status=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,available_at=now()+make_interval(secs=>least(3600,attempts*attempts*10)),failure_code=$2,lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND tenant_id=$3 AND status='running' AND lease_owner=$4 AND lease_until>now() RETURNING status`, j.ID, code, j.TenantID, j.LeaseOwner).Scan(&jobStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrKnowledgeIndexLeaseLost
+		}
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status=CASE WHEN active_index_version>0 THEN 'ready' WHEN $4='failed' THEN 'failed' ELSE 'indexing' END,failure_code=CASE WHEN active_index_version=0 AND $4='failed' THEN $3 ELSE NULL END,failure_summary=CASE WHEN active_index_version=0 AND $4='failed' THEN '索引服务暂时不可用' ELSE NULL END,last_index_failure_code=CASE WHEN active_index_version>0 THEN $3 ELSE last_index_failure_code END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.DocumentID, code, jobStatus); err != nil {

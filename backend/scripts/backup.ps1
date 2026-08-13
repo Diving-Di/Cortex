@@ -1,0 +1,77 @@
+param(
+    [Parameter(Mandatory = $true)][string]$OutputDirectory,
+    [string]$ComposeProject = "cortex",
+    [string]$DatabaseVolume = "diary-listener_db_data",
+    [string]$AppDataVolume = "diary-listener_app_data"
+)
+
+$ErrorActionPreference = "Stop"
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$target = [IO.Path]::GetFullPath($OutputDirectory)
+$root = [IO.Path]::GetPathRoot($target)
+if ($target -eq $root -or $target -eq $repoRoot) { throw "backup output must be a dedicated directory" }
+if (Test-Path -LiteralPath $target) {
+    if (@(Get-ChildItem -LiteralPath $target -Force).Count -ne 0) { throw "backup output directory must be empty" }
+} else {
+    New-Item -ItemType Directory -Path $target | Out-Null
+}
+
+$dbContainer = docker compose -p $ComposeProject ps -q db
+if (-not $dbContainer) { throw "source database container is not running" }
+$network = docker inspect $dbContainer --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}'
+$dbAlias = docker inspect $dbContainer --format '{{.Name}}'
+$dbAlias = $dbAlias.TrimStart('/')
+$dbPassword = docker exec $dbContainer printenv POSTGRES_PASSWORD
+if (-not $dbPassword) { throw "source migration password is unavailable" }
+$started = [DateTimeOffset]::UtcNow
+$timer = [Diagnostics.Stopwatch]::StartNew()
+
+docker run --rm --network $network -e "PGPASSWORD=$dbPassword" `
+    --mount "type=bind,source=$target,target=/backup" postgres:16.12-bookworm `
+    pg_dump -h $dbAlias -U diary_migrator -d diary_listener -Fc --no-owner --no-privileges -f /backup/database.dump
+if ($LASTEXITCODE -ne 0) { throw "database backup failed" }
+
+$pathList = Join-Path $target ".referenced-paths.txt"
+try {
+    docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U diary_migrator -d diary_listener -At `
+        -c "SELECT stored_path FROM attachments UNION SELECT stored_path FROM knowledge_documents WHERE stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets UNION SELECT storage_path FROM research_assets ORDER BY 1" | Set-Content -LiteralPath $pathList -Encoding utf8NoBOM
+    docker run --rm --mount "type=volume,source=$AppDataVolume,target=/data,readonly" `
+        --mount "type=bind,source=$target,target=/backup" alpine:3.23 `
+        sh -c 'sed -i "s/\r$//" /backup/.referenced-paths.txt; missing=0; while IFS= read -r p; do [ -z "$p" ] || [ -f "/data/$p" ] || missing=$((missing+1)); done < /backup/.referenced-paths.txt; [ "$missing" -eq 0 ] || exit 42; tar -czf /backup/app-data.tar.gz -C /data -T /backup/.referenced-paths.txt'
+    if ($LASTEXITCODE -eq 42) { throw "database references missing application files" }
+    if ($LASTEXITCODE -ne 0) { throw "application data backup failed" }
+} finally {
+    Remove-Item -LiteralPath $pathList -Force -ErrorAction SilentlyContinue
+}
+
+$snapshot = docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U diary_migrator -d diary_listener -At `
+    -c "SELECT clock_timestamp() AT TIME ZONE 'UTC',COALESCE(max(version),0),(SELECT count(*) FROM pg_tables WHERE schemaname='public') FROM schema_migrations"
+if ($LASTEXITCODE -ne 0 -or -not $snapshot) { throw "backup metadata query failed" }
+$parts = $snapshot.Trim().Split('|')
+$gitCommit = (git -C $repoRoot rev-parse HEAD).Trim()
+$gitDirty = [bool](git -C $repoRoot status --porcelain)
+$dbFile = Get-Item (Join-Path $target "database.dump")
+$appFile = Get-Item (Join-Path $target "app-data.tar.gz")
+$manifest = [ordered]@{
+    format_version = 1
+    created_at_utc = $started.ToString("o")
+    database_snapshot_utc = $parts[0]
+    git_commit = $gitCommit
+    git_dirty = $gitDirty
+    migration_version = [int]$parts[1]
+    public_table_count = [int]$parts[2]
+    database = @{ file = $dbFile.Name; bytes = $dbFile.Length; sha256 = (Get-FileHash $dbFile -Algorithm SHA256).Hash.ToLowerInvariant() }
+    app_data = @{ file = $appFile.Name; bytes = $appFile.Length; sha256 = (Get-FileHash $appFile -Algorithm SHA256).Hash.ToLowerInvariant() }
+    source = @{ database_volume = $DatabaseVolume; app_data_volume = $AppDataVolume }
+}
+$timer.Stop()
+$manifest.backup_duration_seconds = [Math]::Round($timer.Elapsed.TotalSeconds, 3)
+$manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $target "manifest.json") -Encoding utf8NoBOM
+[pscustomobject]@{
+    BackupDirectory = $target
+    MigrationVersion = $manifest.migration_version
+    PublicTables = $manifest.public_table_count
+    DatabaseBytes = $dbFile.Length
+    AppDataBytes = $appFile.Length
+    DurationSeconds = $manifest.backup_duration_seconds
+} | ConvertTo-Json -Compress

@@ -54,6 +54,7 @@ soak-results/
 /.tmp-*/
 /.recipe-corpus-tmp/
 artifacts/rag-eval*/
+artifacts/capacity-*.json
 backend/testdata/rag/diving_notes/
 backend/testdata/rag/diving_existing_notes.jsonl
 

@@ -11,6 +11,7 @@ import (
 
 	"diary-listener/backend/internal/apierror"
 	"diary-listener/backend/internal/domain"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -131,12 +132,23 @@ func (s *Store) ConfirmReport(
 	content string,
 	sourceIDs []int32,
 	overwrite bool,
+	leaseOwner *uuid.UUID,
+	taskID int32,
 ) (map[string]any, error) {
 	result := make(map[string]any)
 	start, end := periodRange(kind, anchor)
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
+		}
+		if leaseOwner != nil {
+			var valid bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM scheduled_report_tasks WHERE tenant_id=$1 AND id=$2 AND lease_owner=$3 AND lease_until>now())`, principal.TenantID, taskID, *leaseOwner).Scan(&valid); err != nil {
+				return err
+			}
+			if !valid {
+				return ErrScheduledLeaseLost
+			}
 		}
 		allowedSources, err := reportSourcesTx(ctx, tx, principal, kind, start, end)
 		if err != nil {

@@ -237,6 +237,24 @@ go run ./cmd/migrate up
 
 脚本输出 QPS、p50/p95/p99 和失败数；生产指标必须在目标部署环境采集。
 
+知识检索 100/1,000/10,000 合成容量测试可运行：
+
+```powershell
+.\backend\scripts\knowledge_capacity.ps1
+```
+
+联合备份和隔离恢复验证必须使用专用目录；恢复脚本只创建随机命名的隔离资源：
+
+```powershell
+.\backend\scripts\backup.ps1 -OutputDirectory .\.tmp-backup-<timestamp>
+.\backend\scripts\restore_verify.ps1 -BackupDirectory .\.tmp-backup-<timestamp>
+.\backend\scripts\validate_prometheus_rules.ps1
+```
+
+实测恢复与容量边界见 `docs/operations/`，发布前逐项检查 `docs/RELEASE_CHECKLIST.md`。备份不包含 `.env`
+或供应商 Key；若数据库引用文件缺失、checksum 或双向一致性不通过，恢复会失败退出。
+Prometheus 告警规则和 Grafana dashboard 分别位于 `deploy/prometheus/` 与 `deploy/grafana/`。
+
 后端：
 
 ```powershell

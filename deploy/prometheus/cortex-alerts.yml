@@ -1,0 +1,76 @@
+groups:
+  - name: cortex-availability
+    rules:
+      - alert: CortexReadyzUnavailable
+        expr: cortex_database_ready == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: Cortex database readiness has failed for two minutes
+          runbook_url: docs/runbooks/OPERATIONS.md#readyz-持续失败
+      - alert: CortexStoragePressure
+        expr: 100 * (1 - node_filesystem_avail_bytes{mountpoint="/app/data"} / node_filesystem_size_bytes{mountpoint="/app/data"}) > 85
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Cortex application data volume is above 85 percent used
+          runbook_url: docs/runbooks/OPERATIONS.md#数据卷容量压力
+      - alert: CortexBackupStale
+        expr: time() - cortex_backup_last_success_unixtime > 90000
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: No successful joint backup has been recorded in 25 hours
+          runbook_url: docs/runbooks/OPERATIONS.md#备份过期或恢复演练失败
+      - alert: CortexRestoreDrillStale
+        expr: time() - cortex_restore_drill_last_success_unixtime > 2678400
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: No successful isolated restore drill has been recorded in 31 days
+          runbook_url: docs/runbooks/OPERATIONS.md#备份过期或恢复演练失败
+
+  - name: cortex-rag-workers
+    rules:
+      - alert: CortexRAGNoEvidenceSpike
+        expr: increase(cortex_knowledge_no_evidence_total[15m]) > 5 and increase(cortex_knowledge_no_evidence_total[15m]) > 2 * increase(cortex_knowledge_no_evidence_total[15m] offset 1h)
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: RAG no-evidence outcomes are more than twice the previous-hour baseline
+          runbook_url: docs/runbooks/RAG_FAILURES.md#无证据率异常
+      - alert: CortexRerankerFailures
+        expr: increase(cortex_knowledge_rerank_failed_total[10m]) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Reranker failures are continuing
+          runbook_url: docs/runbooks/RAG_FAILURES.md#reranker-故障
+      - alert: CortexIncompleteSSE
+        expr: increase(cortex_knowledge_stream_incomplete_total[10m]) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Knowledge SSE streams are ending without completion
+          runbook_url: docs/runbooks/RAG_FAILURES.md#sse-未完成与来源失效
+      - alert: CortexKnowledgeIndexBacklog
+        expr: cortex_knowledge_index_oldest_queued_seconds > 300
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Oldest knowledge index job has waited longer than five minutes
+          runbook_url: docs/runbooks/RAG_FAILURES.md#索引租约丢失或积压
+      - alert: CortexKnowledgeLeaseLoss
+        expr: increase(cortex_knowledge_index_lease_lost_total[15m]) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Knowledge worker lost one or more leases
+          runbook_url: docs/runbooks/RAG_FAILURES.md#索引租约丢失或积压
+      - alert: CortexScheduledReportFailures
+        expr: increase(cortex_scheduled_report_runs_failed_total[15m]) > 0 or increase(cortex_scheduled_report_lease_lost_total[15m]) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Scheduled report runs are failing or losing leases
+          runbook_url: docs/runbooks/RAG_FAILURES.md#scheduler-租约丢失与重复执行

@@ -1,6 +1,6 @@
 # Cortex 面向 SSP 级工程能力的优化升级方案
 
-> 状态：规划中  
+> 状态：实施中（Phase 1 已完成；Phase 2 产品链路完成、真实 bad case 演示待用户数据；Phase 3 进行中）
 > 编写日期：2026-08-12  
 > 适用范围：个人知识库 RAG、AI 网关、后台任务、可观测性、灾备与发布质量  
 > 约束：本文描述的是后续建设计划；除“当前基线”明确列出的能力外，不代表功能已经实现。
@@ -50,8 +50,8 @@ Markdown 上传/笔记入库
 
 | 编号 | 问题 | 影响 | 当前证据 |
 | --- | --- | --- | --- |
-| G1 | PostgreSQL `simple` FTS 对中文语料缺少有效分词，当前全文通道离线 Hit@10 和独立增量为 0 | “混合检索”增加复杂度但没有可证明收益 | `docs/RAG.md` 分通道评测 |
-| G2 | 离线评测存在，但没有标准化的线上反馈、脱敏 trace、标注和回归集晋升流程 | 同类错误可能重复发生 | 当前无反馈闭环接口和数据模型 |
+| G1 | 原始 PostgreSQL `simple` FTS 对中文语料缺少有效分词 | 已由确定性 Unicode bigram/keyword 字段和消融报告解决；后续继续守住独立增量门槛 | `docs/RAG.md` 与 `docs/rag-baselines/20260811-125254-chinese-bigram-fts.md` |
+| G2 | 已实现反馈、脱敏 trace、本人复核晋升、版本冻结与确定性 CI 资产门禁 | 真实检索指标仍由受控发布评测执行，不依赖普通 PR 的外部模型 | 迁移 `000029`/`000030`、反馈/晋升 API 与 `rag-regression-check` |
 | G3 | Embedding、Reranker、LiteLLM、索引切换和 scheduler 的崩溃窗口缺少系统故障注入 | 正确性主要由静态设计推断 | 单元测试与验收脚本覆盖不完整 |
 | G4 | `/metrics` 主要覆盖局部业务计数，缺少 HTTP、DB、RAG、队列和依赖的统一指标 | 故障定位依赖人工翻日志 | `internal/server/metrics.go` |
 | G5 | 有数据库与数据卷灾备说明，但缺少独立环境恢复演练、自动校验及 RPO/RTO 记录 | “完整备份恢复”不能作为已完成能力 | `README.md` 当前灾备边界 |
@@ -397,6 +397,9 @@ LLM Judge 具有非确定性和外部依赖，不能作为每个普通 PR 唯一
 
 ### Phase 1：RAG 消融与中文检索（2～4 天）
 
+状态：已完成。已实现确定性中文关键词 token、可配置召回通道、单命令消融矩阵和不可覆盖报告；
+当前证据见 `docs/RAG.md`、`backend/scripts/run_retrieval_ablation.ps1` 与 `docs/rag-baselines/`。
+
 - 实现可配置召回通道和消融运行入口。
 - 完成 A0～A8 核心实验。
 - 验证中文 n-gram/替代方案，保留有增量的最小架构。
@@ -405,6 +408,10 @@ LLM Judge 具有非确定性和外部依赖，不能作为每个普通 PR 唯一
 交付物：消融报告、新中文检索实现或删除 FTS 的设计决策记录、回归测试。
 
 ### Phase 2：Trace 与质量回流（3～5 天）
+
+状态：基础产品链路已完成。已新增 RLS 保护的脱敏 trace、五类用户反馈、本人复核晋升、不可变版本冻结，
+并用完全合成 fixture 接入确定性 CI schema/hash 门禁。真实私人 bad case 只有经用户主动复核脱敏后才可晋升；
+仓库不预置或伪造私人 bad case。真实检索指标仍由受控发布评测执行。
 
 - 定义 trace/feedback schema 与数据生命周期。
 - 增加反馈入口和内部 bad case 复核流程。
@@ -415,6 +422,14 @@ LLM Judge 具有非确定性和外部依赖，不能作为每个普通 PR 唯一
 
 ### Phase 3：故障注入与可观测性（3～5 天）
 
+状态：已完成可自动验证部分。SSE 输出后中断已有自动化测试；Reranker 重复/越界/不完整响应已有契约测试；
+知识索引完成和失败路径已增加 owner + 未过期租约 fencing。Scheduler 已增加 claim/续租/start/report-write/finish
+全链路 owner fencing，手动重试也竞争同一租约；PostgreSQL 集成测试覆盖双 worker、过期接管和旧 owner 拒绝。
+上述链路已有低基数故障指标与 runbook。PostgreSQL fault test 已覆盖新 chunks 写入后、active version
+切换前故障的整事务回滚，证明旧活动版本继续服务。10 条 Prometheus 规则已由 `promtool` 加入 CI 校验，
+RAG/基础设施 runbook、可导入的低基数 Grafana dashboard 与 2026-08-13 合成索引原子切换故障演练已保存；
+实际采集和展示仍依赖部署侧 Prometheus/Grafana 接入。
+
 - 为 Embedding、Reranker、LiteLLM 和 worker 增加可控 fake/fault point。
 - 补索引原子切换、SSE 中断、来源失效和 scheduler 崩溃窗口测试。
 - 增加核心指标、告警规则和 runbook。
@@ -422,6 +437,12 @@ LLM Judge 具有非确定性和外部依赖，不能作为每个普通 PR 唯一
 交付物：故障矩阵测试、dashboard、告警与一次演练报告。
 
 ### Phase 4：灾备与容量（2～4 天）
+
+状态：已完成本机隔离验收。联合备份包含 PostgreSQL 自定义快照、数据库当前引用的数据卷文件和 checksum manifest；
+随机命名隔离环境恢复后通过 55 表、migration 31、45 张 FORCE RLS 表、低权限连接、双向文件一致性和 non-AI smoke。
+实测 RTO 103.313 秒、观测 RPO 61 秒，仅代表 2026-08-13 当前数据量和已缓存镜像环境，不作为生产 SLA。
+100/1,000/10,000 合成文档各 100 次 RLS 检索均 0 失败，p95 为 16.367/45.536/405.277 ms；
+10,000 文档候选扫描是首个容量瓶颈。HTTP/Embedding/Reranker/LLM 并发与 AI 成本未在本轮容量测试测量。
 
 - 编写联合备份、恢复和一致性校验脚本。
 - 在隔离环境完成恢复演练并记录实际 RPO/RTO。

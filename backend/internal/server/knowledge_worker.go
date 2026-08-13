@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"time"
@@ -26,26 +27,34 @@ func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store,
 			} else {
 				for _, job := range jobs {
 					if err := s.LoadKnowledgeJobDocument(ctx, &job); err != nil {
-						_ = s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_DOCUMENT_UNAVAILABLE")
+						if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_DOCUMENT_UNAVAILABLE"), store.ErrKnowledgeIndexLeaseLost) {
+							knowledgeIndexLeaseLost.Add(1)
+						}
 						continue
 					}
 					content := job.Content
 					if job.SourceType == "upload" {
 						abs, pathErr := safeDataPath(cfg.DataDir, job.StoredPath)
 						if pathErr != nil {
-							_ = s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_ARCHIVE_UNSAFE")
+							if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_ARCHIVE_UNSAFE"), store.ErrKnowledgeIndexLeaseLost) {
+								knowledgeIndexLeaseLost.Add(1)
+							}
 							continue
 						}
 						data, readErr := os.ReadFile(abs)
 						if readErr != nil {
-							_ = s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_FILE_MISSING")
+							if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_FILE_MISSING"), store.ErrKnowledgeIndexLeaseLost) {
+								knowledgeIndexLeaseLost.Add(1)
+							}
 							continue
 						}
 						content = string(data)
 					}
 					parents := knowledge.Chunk(job.Title, job.SourceType, content)
 					if len(parents) == 0 {
-						_ = s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_MARKDOWN_INVALID")
+						if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_MARKDOWN_INVALID"), store.ErrKnowledgeIndexLeaseLost) {
+							knowledgeIndexLeaseLost.Add(1)
+						}
 						continue
 					}
 					var texts []string
@@ -57,7 +66,9 @@ func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store,
 					vectors, embedErr := client.Embed(ctx, texts)
 					if embedErr != nil {
 						logger.Error("knowledge embedding failed", "document_id", job.DocumentID.String(), "code", "KNOWLEDGE_EMBEDDING_UNAVAILABLE", "error", embedErr)
-						_ = s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_EMBEDDING_UNAVAILABLE")
+						if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_EMBEDDING_UNAVAILABLE"), store.ErrKnowledgeIndexLeaseLost) {
+							knowledgeIndexLeaseLost.Add(1)
+						}
 						continue
 					}
 					nested := make([][][]float32, len(parents))
@@ -69,7 +80,9 @@ func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store,
 					}
 					if err := s.WriteKnowledgeChunks(ctx, job, parents, nested, cfg.EmbeddingModel); err != nil {
 						logger.Error("knowledge chunk write failed", "document_id", job.DocumentID.String(), "code", "KNOWLEDGE_INDEX_FAILED", "error", err)
-						_ = s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_INDEX_FAILED")
+						if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_INDEX_FAILED"), store.ErrKnowledgeIndexLeaseLost) {
+							knowledgeIndexLeaseLost.Add(1)
+						}
 					}
 				}
 			}

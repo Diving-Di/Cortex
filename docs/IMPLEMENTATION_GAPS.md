@@ -37,6 +37,8 @@
   租约丢失和完成 fencing 指标。
 - 详情缓存和 negative cache 命中均回 PostgreSQL 校验当前发布版本/状态，不再仅依赖失效消息保证正确性。
 - `backend/scripts/marketplace_http_capacity.ps1` 输出 QPS、p50/p95/p99 和失败数；真实线上数字仍须在目标环境运行并归档。
+- `backend/scripts/knowledge_capacity.ps1` 已完成 100/1,000/10,000 合成文档 RLS 检索容量验收；尚未覆盖 HTTP、Embedding、Reranker 与 LLM 并发饱和点。
+- 联合备份与隔离恢复已在本机通过；观测 RPO/RTO 不是生产 SLA，源卷历史孤儿仍需经产品级保留策略处理，未授权直接删除。
 
 ## AI 活动削峰实现
 
@@ -58,7 +60,10 @@
   `template_ai_event_redis_failure_acceptance.ps1` 和 `ai_event_concurrency_acceptance.ps1`。
 - 验证个人知识库：上传 `.md` / `.zip`、配额与并发预占、文档删除后退出检索、笔记知识开关、
   混合问答的来源保存与 `KNOWLEDGE_NO_EVIDENCE`、跨租户 404 隔离。
-- 确认新实例能由 `backend/db/schema.sql` 基线加版本化迁移完成初始化（当前共 51 张表），
+- 验证知识问答质量回流：保存完成/失败结果时只生成脱敏 trace；五类反馈可按 request ID 幂等更新，
+  本人复核后可晋升到 draft 数据集，冻结时生成 manifest hash；不存在或跨租户资源返回 404。
+  CI 运行合成 fixture 的 schema/hash 门禁，真实检索指标仍在受控发布环境运行。
+- 确认新实例能由 `backend/db/schema.sql` 基线加版本化迁移完成初始化（当前共 55 张表），
   且 `/recipes`、`/assistant` 均重定向到 `/knowledge`。
 - 确认仓库不再包含 `/api/v1/recipes/*` 路由与忌口、时区偏好字段。
 

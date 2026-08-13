@@ -119,8 +119,38 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 | `DELETE /api/v1/knowledge/documents/{id}` | 使文档立即退出检索并删除 |
 | `PATCH /api/v1/notes/{id}/knowledge` | 开启或关闭笔记知识索引 |
 | `POST /api/v1/knowledge/chat/stream` | 在服务端验证的范围内混合检索、精排并 SSE 回答 |
+| `POST /api/v1/knowledge/requests/{request_id}/feedback` | 对已保存的知识问答提交或更新质量反馈 |
+
+知识问答反馈请求体：
+
+```json
+{
+  "category": "unsupported_citation",
+  "comment": "引用内容无法支持答案结论"
+}
+```
+
+`category` 只能是 `incorrect_answer`、`unsupported_citation`、`missing_knowledge`、
+`should_have_refused` 或 `high_latency`。接口只接受当前用户、当前租户中已经保存并生成脱敏 trace 的
+`request_id`；其他租户或不存在的记录统一返回 `KNOWLEDGE_TRACE_NOT_FOUND`（404）。重复提交会更新同一条反馈。
+trace 仅保存模型和检索参数、状态、token 数、来源资源 ID、索引版本、route/rank 与内容 SHA-256，
+不复制 query、回答、来源正文或用户身份信息到普通日志。
+
+用户确认内容已完成最小化和脱敏后，可将反馈晋升为租户内评测用例：
+
+| 接口 | 说明 |
+| --- | --- |
+| `POST /api/v1/knowledge/feedback/{feedback_id}/promote` | 将本人待复核反馈晋升到指定 draft 数据集版本 |
+| `POST /api/v1/knowledge/eval-datasets/{dataset_id}/freeze` | 冻结数据集并计算稳定 manifest SHA-256 |
+
+晋升请求包含 `dataset_name`、正整数 `dataset_version`、稳定 `case_id`、最小化后的 `query`、
+`expected_answer`、一个或多个 64 位十六进制 `evidence_hashes`、可选 `tags` 和 `review_summary`。
+服务端拒绝把原始证据正文当作 hash 写入。冻结后的版本不可增加或覆盖用例；修改用例必须创建新版本。
+跨租户或非本人反馈统一返回 404。
 
 流式生成只有收到 `done`（知识问答）或 `[DONE]`（通用 AI）才算完成。上游在已输出内容后失败时发送 `error` 事件，不再发送完成标记；载荷包含 `incomplete`、`output_tokens` 和 `upstream_stage`。知识问答会把部分回答以 `failed` 状态保存，客户端应复用 `request_id` 查询/展示同一次请求，不得自动从头重试。供应商 continuation token 未接入前不执行续写。
+来源版本在保存阶段失效返回 `KNOWLEDGE_SOURCE_INVALID`；其他数据库持久化故障返回
+`KNOWLEDGE_SAVE_FAILED`，不得伪装成来源错误。
 
 AI 限量活动的 Redis 投影使用 `active_version` 指针和版本化数据键。领取在 Lua 中先校验指针；切换并发导致版本变化时最多重试一次，连续变化返回 `AI_EVENT_BUSY`（503）。投影构建使用活动级 owner fencing 租约、分批 Pipeline 和常数复杂度 CAS 切换，不会删除线上 active 版本；旧版本仍有 pending reservation 时禁止清理。
 
@@ -174,6 +204,10 @@ data: {"conversation_id":12,"message_id":34}
 | `PATCH` | `/api/v1/scheduled-reports/{task_id}?enabled={bool}` | 启用或停用任务 |
 | `POST` | `/api/v1/scheduled-reports/{task_id}/retry` | 异步立即重试，返回 `queued` |
 | `GET` | `/api/v1/scheduled-reports/{task_id}/runs` | 查询最近运行记录 |
+
+定时触发和手动重试使用同一 owner lease。claim、周期续租、run 创建、报告写入和 run 完成都校验
+未过期 owner；已有任务正在执行时，手动重试返回 `SCHEDULED_REPORT_BUSY`（409）。租约到期后允许其他
+实例接管，旧 owner 不能覆盖报告、revision、run 状态或下一次执行时间。
 
 任务使用 IANA 时区，调度时间在数据库中保存为 UTC。多个 worker 通过数据库
 claim 保证同一到期任务只生成一条运行记录。

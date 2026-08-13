@@ -26,6 +26,13 @@ type MarketplaceMetrics struct {
 	SucceededClaimsInvalid                    int64
 }
 
+type OperationsMetrics struct {
+	KnowledgeQueued, KnowledgeRunning, KnowledgeFailed int64
+	KnowledgeOldestQueuedSeconds                       float64
+	ScheduledDue, ScheduledRunning, ScheduledFailed    int64
+	ScheduledOldestDueSeconds                          float64
+}
+
 type TemplateRankingProjection struct {
 	PublicID      string
 	PublishedAt   time.Time
@@ -81,6 +88,23 @@ func (s *Store) GetMarketplaceMetrics(ctx context.Context) (MarketplaceMetrics, 
 		(SELECT count(*) FROM ai_point_accounts a WHERE a.held_points<>(SELECT COALESCE(sum(CASE entry_type WHEN 'hold' THEN points WHEN 'capture' THEN -points WHEN 'release' THEN -points ELSE 0 END),0) FROM ai_point_ledger l WHERE l.tenant_id=a.tenant_id AND l.period_start=a.period_start) OR a.consumed_points<>(SELECT COALESCE(sum(points) FILTER(WHERE entry_type='capture'),0) FROM ai_point_ledger l WHERE l.tenant_id=a.tenant_id AND l.period_start=a.period_start)),
 		(SELECT count(*) FROM ai_flash_events e WHERE e.claimed_slots<>(SELECT count(*) FROM ai_flash_claims c WHERE c.event_id=e.id)),
 		(SELECT count(*) FROM ai_flash_claims c LEFT JOIN notes n ON n.id=c.report_note_id AND n.tenant_id=c.tenant_id WHERE c.status='succeeded' AND c.report_note_id IS NOT NULL AND (n.id IS NULL OR NOT EXISTS(SELECT 1 FROM report_sources r WHERE r.tenant_id=c.tenant_id AND r.report_note_id=c.report_note_id))) FROM outbox_events`).Scan(&m.PendingOutbox, &m.OutboxLagSeconds, &m.QueuedClaims, &m.RunningClaims, &m.FailedClaims, &m.PointAccountsDrifted, &m.EventSlotDrifted, &m.SucceededClaimsInvalid)
+	return m, err
+}
+
+func (s *Store) GetOperationsMetrics(ctx context.Context) (OperationsMetrics, error) {
+	var m OperationsMetrics
+	err := s.AdminPool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM knowledge_index_jobs WHERE status='queued'),
+		(SELECT count(*) FROM knowledge_index_jobs WHERE status='running'),
+		(SELECT count(*) FROM knowledge_index_jobs WHERE status='failed'),
+		(SELECT COALESCE(extract(epoch FROM now()-min(available_at)),0) FROM knowledge_index_jobs WHERE status='queued' AND available_at<=now()),
+		(SELECT count(*) FROM scheduled_report_tasks WHERE status='enabled' AND next_run_at<=now()),
+		(SELECT count(*) FROM scheduled_report_runs WHERE status='running'),
+		(SELECT count(*) FROM scheduled_report_runs WHERE status='failed'),
+		(SELECT COALESCE(extract(epoch FROM now()-min(next_run_at)),0) FROM scheduled_report_tasks WHERE status='enabled' AND next_run_at<=now())`).Scan(
+		&m.KnowledgeQueued, &m.KnowledgeRunning, &m.KnowledgeFailed, &m.KnowledgeOldestQueuedSeconds,
+		&m.ScheduledDue, &m.ScheduledRunning, &m.ScheduledFailed, &m.ScheduledOldestDueSeconds,
+	)
 	return m, err
 }
 

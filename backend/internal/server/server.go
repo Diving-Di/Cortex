@@ -50,6 +50,7 @@ const principalKey contextKey = 1
 const requestIDKey contextKey = 2
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
@@ -114,6 +115,9 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.GET("/api/v1/knowledge/collections", gin.WrapF(s.listKnowledgeCollections))
 			active.POST("/api/v1/knowledge/collections", gin.WrapF(s.createKnowledgeCollection))
 			active.POST("/api/v1/knowledge/chat/stream", gin.WrapF(s.knowledgeChat))
+			active.POST("/api/v1/knowledge/requests/:requestID/feedback", gin.WrapF(s.createKnowledgeFeedback))
+			active.POST("/api/v1/knowledge/feedback/:feedbackID/promote", gin.WrapF(s.promoteKnowledgeFeedback))
+			active.POST("/api/v1/knowledge/eval-datasets/:datasetID/freeze", gin.WrapF(s.freezeKnowledgeEvalDataset))
 			active.GET("/api/v1/attachments/note/:noteID", gin.WrapF(s.listAttachments))
 			active.GET("/api/v1/attachments/:attachmentID", gin.WrapF(s.downloadAttachment))
 			active.DELETE("/api/v1/attachments/:attachmentID", gin.WrapF(s.deleteAttachment))

@@ -1,0 +1,51 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "title": "Database readiness",
+      "type": "stat",
+      "targets": [{ "expr": "cortex_database_ready", "refId": "A" }],
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 0 }
+    },
+    {
+      "title": "Knowledge oldest queued job",
+      "type": "timeseries",
+      "targets": [{ "expr": "cortex_knowledge_index_oldest_queued_seconds", "legendFormat": "queue age", "refId": "A" }],
+      "gridPos": { "h": 7, "w": 9, "x": 6, "y": 0 }
+    },
+    {
+      "title": "Scheduler oldest due task",
+      "type": "timeseries",
+      "targets": [{ "expr": "cortex_scheduled_report_oldest_due_seconds", "legendFormat": "due age", "refId": "A" }],
+      "gridPos": { "h": 7, "w": 9, "x": 15, "y": 0 }
+    },
+    {
+      "title": "RAG failures (15m)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "increase(cortex_knowledge_rerank_failed_total[15m])", "legendFormat": "rerank", "refId": "A" },
+        { "expr": "increase(cortex_knowledge_stream_incomplete_total[15m])", "legendFormat": "incomplete stream", "refId": "B" },
+        { "expr": "increase(cortex_knowledge_no_evidence_total[15m])", "legendFormat": "no evidence", "refId": "C" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 }
+    },
+    {
+      "title": "Lease loss and final failures (15m)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "increase(cortex_knowledge_index_lease_lost_total[15m])", "legendFormat": "knowledge lease", "refId": "A" },
+        { "expr": "increase(cortex_scheduled_report_lease_lost_total[15m])", "legendFormat": "scheduler lease", "refId": "B" },
+        { "expr": "increase(cortex_scheduled_report_runs_failed_total[15m])", "legendFormat": "scheduler failed", "refId": "C" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 }
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["cortex", "rag", "low-cardinality"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Cortex Reliability",
+  "uid": "cortex-reliability",
+  "version": 1
+}

@@ -283,6 +283,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(candidates) == 0 {
+		knowledgeNoEvidence.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_NO_EVIDENCE", "没有找到当前知识库中的有效依据", 422))
 		return
 	}
@@ -293,6 +294,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 	reranker := ai.LocalRerankClient{BaseURL: s.cfg.RerankBaseURL, Model: s.cfg.RerankModel, MaxDocuments: s.cfg.RAGFusionTopK}
 	scores, err := reranker.Rerank(r.Context(), retrievalQuery, documents)
 	if err != nil {
+		knowledgeRerankFailed.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_RERANK_UNAVAILABLE", "知识精排服务暂时不可用", 503))
 		return
 	}
@@ -302,6 +304,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 	sortKnowledgeCandidates(candidates)
 	candidates = filterRerankEvidence(candidates, s.cfg.RAGRerankMinScore)
 	if len(candidates) < s.cfg.RAGMinQualifiedEvidence || rerankMarginTooSmall(candidates, s.cfg.RAGRerankMinMargin) {
+		knowledgeNoEvidence.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_NO_EVIDENCE", "没有找到当前知识库中的有效依据", 422))
 		return
 	}
@@ -321,8 +324,96 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeKnowledgeSSE(w, r, events, sources, func(ctx context.Context, answer, status, errorCode, upstreamStage string, outputTokens int) (int32, int32, error) {
-		return s.store.SaveKnowledgeAnswerOutcome(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, status, errorCode, upstreamStage, outputTokens, candidates)
+		traceConfig := store.KnowledgeTraceConfig{EmbeddingModel: s.cfg.EmbeddingModel, RerankModel: s.cfg.RerankModel, GenerateModel: s.cfg.AIModel, VerifierModel: s.cfg.RAGVerifierModel, VectorTopK: s.cfg.RAGVectorTopK, TitleTopK: s.cfg.RAGTitleTopK, KeywordTopK: s.cfg.RAGKeywordTopK, FusionTopK: s.cfg.RAGFusionTopK, ContextTopK: s.cfg.RAGContextTopK}
+		return s.store.SaveKnowledgeAnswerOutcome(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, status, errorCode, upstreamStage, outputTokens, candidates, traceConfig)
 	})
+}
+
+func (s *Server) createKnowledgeFeedback(w http.ResponseWriter, r *http.Request) {
+	requestID := strings.TrimSpace(r.PathValue("requestID"))
+	var req struct {
+		Category string `json:"category"`
+		Comment  string `json:"comment"`
+	}
+	if !requestIDPattern.MatchString(requestID) || httpx.DecodeJSON(r, &req) != nil {
+		httpx.WriteError(w, s.logger, apierror.Validation(nil))
+		return
+	}
+	allowed := map[string]bool{"incorrect_answer": true, "unsupported_citation": true, "missing_knowledge": true, "should_have_refused": true, "high_latency": true}
+	req.Category, req.Comment = strings.TrimSpace(req.Category), strings.TrimSpace(req.Comment)
+	if !allowed[req.Category] || len([]rune(req.Comment)) > 1000 {
+		httpx.WriteError(w, s.logger, apierror.Validation(nil))
+		return
+	}
+	item, err := s.store.CreateKnowledgeFeedback(r.Context(), principalFrom(r.Context()), requestID, req.Category, req.Comment)
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	knowledgeFeedbackCreated.Add(1)
+	httpx.JSON(w, http.StatusCreated, item)
+}
+
+func (s *Server) promoteKnowledgeFeedback(w http.ResponseWriter, r *http.Request) {
+	feedbackID, err := strconv.ParseInt(r.PathValue("feedbackID"), 10, 64)
+	if err != nil || feedbackID <= 0 {
+		httpx.WriteError(w, s.logger, apierror.Validation(nil))
+		return
+	}
+	var req struct {
+		DatasetName    string   `json:"dataset_name"`
+		DatasetVersion int      `json:"dataset_version"`
+		CaseID         string   `json:"case_id"`
+		Query          string   `json:"query"`
+		ExpectedAnswer string   `json:"expected_answer"`
+		EvidenceHashes []string `json:"evidence_hashes"`
+		Tags           []string `json:"tags"`
+		ReviewSummary  string   `json:"review_summary"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	req.DatasetName, req.CaseID, req.Query = strings.TrimSpace(req.DatasetName), strings.TrimSpace(req.CaseID), strings.TrimSpace(req.Query)
+	req.ExpectedAnswer, req.ReviewSummary = strings.TrimSpace(req.ExpectedAnswer), strings.TrimSpace(req.ReviewSummary)
+	if req.DatasetName == "" || len([]rune(req.DatasetName)) > 120 || req.DatasetVersion < 1 || !requestIDPattern.MatchString(req.CaseID) || req.Query == "" || len([]rune(req.Query)) > 2000 || req.ExpectedAnswer == "" || len([]rune(req.ExpectedAnswer)) > 4000 || len(req.EvidenceHashes) == 0 || len(req.EvidenceHashes) > 20 || len(req.Tags) > 20 || len([]rune(req.ReviewSummary)) > 1000 {
+		httpx.WriteError(w, s.logger, apierror.Validation(nil))
+		return
+	}
+	for i, hash := range req.EvidenceHashes {
+		req.EvidenceHashes[i] = strings.ToLower(strings.TrimSpace(hash))
+		if !sha256Pattern.MatchString(req.EvidenceHashes[i]) {
+			httpx.WriteError(w, s.logger, apierror.Validation(nil))
+			return
+		}
+	}
+	for i, tag := range req.Tags {
+		req.Tags[i] = strings.TrimSpace(tag)
+		if req.Tags[i] == "" || len([]rune(req.Tags[i])) > 60 {
+			httpx.WriteError(w, s.logger, apierror.Validation(nil))
+			return
+		}
+	}
+	item, err := s.store.PromoteKnowledgeFeedback(r.Context(), principalFrom(r.Context()), feedbackID, store.KnowledgeEvalPromotion{DatasetName: req.DatasetName, DatasetVersion: req.DatasetVersion, CaseID: req.CaseID, Query: req.Query, ExpectedAnswer: req.ExpectedAnswer, EvidenceHashes: req.EvidenceHashes, Tags: req.Tags, ReviewSummary: req.ReviewSummary})
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, item)
+}
+
+func (s *Server) freezeKnowledgeEvalDataset(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("datasetID"))
+	if err != nil {
+		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_DATASET_NOT_FOUND", "评测集不存在", 404))
+		return
+	}
+	item, err := s.store.FreezeKnowledgeEvalDataset(r.Context(), principalFrom(r.Context()), id)
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, item)
 }
 
 func formatKnowledgeConversation(messages []store.KnowledgeConversationMessage, maxRunes int) string {
@@ -404,6 +495,7 @@ func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, event
 	var answer strings.Builder
 	for event := range events {
 		if event.Err != nil {
+			knowledgeStreamIncomplete.Add(1)
 			outputTokens := len([]rune(answer.String())) / 4
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 			messageID, conversationID, saveErr := save(ctx, answer.String(), "failed", "AI_REQUEST_FAILED", "generation", outputTokens)
@@ -453,7 +545,13 @@ func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, event
 	defer cancel()
 	messageID, conversationID, err := save(ctx, answer.String(), "complete", "", "completed", len([]rune(answer.String()))/4)
 	if err != nil {
-		_ = writeNamedSSE(w, "error", map[string]string{"code": "KNOWLEDGE_SOURCE_INVALID", "message": "来源已失效，请重新提问"})
+		var appErr *apierror.Error
+		if errors.As(err, &appErr) && appErr.Code == "KNOWLEDGE_SOURCE_INVALID" {
+			knowledgeSourceInvalid.Add(1)
+			_ = writeNamedSSE(w, "error", map[string]string{"code": "KNOWLEDGE_SOURCE_INVALID", "message": "来源已失效，请重新提问"})
+		} else {
+			_ = writeNamedSSE(w, "error", map[string]string{"code": "KNOWLEDGE_SAVE_FAILED", "message": "回答保存失败，请重新提问"})
+		}
 	} else {
 		_ = writeNamedSSE(w, "sources", map[string]any{"items": sources})
 		_ = writeNamedSSE(w, "done", map[string]any{"message_id": messageID, "conversation_id": conversationID})

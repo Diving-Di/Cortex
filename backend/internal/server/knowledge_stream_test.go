@@ -39,3 +39,18 @@ func TestWriteKnowledgeSSEPersistsPartialFailureWithoutDone(t *testing.T) {
 		t.Fatalf("unexpected persisted state: status=%q content=%q stage=%q tokens=%d", savedStatus, savedContent, savedStage, savedTokens)
 	}
 }
+
+func TestWriteKnowledgeSSEDoesNotMislabelStorageFailureAsInvalidSource(t *testing.T) {
+	events := make(chan ai.StreamEvent, 1)
+	events <- ai.StreamEvent{Content: "完整回答"}
+	close(events)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/knowledge/chat/stream", nil)
+	(&Server{}).writeKnowledgeSSE(w, r, events, nil, func(context.Context, string, string, string, string, int) (int32, int32, error) {
+		return 0, 0, errors.New("database unavailable")
+	})
+	body := w.Body.String()
+	if !strings.Contains(body, `"code":"KNOWLEDGE_SAVE_FAILED"`) || strings.Contains(body, `"code":"KNOWLEDGE_SOURCE_INVALID"`) {
+		t.Fatalf("wrong persistence error contract: %s", body)
+	}
+}

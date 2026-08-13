@@ -109,6 +109,22 @@ func TestRerankClientRejectsIncompleteAndOversizedResponses(t *testing.T) {
 	}
 }
 
+func TestRerankClientRejectsDuplicateAndOutOfRangeIndexes(t *testing.T) {
+	for name, body := range map[string]string{
+		"duplicate":    `{"results":[{"index":0,"relevance_score":0.9},{"index":0,"relevance_score":0.8}]}`,
+		"out_of_range": `{"results":[{"index":0,"relevance_score":0.9},{"index":2,"relevance_score":0.8}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
+			defer server.Close()
+			client := LocalRerankClient{BaseURL: server.URL, Model: "test", MaxDocuments: 2, HTTPClient: server.Client()}
+			if _, err := client.Rerank(context.Background(), "q", []string{"a", "b"}); err == nil {
+				t.Fatal("invalid rerank response accepted")
+			}
+		})
+	}
+}
+
 func TestEmbeddingClientCancellationStopsRetries(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
