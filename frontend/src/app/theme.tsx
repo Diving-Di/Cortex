@@ -4,10 +4,14 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 export type ThemePreference = 'system' | 'light' | 'dark';
 type ResolvedTheme = 'light' | 'dark';
 
-const STORAGE_KEY = 'diary-listener.theme';
+const STORAGE_KEY = 'cortex.theme';
+const LEGACY_STORAGE_KEY = 'diary-listener.theme';
 
 function readPreference(): ThemePreference {
-  const value = localStorage.getItem(STORAGE_KEY);
+  const value = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (value && !localStorage.getItem(STORAGE_KEY)) {
+    localStorage.setItem(STORAGE_KEY, value);
+  }
   return value === 'light' || value === 'dark' || value === 'system' ? value : 'system';
 }
 

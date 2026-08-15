@@ -8,8 +8,8 @@ import (
     "time"
     "unicode"
 
-    "diary-listener/backend/internal/apierror"
-    "diary-listener/backend/internal/domain"
+    "cortex/backend/internal/apierror"
+    "cortex/backend/internal/domain"
     "github.com/jackc/pgx/v5"
     "github.com/jackc/pgx/v5/pgconn"
 )

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/httpx"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/httpx"
 )
 
 type tenantUpdateRequest struct {

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/httpx"
-	"diary-listener/backend/internal/research"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/httpx"
+	"cortex/backend/internal/research"
+	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 

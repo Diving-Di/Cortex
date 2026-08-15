@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/httpx"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/httpx"
+	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -284,7 +284,7 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	principal := principalFrom(r.Context())
 	var x store.PublicTemplate
-	cacheKey := "diary:tpl:detail:" + id.String()
+	cacheKey := "cortex:tpl:detail:" + id.String()
 	cacheHit := false
 	if s.redis != nil {
 		if encoded, ok, cacheErr := s.redis.Get(r.Context(), cacheKey); cacheErr == nil && ok {
@@ -435,7 +435,7 @@ func (s *Server) viewTemplate(w http.ResponseWriter, r *http.Request) {
 		principal := principalFrom(r.Context())
 		visitor := aiEventReservationMember(principal.TenantID) + ":" + strconv.FormatInt(int64(principal.UserID), 10)
 		digest := sha256.Sum256([]byte(visitor))
-		accepted, redisErr := s.redis.Once(r.Context(), "diary:tpl:view:"+id.String()+":"+base64.RawURLEncoding.EncodeToString(digest[:12]), 10*time.Minute)
+		accepted, redisErr := s.redis.Once(r.Context(), "cortex:tpl:view:"+id.String()+":"+base64.RawURLEncoding.EncodeToString(digest[:12]), 10*time.Minute)
 		if redisErr != nil || !accepted {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -455,7 +455,7 @@ func (s *Server) viewTemplate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) allowUserRequest(r *http.Request, scope string, limit int, window time.Duration) bool {
 	p := principalFrom(r.Context())
 	digest := sha256.Sum256([]byte(p.TenantID.String() + ":" + strconv.FormatInt(int64(p.UserID), 10)))
-	key := "diary:rate:" + scope + ":" + base64.RawURLEncoding.EncodeToString(digest[:12])
+	key := "cortex:rate:" + scope + ":" + base64.RawURLEncoding.EncodeToString(digest[:12])
 	return s.allowRateKey(r, key, limit, window)
 }
 
@@ -465,7 +465,7 @@ func (s *Server) allowIPRequest(r *http.Request, scope string, limit int, window
 		host = r.RemoteAddr
 	}
 	digest := sha256.Sum256([]byte(host))
-	key := "diary:rate:" + scope + ":ip:" + base64.RawURLEncoding.EncodeToString(digest[:12])
+	key := "cortex:rate:" + scope + ":ip:" + base64.RawURLEncoding.EncodeToString(digest[:12])
 	return s.allowRateKey(r, key, limit, window)
 }
 

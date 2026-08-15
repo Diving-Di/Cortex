@@ -29,8 +29,8 @@ LABEL org.opencontainers.image.title="Cortex Backend" \
       org.opencontainers.image.description="Personal notes and knowledge service"
 
 RUN apk add --no-cache ca-certificates chromium tzdata su-exec \
-    && addgroup -S diary \
-    && adduser -S -G diary -h /app diary
+    && addgroup -S cortex \
+    && adduser -S -G cortex -h /app cortex
 
 WORKDIR /app
 COPY --from=builder /out/server /app/server

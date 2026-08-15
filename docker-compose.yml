@@ -27,7 +27,7 @@ services:
       - ./litellm-config.yaml:/app/config.yaml:ro
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}
-      - DATABASE_URL=postgresql://diary_litellm:${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD}@db:5432/diary_litellm
+      - DATABASE_URL=postgresql://cortex_litellm:${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD}@db:5432/cortex_litellm
       - OPENAI_API_KEY=${OPENAI_API_KEY:?set OPENAI_API_KEY}
       - KIMI_API_KEY=${KIMI_API_KEY:?set KIMI_API_KEY}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}
@@ -54,8 +54,8 @@ services:
   db:
     image: pgvector/pgvector:0.8.1-pg16-bookworm@sha256:33198da2828a14c30348d2ccb4750833d5ed9a44c88d840a0e523d7417120337
     environment:
-      POSTGRES_DB: diary_listener
-      POSTGRES_USER: diary_migrator
+      POSTGRES_DB: cortex
+      POSTGRES_USER: cortex_migrator
       POSTGRES_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}
       LITELLM_DB_PASSWORD: ${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD}
@@ -65,7 +65,7 @@ services:
       - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/20-schema.sql:ro
       - ./backend/internal/migrations/sql/000014_template_marketplace_ai_events.up.sql:/docker-entrypoint/internal/migrations/sql/000014_template_marketplace_ai_events.up.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U diary_migrator -d diary_listener"]
+      test: ["CMD-SHELL", "pg_isready -U cortex_migrator -d cortex"]
       timeout: 20s
       retries: 10
 
@@ -82,8 +82,8 @@ services:
     volumes:
       - app_data:/app/data
     environment:
-      - DATABASE_URL=postgresql://diary_app:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}@db:5432/diary_listener
-      - MIGRATION_DATABASE_URL=postgresql://diary_migrator:${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}@db:5432/diary_listener
+      - DATABASE_URL=postgresql://cortex_app:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}@db:5432/cortex
+      - MIGRATION_DATABASE_URL=postgresql://cortex_migrator:${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}@db:5432/cortex
       - CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
       - LISTEN_ADDRESS=0.0.0.0:8000
       - CORTEX_DATA_DIR=/app/data
@@ -106,7 +106,7 @@ services:
       - KNOWLEDGE_INDEX_POLL_SECONDS=${KNOWLEDGE_INDEX_POLL_SECONDS:-5}
       - AI_API_KEY=${LITELLM_VIRTUAL_KEY:?set LITELLM_VIRTUAL_KEY}
       - AI_BASE_URL=http://llm-gateway:4000/v1
-      - AI_MODEL=diary-default
+      - AI_MODEL=cortex-default
       - AI_SYSTEM_PROMPT=${AI_SYSTEM_PROMPT:-你是一个温暖、贴心的 AI 助手。}
       - APP_ENV=${APP_ENV:-development}
       - SCHEDULED_REPORTS_ENABLED=${SCHEDULED_REPORTS_ENABLED:-true}
@@ -201,9 +201,9 @@ services:
 
 volumes:
   db_data:
-    name: diary-listener_db_data
+    name: cortex_db_data_v2
     external: true
   app_data:
-    name: diary-listener_app_data
+    name: cortex_app_data_v2
     external: true
   redis_data:

@@ -1,4 +1,4 @@
-module diary-listener/backend
+module cortex/backend
 
 go 1.26.0
 

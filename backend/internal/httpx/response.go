@@ -7,7 +7,7 @@ import (
     "log/slog"
     "net/http"
 
-    "diary-listener/backend/internal/apierror"
+    "cortex/backend/internal/apierror"
 )
 
 func JSON(w http.ResponseWriter, status int, value any) {

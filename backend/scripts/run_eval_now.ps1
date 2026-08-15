@@ -59,7 +59,7 @@ Write-Host "`n[3] Waiting for indexing (max 5 min)..." -ForegroundColor Yellow
 $maxWait = 300
 for ($i = 0; $i -lt $maxWait; $i += 5) {
     Start-Sleep -Seconds 5
-    $pending = docker compose exec -T db psql -U diary_migrator -d diary_listener -t -A -c `
+    $pending = docker compose exec -T db psql -U cortex_migrator -d cortex -t -A -c `
         "SELECT count(*) FROM knowledge_documents d JOIN tenants t ON t.id = d.tenant_id JOIN users u ON u.id = t.user_id WHERE u.username='Diving' AND d.status NOT IN ('ready','failed') AND d.deleted_at IS NULL;"
     if ($pending.Trim() -eq "0") { break }
     Write-Host "  $pending pending ($($i+5)s)"

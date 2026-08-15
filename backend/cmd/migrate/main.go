@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"diary-listener/backend/internal/migrations"
+	"cortex/backend/internal/migrations"
 	"github.com/jackc/pgx/v5"
 )
 

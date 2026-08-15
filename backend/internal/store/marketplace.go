@@ -12,8 +12,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/domain"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -111,7 +111,7 @@ func validatePublicNickname(value string) bool {
 		return false
 	}
 	lower := strings.ToLower(strings.TrimSpace(value))
-	reserved := []string{"官方", "管理员", "客服", "diary listener", "diary-listener", "admin", "administrator", "support"}
+	reserved := []string{"官方", "管理员", "客服", "diary listener", "diary-listener", "cortex", "admin", "administrator", "support"}
 	for _, word := range reserved {
 		if lower == word || strings.Contains(lower, word) {
 			return false

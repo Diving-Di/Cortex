@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"diary-listener/backend/internal/ai"
+	"cortex/backend/internal/ai"
 )
 
 func TestWriteKnowledgeSSEPersistsPartialFailureWithoutDone(t *testing.T) {

@@ -4,7 +4,7 @@ import NoteEditor from './NoteEditor';
 import TemplatesPage from '../templates/TemplatesPage';
 
 export default function NotesPage() {
-  const preferred = localStorage.getItem('diary:notes-section');
+  const preferred = localStorage.getItem('cortex:notes-section');
   return (
     <Routes>
       <Route

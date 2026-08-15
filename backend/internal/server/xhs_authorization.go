@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/config"
-	"diary-listener/backend/internal/domain"
-	"diary-listener/backend/internal/httpx"
-	"diary-listener/backend/internal/research"
-	"diary-listener/backend/internal/secretbox"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/config"
+	"cortex/backend/internal/domain"
+	"cortex/backend/internal/httpx"
+	"cortex/backend/internal/research"
+	"cortex/backend/internal/secretbox"
+	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 

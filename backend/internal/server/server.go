@@ -14,13 +14,13 @@ import (
 	"sync"
 	"time"
 
-	"diary-listener/backend/internal/ai"
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/config"
-	"diary-listener/backend/internal/domain"
-	"diary-listener/backend/internal/httpx"
-	"diary-listener/backend/internal/rediscoord"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/ai"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/config"
+	"cortex/backend/internal/domain"
+	"cortex/backend/internal/httpx"
+	"cortex/backend/internal/rediscoord"
+	"cortex/backend/internal/store"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -278,10 +278,10 @@ const invalidPrincipalCache = "__invalid__"
 
 func authCacheKey(raw string) string {
 	digest := sha256.Sum256([]byte(raw))
-	return "diary:auth:principal:" + base64.RawURLEncoding.EncodeToString(digest[:])
+	return "cortex:auth:principal:" + base64.RawURLEncoding.EncodeToString(digest[:])
 }
 
-func tenantAuthVersionKey(id uuid.UUID) string { return "diary:auth:tenant-version:" + id.String() }
+func tenantAuthVersionKey(id uuid.UUID) string { return "cortex:auth:tenant-version:" + id.String() }
 
 func (s *Server) resolvePrincipal(ctx context.Context, raw string) (domain.Principal, error) {
 	key := authCacheKey(raw)

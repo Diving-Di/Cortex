@@ -16,11 +16,11 @@ import (
 	"syscall"
 	"time"
 
-	"diary-listener/backend/internal/ai"
-	"diary-listener/backend/internal/config"
-	"diary-listener/backend/internal/domain"
-	"diary-listener/backend/internal/rageval"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/ai"
+	"cortex/backend/internal/config"
+	"cortex/backend/internal/domain"
+	"cortex/backend/internal/rageval"
+	"cortex/backend/internal/store"
 )
 
 const evaluationUsername = "Diving"

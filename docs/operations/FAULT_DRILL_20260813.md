@@ -3,7 +3,7 @@
 ## 范围与安全边界
 
 演练使用临时合成租户、文档和 512 维零向量，不读取或输出私人正文。故障点位于新 chunks 已写入、
-`active_index_version` 尚未切换之间；生产入口不暴露该 fault point。测试仍使用 `diary_app`、`Store.WithTx`、
+`active_index_version` 尚未切换之间；生产入口不暴露该 fault point。测试仍使用 `cortex_app`、`Store.WithTx`、
 transaction-local RLS 和显式 `tenant_id` 条件。
 
 ## 实际时间线

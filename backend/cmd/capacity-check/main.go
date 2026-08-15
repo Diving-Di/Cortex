@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"diary-listener/backend/internal/config"
-	"diary-listener/backend/internal/domain"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/config"
+	"cortex/backend/internal/domain"
+	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

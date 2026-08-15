@@ -35,9 +35,9 @@ func TestRedisCoordinationIntegration(t *testing.T) {
 	defer func() {
 		keys := append(versionOne.DataKeys(), versionTwo.DataKeys()...)
 		keys = append(keys, versionStable.ActiveVersion, versionStable.BuildLock)
-		keys = append(keys, stock, claimed, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, loadStock, loadClaimed, loadWindow, loadEligible, loadPoints, loadPending, "test:cache:"+suffix, "test:rate:"+suffix, "diary:outbox:processed:event-"+suffix, "diary:outbox:processed:projection-"+suffix, "diary:outbox:processed:projection-next-"+suffix)
+		keys = append(keys, stock, claimed, preparedStock, preparedClaimed, preparedWindow, preparedEligible, preparedPoints, preparedPending, loadStock, loadClaimed, loadWindow, loadEligible, loadPoints, loadPending, "test:cache:"+suffix, "test:rate:"+suffix, "cortex:outbox:processed:event-"+suffix, "cortex:outbox:processed:projection-"+suffix, "cortex:outbox:processed:projection-next-"+suffix)
 		_ = c.Delete(ctx, keys...)
-		_, _ = c.commands(ctx, []string{"ZREM", "diary:tpl:rank:trending", "public-" + suffix})
+		_, _ = c.commands(ctx, []string{"ZREM", "cortex:tpl:rank:trending", "public-" + suffix})
 	}()
 	var accepted atomic.Int64
 	var wg sync.WaitGroup

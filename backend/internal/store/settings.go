@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/domain"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
 	"github.com/jackc/pgx/v5"
 )
 

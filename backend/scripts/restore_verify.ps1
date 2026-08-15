@@ -40,12 +40,12 @@ try {
     docker volume create $dbVolume | Out-Null
     docker volume create $appVolume | Out-Null
     docker run -d --name $dbContainer --network $network --network-alias db `
-        -e POSTGRES_DB=diary_listener -e POSTGRES_USER=diary_migrator -e "POSTGRES_PASSWORD=$dbPassword" `
+        -e POSTGRES_DB=cortex -e POSTGRES_USER=cortex_migrator -e "POSTGRES_PASSWORD=$dbPassword" `
         --mount "type=volume,source=$dbVolume,target=/var/lib/postgresql/data" `
         pgvector/pgvector:0.8.1-pg16-bookworm | Out-Null
     $ready = $false
     foreach ($attempt in 1..60) {
-        docker exec -e "PGPASSWORD=$dbPassword" $dbContainer pg_isready -U diary_migrator -d diary_listener 2>$null | Out-Null
+        docker exec -e "PGPASSWORD=$dbPassword" $dbContainer pg_isready -U cortex_migrator -d cortex 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) { $ready = $true; break }
         Start-Sleep -Seconds 1
     }
@@ -54,10 +54,10 @@ try {
     $restoreTimer = [Diagnostics.Stopwatch]::StartNew()
     docker run --rm --network $network -e "PGPASSWORD=$dbPassword" `
         --mount "type=bind,source=$backup,target=/backup,readonly" postgres:16.12-bookworm `
-        pg_restore -h db -U diary_migrator -d diary_listener --exit-on-error --no-owner --no-privileges "/backup/$($manifest.database.file)"
+        pg_restore -h db -U cortex_migrator -d cortex --exit-on-error --no-owner --no-privileges "/backup/$($manifest.database.file)"
     if ($LASTEXITCODE -ne 0) { throw "database restore failed" }
-    docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -v ON_ERROR_STOP=1 -U diary_migrator -d diary_listener `
-        -c "CREATE ROLE diary_app LOGIN PASSWORD '$appPassword'; GRANT CONNECT ON DATABASE diary_listener TO diary_app; GRANT USAGE ON SCHEMA public TO diary_app; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO diary_app; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO diary_app;"
+    docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -v ON_ERROR_STOP=1 -U cortex_migrator -d cortex `
+        -c "CREATE ROLE cortex_app LOGIN PASSWORD '$appPassword'; GRANT CONNECT ON DATABASE cortex TO cortex_app; GRANT USAGE ON SCHEMA public TO cortex_app; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO cortex_app; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO cortex_app;"
     if ($LASTEXITCODE -ne 0) { throw "low-privilege role creation failed" }
     $restoreTimer.Stop()
     $report.database_restore_seconds = [Math]::Round($restoreTimer.Elapsed.TotalSeconds, 3)
@@ -72,25 +72,25 @@ try {
 
     $migrationTimer = [Diagnostics.Stopwatch]::StartNew()
     docker run --rm --network $network --entrypoint /app/migrate `
-        -e "MIGRATION_DATABASE_URL=postgresql://diary_migrator:$dbPassword@db:5432/diary_listener" `
+        -e "MIGRATION_DATABASE_URL=postgresql://cortex_migrator:$dbPassword@db:5432/cortex" `
         cortex-backend -steps 0 up
     if ($LASTEXITCODE -ne 0) { throw "migration failed" }
     $migrationTimer.Stop()
     $report.migration_seconds = [Math]::Round($migrationTimer.Elapsed.TotalSeconds, 3)
 
     $checkTimer = [Diagnostics.Stopwatch]::StartNew()
-    $checks = docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U diary_migrator -d diary_listener -At `
+    $checks = docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
         -c "SELECT (SELECT count(*) FROM pg_tables WHERE schemaname='public'),COALESCE((SELECT max(version) FROM schema_migrations),0),(SELECT count(*) FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind='r' AND relrowsecurity),(SELECT count(*) FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind='r' AND relforcerowsecurity);"
     if ($LASTEXITCODE -ne 0) { throw "schema verification failed" }
     $values = $checks.Trim().Split('|')
     if ([int]$values[0] -lt [int]$manifest.public_table_count -or [int]$values[1] -lt [int]$manifest.migration_version -or [int]$values[2] -eq 0 -or [int]$values[3] -eq 0) { throw "schema, migration, or RLS verification failed" }
     docker run --rm --network $network -e "PGPASSWORD=$appPassword" postgres:16.12-bookworm `
-        psql -h db -U diary_app -d diary_listener -v ON_ERROR_STOP=1 -At -c "SELECT count(*) FROM notes" | Out-Null
+        psql -h db -U cortex_app -d cortex -v ON_ERROR_STOP=1 -At -c "SELECT count(*) FROM notes" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "low-privilege connection verification failed" }
 
     $pathsFile = Join-Path ([IO.Path]::GetTempPath()) "$prefix-paths.txt"
     try {
-        docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U diary_migrator -d diary_listener -At `
+        docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
             -c "SELECT stored_path FROM attachments UNION SELECT stored_path FROM knowledge_documents WHERE stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets UNION SELECT storage_path FROM research_assets" | Set-Content -LiteralPath $pathsFile -Encoding utf8NoBOM
         $counts = docker run --rm --mount "type=volume,source=$appVolume,target=/data,readonly" `
             --mount "type=bind,source=$pathsFile,target=/paths.txt,readonly" alpine:3.23 `
@@ -112,8 +112,8 @@ try {
 
     if (-not $SkipSmoke) {
         docker run -d --name $backendContainer --network $network -P `
-            -e "DATABASE_URL=postgresql://diary_app:$appPassword@db:5432/diary_listener" `
-            -e "MIGRATION_DATABASE_URL=postgresql://diary_migrator:$dbPassword@db:5432/diary_listener" `
+            -e "DATABASE_URL=postgresql://cortex_app:$appPassword@db:5432/cortex" `
+            -e "MIGRATION_DATABASE_URL=postgresql://cortex_migrator:$dbPassword@db:5432/cortex" `
             -e CORTEX_DATA_DIR=/app/data -e RESEARCH_ENABLED=false -e SCHEDULED_REPORTS_ENABLED=false `
             -e REDIS_URL=redis://invalid:6379/0 --mount "type=volume,source=$appVolume,target=/app/data" cortex-backend | Out-Null
         $port = $null

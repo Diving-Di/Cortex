@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Diary Listener recipe embedding", lifespan=lifespan)
+app = FastAPI(title="Cortex embedding", lifespan=lifespan)
 
 
 @app.get("/healthz")

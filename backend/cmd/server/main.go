@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"diary-listener/backend/internal/config"
-	"diary-listener/backend/internal/rediscoord"
-	"diary-listener/backend/internal/server"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/config"
+	"cortex/backend/internal/rediscoord"
+	"cortex/backend/internal/server"
+	"cortex/backend/internal/store"
 )
 
 var version = "dev"

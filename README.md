@@ -160,14 +160,14 @@ docker compose up -d --build
 
 ## 本地开发
 
-需要 Go、Node.js 20+、PostgreSQL 16 + pgvector，以及权限分离的 `diary_migrator` 和 `diary_app` 数据库角色。
+需要 Go、Node.js 20+、PostgreSQL 16 + pgvector，以及权限分离的 `cortex_migrator` 和 `cortex_app` 数据库角色。
 
 启动后端：
 
 ```powershell
 Set-Location backend
-$env:DATABASE_URL = "postgresql://diary_app:<app-password>@127.0.0.1:5432/diary_listener"
-$env:MIGRATION_DATABASE_URL = "postgresql://diary_migrator:<migrator-password>@127.0.0.1:5432/diary_listener"
+$env:DATABASE_URL = "postgresql://cortex_app:<app-password>@127.0.0.1:5432/cortex"
+$env:MIGRATION_DATABASE_URL = "postgresql://cortex_migrator:<migrator-password>@127.0.0.1:5432/cortex"
 $env:CORTEX_DATA_DIR = ".\data"
 go run ./cmd/server
 ```
@@ -188,7 +188,7 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 
 | 变量 | 用途 |
 | --- | --- |
-| `DATABASE_URL` | 业务连接，必须使用低权限 `diary_app` |
+| `DATABASE_URL` | 业务连接，必须使用低权限 `cortex_app` |
 | `MIGRATION_DATABASE_URL` | 迁移与 scheduler claim 使用的管理连接 |
 | `CORTEX_DATA_DIR` | 附件、知识文件和导出的数据根目录；旧 `DIARY_DATA_DIR` 仅作兼容回退 |
 | `MAX_ATTACHMENT_BYTES` | 单附件上限，默认 20 MiB |

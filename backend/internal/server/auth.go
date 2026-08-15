@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/auth"
-	"diary-listener/backend/internal/httpx"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/auth"
+	"cortex/backend/internal/httpx"
 )
 
 const authCookieName = "cortex_session"

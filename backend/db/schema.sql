@@ -995,7 +995,7 @@ CREATE TABLE public.schema_migrations (
 -- Name: TABLE schema_migrations; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.schema_migrations IS 'Diary Listener versioned migrations; modified only by cmd/migrate.';
+COMMENT ON TABLE public.schema_migrations IS 'Cortex versioned migrations; modified only by cmd/migrate.';
 
 
 --
@@ -3290,413 +3290,413 @@ CREATE POLICY xhs_authorizations_tenant_isolation ON public.xhs_authorizations U
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
 --
 
-GRANT USAGE ON SCHEMA public TO diary_app;
+GRANT USAGE ON SCHEMA public TO cortex_app;
 
 
 --
 -- Name: TABLE ai_providers; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ai_providers TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ai_providers TO cortex_app;
 
 
 --
 -- Name: SEQUENCE ai_providers_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.ai_providers_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.ai_providers_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE ai_usage_records; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ai_usage_records TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ai_usage_records TO cortex_app;
 
 
 --
 -- Name: SEQUENCE ai_usage_records_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.ai_usage_records_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.ai_usage_records_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE attachments; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.attachments TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.attachments TO cortex_app;
 
 
 --
 -- Name: SEQUENCE attachments_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.attachments_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.attachments_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE audit_logs; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.audit_logs TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.audit_logs TO cortex_app;
 
 
 --
 -- Name: SEQUENCE audit_logs_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.audit_logs_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.audit_logs_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE auth_tokens; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.auth_tokens TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.auth_tokens TO cortex_app;
 
 
 --
 -- Name: SEQUENCE auth_tokens_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.auth_tokens_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.auth_tokens_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE conversations; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.conversations TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.conversations TO cortex_app;
 
 
 --
 -- Name: SEQUENCE conversations_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.conversations_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.conversations_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE message_sources; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.message_sources TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.message_sources TO cortex_app;
 
 
 --
 -- Name: SEQUENCE message_sources_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.message_sources_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.message_sources_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE messages; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.messages TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.messages TO cortex_app;
 
 
 --
 -- Name: SEQUENCE messages_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.messages_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.messages_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE note_revisions; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.note_revisions TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.note_revisions TO cortex_app;
 
 
 --
 -- Name: SEQUENCE note_revisions_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.note_revisions_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.note_revisions_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE note_tags; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.note_tags TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.note_tags TO cortex_app;
 
 
 --
 -- Name: TABLE notes; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.notes TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.notes TO cortex_app;
 
 
 --
 -- Name: SEQUENCE notes_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.notes_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.notes_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE recipe_child_chunks; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT ON TABLE public.recipe_child_chunks TO diary_app;
+GRANT SELECT ON TABLE public.recipe_child_chunks TO cortex_app;
 
 
 --
 -- Name: SEQUENCE recipe_child_chunks_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.recipe_child_chunks_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.recipe_child_chunks_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE recipe_documents; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT ON TABLE public.recipe_documents TO diary_app;
+GRANT SELECT ON TABLE public.recipe_documents TO cortex_app;
 
 
 --
 -- Name: SEQUENCE recipe_documents_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.recipe_documents_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.recipe_documents_id_seq TO cortex_app;
 
 
 --
 -- Name: SEQUENCE recipe_index_jobs_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.recipe_index_jobs_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.recipe_index_jobs_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE recipe_message_sources; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT ON TABLE public.recipe_message_sources TO diary_app;
+GRANT SELECT,INSERT ON TABLE public.recipe_message_sources TO cortex_app;
 
 
 --
 -- Name: SEQUENCE recipe_message_sources_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.recipe_message_sources_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.recipe_message_sources_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE recipe_parent_chunks; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT ON TABLE public.recipe_parent_chunks TO diary_app;
+GRANT SELECT ON TABLE public.recipe_parent_chunks TO cortex_app;
 
 
 --
 -- Name: SEQUENCE recipe_parent_chunks_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.recipe_parent_chunks_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.recipe_parent_chunks_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE recipe_sync_runs; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT ON TABLE public.recipe_sync_runs TO diary_app;
+GRANT SELECT ON TABLE public.recipe_sync_runs TO cortex_app;
 
 
 --
 -- Name: SEQUENCE recipe_sync_runs_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.recipe_sync_runs_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.recipe_sync_runs_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE report_sources; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.report_sources TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.report_sources TO cortex_app;
 
 
 --
 -- Name: SEQUENCE report_sources_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.report_sources_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.report_sources_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE research_assets; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_assets TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_assets TO cortex_app;
 
 
 --
 -- Name: SEQUENCE research_assets_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.research_assets_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.research_assets_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE research_draft_revisions; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_draft_revisions TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_draft_revisions TO cortex_app;
 
 
 --
 -- Name: SEQUENCE research_draft_revisions_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.research_draft_revisions_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.research_draft_revisions_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE research_drafts; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_drafts TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_drafts TO cortex_app;
 
 
 --
 -- Name: SEQUENCE research_drafts_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.research_drafts_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.research_drafts_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE research_jobs; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_jobs TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_jobs TO cortex_app;
 
 
 --
 -- Name: SEQUENCE research_jobs_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.research_jobs_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.research_jobs_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE research_sources; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_sources TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.research_sources TO cortex_app;
 
 
 --
 -- Name: SEQUENCE research_sources_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.research_sources_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.research_sources_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE scheduled_report_runs; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.scheduled_report_runs TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.scheduled_report_runs TO cortex_app;
 
 
 --
 -- Name: SEQUENCE scheduled_report_runs_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.scheduled_report_runs_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.scheduled_report_runs_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE scheduled_report_tasks; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.scheduled_report_tasks TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.scheduled_report_tasks TO cortex_app;
 
 
 --
 -- Name: SEQUENCE scheduled_report_tasks_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.scheduled_report_tasks_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.scheduled_report_tasks_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE schema_migrations; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.schema_migrations TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.schema_migrations TO cortex_app;
 
 
 --
 -- Name: TABLE tags; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tags TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tags TO cortex_app;
 
 
 --
 -- Name: SEQUENCE tags_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.tags_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.tags_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE tenants; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tenants TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tenants TO cortex_app;
 
 
 --
 -- Name: TABLE user_preferences; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.user_preferences TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.user_preferences TO cortex_app;
 
 
 --
 -- Name: TABLE users; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.users TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.users TO cortex_app;
 
 
 --
 -- Name: SEQUENCE users_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.users_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.users_id_seq TO cortex_app;
 
 
 --
 -- Name: TABLE xhs_auth_attempts; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.xhs_auth_attempts TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.xhs_auth_attempts TO cortex_app;
 
 
 --
 -- Name: TABLE xhs_authorizations; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.xhs_authorizations TO diary_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.xhs_authorizations TO cortex_app;
 
 
 --
 -- Name: SEQUENCE xhs_authorizations_id_seq; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,USAGE ON SEQUENCE public.xhs_authorizations_id_seq TO diary_app;
+GRANT SELECT,USAGE ON SEQUENCE public.xhs_authorizations_id_seq TO cortex_app;
 
 -- Versions through 000015 are materialized in this baseline and recorded in
 -- schema_migrations above. Later versions are applied by cmd/migrate.

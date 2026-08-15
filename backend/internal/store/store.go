@@ -4,7 +4,7 @@ import (
     "context"
     "fmt"
 
-    "diary-listener/backend/internal/config"
+    "cortex/backend/internal/config"
     "github.com/jackc/pgx/v5"
     "github.com/jackc/pgx/v5/pgxpool"
 )

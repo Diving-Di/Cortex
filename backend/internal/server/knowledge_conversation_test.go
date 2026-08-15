@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/store"
 )
 
 func TestFormatKnowledgeConversationKeepsRecentCompleteTurnsWithinBudget(t *testing.T) {

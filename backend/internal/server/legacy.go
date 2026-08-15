@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/httpx"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/httpx"
+	"cortex/backend/internal/store"
 )
 
 type conversationRequest struct {

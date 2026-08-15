@@ -4,7 +4,7 @@ import (
 	"math"
 	"sort"
 
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/store"
 )
 
 type CalibrationPoint struct {

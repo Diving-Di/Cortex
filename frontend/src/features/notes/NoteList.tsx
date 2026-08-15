@@ -42,7 +42,7 @@ export default function NoteList() {
         <h1>笔记本</h1>
         <Button
           onClick={() => {
-            localStorage.setItem('diary:notes-section', 'templates');
+            localStorage.setItem('cortex:notes-section', 'templates');
             navigate('/notes');
           }}
         >

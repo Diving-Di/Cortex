@@ -16,7 +16,7 @@
 | 实测 RTO | 103.313 s |
 | 观测 RPO | 61 s |
 
-校验通过：55 张 public 表、migration 31、45 张 RLS 且 FORCE RLS 表、`diary_app` 低权限连接、
+校验通过：55 张 public 表、migration 31、45 张 RLS 且 FORCE RLS 表、`cortex_app` 低权限连接、
 DB→文件缺失 0、文件→DB 孤儿 0，以及注册/登录/Token/租户隔离/附件/导出/软删除 smoke。
 
 演练同时发现源卷有 85 个 knowledge 和 2 个 research 历史孤儿（合计约 1.63 MiB）。未删除这些用户数据；

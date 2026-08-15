@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"diary-listener/backend/internal/config"
+	"cortex/backend/internal/config"
 )
 
 func TestBrowserLoginResponseDoesNotExposeToken(t *testing.T) {

@@ -7,10 +7,10 @@ import (
 	"os"
 	"time"
 
-	"diary-listener/backend/internal/ai"
-	"diary-listener/backend/internal/config"
-	"diary-listener/backend/internal/knowledge"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/ai"
+	"cortex/backend/internal/config"
+	"cortex/backend/internal/knowledge"
+	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 

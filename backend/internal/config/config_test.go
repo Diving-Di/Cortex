@@ -6,8 +6,8 @@ import (
 )
 
 func TestLoadKnowledgeIndexDefaults(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgresql://diary_app:test@localhost/diary")
-	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://diary_migrator:test@localhost/diary")
+	t.Setenv("DATABASE_URL", "postgresql://cortex_app:test@localhost/diary")
+	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://cortex_migrator:test@localhost/diary")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -24,8 +24,8 @@ func TestLoadKnowledgeIndexDefaults(t *testing.T) {
 }
 
 func TestCortexDataDirTakesPrecedenceOverLegacyAlias(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgresql://diary_app:test@localhost/diary")
-	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://diary_migrator:test@localhost/diary")
+	t.Setenv("DATABASE_URL", "postgresql://cortex_app:test@localhost/diary")
+	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://cortex_migrator:test@localhost/diary")
 	t.Setenv("CORTEX_DATA_DIR", "./cortex-data")
 	t.Setenv("DIARY_DATA_DIR", "./legacy-data")
 	cfg, err := Load()
@@ -39,8 +39,8 @@ func TestCortexDataDirTakesPrecedenceOverLegacyAlias(t *testing.T) {
 }
 
 func TestLegacyDataDirRemainsCompatible(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgresql://diary_app:test@localhost/diary")
-	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://diary_migrator:test@localhost/diary")
+	t.Setenv("DATABASE_URL", "postgresql://cortex_app:test@localhost/diary")
+	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://cortex_migrator:test@localhost/diary")
 	t.Setenv("CORTEX_DATA_DIR", "")
 	t.Setenv("DIARY_DATA_DIR", "./legacy-data")
 	cfg, err := Load()

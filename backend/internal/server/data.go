@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"diary-listener/backend/internal/httpx"
+	"cortex/backend/internal/httpx"
 )
 
 var unsafeFilename = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)

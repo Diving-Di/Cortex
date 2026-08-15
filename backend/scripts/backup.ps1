@@ -1,8 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
     [string]$ComposeProject = "cortex",
-    [string]$DatabaseVolume = "diary-listener_db_data",
-    [string]$AppDataVolume = "diary-listener_app_data"
+    [string]$DatabaseVolume = "cortex_db_data_v2",
+    [string]$AppDataVolume = "cortex_app_data_v2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,12 +28,12 @@ $timer = [Diagnostics.Stopwatch]::StartNew()
 
 docker run --rm --network $network -e "PGPASSWORD=$dbPassword" `
     --mount "type=bind,source=$target,target=/backup" postgres:16.12-bookworm `
-    pg_dump -h $dbAlias -U diary_migrator -d diary_listener -Fc --no-owner --no-privileges -f /backup/database.dump
+    pg_dump -h $dbAlias -U cortex_migrator -d cortex -Fc --no-owner --no-privileges -f /backup/database.dump
 if ($LASTEXITCODE -ne 0) { throw "database backup failed" }
 
 $pathList = Join-Path $target ".referenced-paths.txt"
 try {
-    docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U diary_migrator -d diary_listener -At `
+    docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
         -c "SELECT stored_path FROM attachments UNION SELECT stored_path FROM knowledge_documents WHERE stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets UNION SELECT storage_path FROM research_assets ORDER BY 1" | Set-Content -LiteralPath $pathList -Encoding utf8NoBOM
     docker run --rm --mount "type=volume,source=$AppDataVolume,target=/data,readonly" `
         --mount "type=bind,source=$target,target=/backup" alpine:3.23 `
@@ -44,7 +44,7 @@ try {
     Remove-Item -LiteralPath $pathList -Force -ErrorAction SilentlyContinue
 }
 
-$snapshot = docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U diary_migrator -d diary_listener -At `
+$snapshot = docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
     -c "SELECT clock_timestamp() AT TIME ZONE 'UTC',COALESCE(max(version),0),(SELECT count(*) FROM pg_tables WHERE schemaname='public') FROM schema_migrations"
 if ($LASTEXITCODE -ne 0 -or -not $snapshot) { throw "backup metadata query failed" }
 $parts = $snapshot.Trim().Split('|')

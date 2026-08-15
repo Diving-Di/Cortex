@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"diary-listener/backend/internal/apierror"
+	"cortex/backend/internal/apierror"
 )
 
 func TestValidateTemplateInput(t *testing.T) {

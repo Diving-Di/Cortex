@@ -85,7 +85,7 @@ if (-not $settings.configured) {
 $chat = Invoke-AIStream "/api/v1/ai/stream" `
     @{ prompt = "只回复：连接成功" } $login.token
 $organizedText = Invoke-AIStream "/api/v1/ai/organize" `
-    @{ content = "今天完成了 Diary Listener 的 Go 迁移验收，并验证了租户隔离。"; style = "structured" } `
+    @{ content = "今天完成了 Cortex 的 Go 迁移验收，并验证了租户隔离。"; style = "structured" } `
     $login.token
 $organized = Invoke-RestMethod "$BaseURL/api/v1/ai/organize/confirm" `
     -Method Post -Headers $headers -ContentType "application/json" `

@@ -12,11 +12,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"diary-listener/backend/internal/config"
-	"diary-listener/backend/internal/domain"
-	"diary-listener/backend/internal/research"
-	"diary-listener/backend/internal/secretbox"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/config"
+	"cortex/backend/internal/domain"
+	"cortex/backend/internal/research"
+	"cortex/backend/internal/secretbox"
+	"cortex/backend/internal/store"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/storage"
@@ -249,9 +249,9 @@ func captureAuthorizationQRCode(ctx context.Context, path string) error {
 			});
 		}
 		if (!target) return false;
-		document.querySelectorAll('[data-diary-xhs-qr]').forEach((element) =>
-			element.removeAttribute('data-diary-xhs-qr'));
-		target.setAttribute('data-diary-xhs-qr', 'true');
+		document.querySelectorAll('[data-cortex-xhs-qr]').forEach((element) =>
+			element.removeAttribute('data-cortex-xhs-qr'));
+		target.setAttribute('data-cortex-xhs-qr', 'true');
 		return true;
 	})()`
 	if err := chromedp.Run(ctx,
@@ -260,7 +260,7 @@ func captureAuthorizationQRCode(ctx context.Context, path string) error {
 		return fmt.Errorf("xhs login qr element not found")
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.Screenshot(`[data-diary-xhs-qr="true"]`, &screenshot, chromedp.ByQuery),
+		chromedp.Screenshot(`[data-cortex-xhs-qr="true"]`, &screenshot, chromedp.ByQuery),
 	); err != nil {
 		return err
 	}

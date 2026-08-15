@@ -1,4 +1,4 @@
-# Diary Listener 执行规范
+# Cortex 执行规范
 
 本文件适用于整个仓库。实现、审查、测试和发布均须遵守；若子目录以后增加更具体的 `AGENTS.md`，以更具体的文件为补充，但不得削弱本文的安全边界。
 
@@ -23,10 +23,10 @@
 
 - 每个账号对应一个由服务端解析的个人租户。客户端提交的 `tenant_id` 不可信，不得用于选择租户。
 - 租户业务查询必须通过 `Store.WithTx`，并在同一个 `pgx.Tx` 中设置 transaction-local RLS 用户与租户上下文，同时保留显式 `tenant_id` 条件。
-- `DATABASE_URL` 必须使用低权限 `diary_app`；`MIGRATION_DATABASE_URL` 仅供迁移和 scheduler claim，使用 `diary_migrator`。
+- `DATABASE_URL` 必须使用低权限 `cortex_app`；`MIGRATION_DATABASE_URL` 仅供迁移和 scheduler claim，使用 `cortex_migrator`。
 - 跨租户资源访问统一表现为 404；软删除租户不得通过登录或 Token 认证。
 - `backend/db/schema.sql` 是新实例初始化基线。已部署结构的变化必须新增版本化迁移，使用 advisory lock；不得用应用启动时的临时 DDL 代替迁移。
-- 附件只保存 `DIARY_DATA_DIR` 下的安全相对路径，上传须校验大小和配额，下载/删除须认证并阻止目录穿越。附件不得作为公开静态目录暴露。
+- 附件只保存 `CORTEX_DATA_DIR` 下的安全相对路径，上传须校验大小和配额，下载/删除须认证并阻止目录穿越。附件不得作为公开静态目录暴露；`DIARY_DATA_DIR` 仅作旧部署升级兼容。
 - 周报日期归一到周一，月报日期归一到月初；周期笔记按租户、类型和周期日期唯一。
 
 ## 4. AI 与网关边界
@@ -34,7 +34,7 @@
 - AI 是可选能力；AI 未配置或不可用时，笔记、搜索、附件和导出必须保持可用。
 - `AIClient` 只负责模型流，`Retriever` 只在可信 Principal/RLS 下检索，`AIWorkflow` 负责编排；Prompt、确认、引用校验、配额、审计和 RLS 保留在业务层。
 - 整理与报告必须先生成草稿、后由确认接口写入；报告和成长助手回答必须校验并保存当前租户的来源。无来源报告返回 `REPORT_NO_SOURCES`，成长助手无依据时返回 `KNOWLEDGE_NO_EVIDENCE`。
-- 后端仅持有 LiteLLM 虚拟密钥并使用逻辑模型 `diary-default`；供应商真实 Key 只注入 LiteLLM，不得进入前端、URL、Cookie、日志、审计、数据库业务字段、备份或文档。
+- 后端仅持有 LiteLLM 虚拟密钥并使用逻辑模型 `cortex-default`；供应商真实 Key 只注入 LiteLLM，不得进入前端、URL、Cookie、日志、审计、数据库业务字段、备份或文档。
 - 不得绕过网关直连供应商。流式响应已经输出内容后不得从头重试。缓存默认关闭，禁止跨租户共享 Prompt/响应缓存。
 - 发送到网关的观测元数据只能包含后端生成的非直接身份标识、请求类型、环境和请求追踪 ID；不得包含邮箱、姓名或完整正文。
 

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"diary-listener/backend/internal/rediscoord"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/rediscoord"
+	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -81,7 +81,7 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 					Visitor string `json:"visitor"`
 				}{Delta: 1}
 				_ = json.Unmarshal(event.Payload, &payload)
-				_ = redis.Delete(ctx, "diary:tpl:detail:"+event.AggregateID)
+				_ = redis.Delete(ctx, "cortex:tpl:detail:"+event.AggregateID)
 				projection, projectionErr := db.GetTemplateEventProjection(ctx, event.AggregateID)
 				if projectionErr != nil {
 					err = projectionErr

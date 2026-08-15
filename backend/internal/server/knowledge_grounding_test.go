@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/store"
 )
 
 func TestFilterRerankEvidenceUsesOnlyConfiguredThreshold(t *testing.T) {

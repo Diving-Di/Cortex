@@ -19,7 +19,7 @@ test('opens the template marketplace by default', () => {
 });
 
 test('restores the latest notes section choice', async () => {
-  localStorage.setItem('diary:notes-section', 'list');
+  localStorage.setItem('cortex:notes-section', 'list');
   render(
     <MemoryRouter initialEntries={['/']}>
       <NotesPage />

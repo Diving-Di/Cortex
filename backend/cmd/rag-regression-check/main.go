@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"diary-listener/backend/internal/ragregression"
+	"cortex/backend/internal/ragregression"
 )
 
 func main() {

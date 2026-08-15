@@ -4,7 +4,7 @@
 > 上游仓库：<https://github.com/icey1287/SuperMew.git>  
 > 分析基线：提交 `f997821db835c9c080accaf1f78c2c4a602fe4b7`（2026-07-11）  
 > 分析日期：2026-08-13  
-> 对照项目：Cortex（Diary Listener）
+> 对照项目：Cortex
 
 ## 1. 结论摘要
 
@@ -121,7 +121,7 @@ SuperMew 会用低延迟模型判断问题复杂度；复杂问题被拆分为�
 建议 Cortex 不直接加入通用 Agent 图，而是：
 
 1. 先限定到明确的复杂查询类型，如比较、趋势、跨周期汇总。
-2. 规则快速路径优先；仅在必要时调用 `diary-default` 生成结构化子查询。
+2. 规则快速路径优先；仅在必要时调用 `cortex-default` 生成结构化子查询。
 3. 子问题数量硬限制为 2–4 个，并设置总 token、总检索次数和总时限。
 4. 每个子问题仍通过可信 Principal 与同一事务级 RLS 约束检索。
 5. 合成前去重来源，最终答案逐项校验引用，部分证据只能生成明确标注的部分回答。
@@ -176,7 +176,7 @@ SuperMew 的 L1/L2/L3 分块和命中阈值式向上合并，适合长 PDF、Wor
 | 任务状态保存在进程内 map | 重启丢失，不支持多实例一致 claim | 保持数据库 job、`FOR UPDATE SKIP LOCKED` 与有限租约 |
 | JWT 有默认回退密钥且仅自包含校验 | 默认密钥存在安全风险，难以支持服务端撤销和最后使用时间 | 保持 Token 摘要持久化、过期、撤销与软删除租户校验 |
 | 业务数据仅按 user 外键隔离，无 RLS | 不满足 Cortex 租户安全边界 | 所有租户查询继续使用 `Store.WithTx`、transaction-local RLS 与显式 tenant 条件 |
-| 上传文件按原文件名直接落盘 | 存在覆盖、路径穿越、配额与隔离风险 | 保持 `DIARY_DATA_DIR` 下安全相对路径、大小/配额/压缩比校验 |
+| 上传文件按原文件名直接落盘 | 存在覆盖、路径穿越、配额与隔离风险 | 保持 `CORTEX_DATA_DIR` 下安全相对路径、大小/配额/压缩比校验 |
 | API 错误直接拼接异常字符串 | 可能泄漏内部路径、服务地址和上游响应 | 保持稳定 `code/message/details`，日志和响应均脱敏 |
 | Compose 暴露 PostgreSQL、Redis、Milvus、MinIO 等端口 | 扩大攻击面，与 Cortex 部署规范冲突 | `db`、`redis`、`llm-gateway` 不暴露宿主端口，后端降权运行 |
 | Agent 可选用通用外部模型配置 | 可能绕过 LiteLLM 网关和元数据限制 | 所有模型流继续只经 LiteLLM，后端仅持有虚拟密钥和逻辑模型 |

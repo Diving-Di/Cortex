@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"diary-listener/backend/internal/domain"
+	"cortex/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

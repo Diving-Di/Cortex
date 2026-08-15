@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/domain"
-	"diary-listener/backend/internal/research"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
+	"cortex/backend/internal/research"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

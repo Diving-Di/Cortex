@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($Password)) {
-    $securePassword = Read-Host "Diary Listener password" -AsSecureString
+    $securePassword = Read-Host "Cortex password" -AsSecureString
     $credential = [pscredential]::new($Username, $securePassword)
     $Password = $credential.GetNetworkCredential().Password
 }

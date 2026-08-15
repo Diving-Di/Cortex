@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/domain"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

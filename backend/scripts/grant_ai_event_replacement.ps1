@@ -38,7 +38,7 @@ FROM updated u JOIN recorded r ON r.aggregate_id = u.public_id::text;
 COMMIT;
 '@
 
-$result = $sql | docker compose exec -T db psql -U diary_migrator -d diary_listener `
+$result = $sql | docker compose exec -T db psql -U cortex_migrator -d cortex `
     -v ON_ERROR_STOP=1 `
     -v "event_id=$EventID" `
     -v "replacement_count=$Count" `

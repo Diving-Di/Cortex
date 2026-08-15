@@ -38,10 +38,10 @@ for ($index = 0; $index -lt 12; $index++) {
 }
 
 $eventID = $participants[0].EventID
-docker compose exec -T db psql -U diary_migrator -d diary_listener -v ON_ERROR_STOP=1 `
+docker compose exec -T db psql -U cortex_migrator -d cortex -v ON_ERROR_STOP=1 `
     -c "UPDATE ai_flash_events SET opens_at=now()-interval '1 second',closes_at=now()+interval '10 minutes',status='scheduled' WHERE public_id='$eventID'::uuid AND claimed_slots=0" | Out-Null
 # Acceptance runs are repeatable: discard only this event's rebuildable Redis projection.
-docker compose exec -T redis sh -c "REDISCLI_AUTH=`$REDIS_PASSWORD redis-cli --scan --pattern 'diary:ai-event:{$eventID}*' | xargs -r env REDISCLI_AUTH=`$REDIS_PASSWORD redis-cli del" | Out-Null
+docker compose exec -T redis sh -c "REDISCLI_AUTH=`$REDIS_PASSWORD redis-cli --scan --pattern 'cortex:ai-event:{$eventID}*' | xargs -r env REDISCLI_AUTH=`$REDIS_PASSWORD redis-cli del" | Out-Null
 docker compose restart backend | Out-Null
 Wait-ServiceHealthy "backend"
 Start-Sleep -Seconds 3
@@ -74,7 +74,7 @@ if ($accepted -ne 10 -or $rejected -ne 2) {
     throw "unexpected claim results: accepted=$accepted rejected=$rejected statuses=$($results.Status -join ',')"
 }
 
-$facts = docker compose exec -T db psql -U diary_migrator -d diary_listener -At -F ',' -c `
+$facts = docker compose exec -T db psql -U cortex_migrator -d cortex -At -F ',' -c `
     "SELECT e.claimed_slots,count(DISTINCT c.tenant_id),count(DISTINCT j.id),(SELECT count(*) FROM ai_point_ledger l WHERE l.entry_type='grant' AND l.reference_type='ai_flash_event_reward' AND l.reference_id=e.public_id::text) FROM ai_flash_events e LEFT JOIN ai_flash_claims c ON c.event_id=e.id LEFT JOIN ai_event_jobs j ON j.claim_id=c.id WHERE e.public_id='$eventID'::uuid GROUP BY e.id,e.public_id,e.claimed_slots"
 $parts = $facts.Trim().Split(',')
 if ($parts.Count -ne 4 -or [int]$parts[0] -ne 10 -or [int]$parts[1] -ne 10 -or [int]$parts[2] -ne 0 -or [int]$parts[3] -ne 10) {

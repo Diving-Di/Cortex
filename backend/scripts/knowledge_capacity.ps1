@@ -24,8 +24,8 @@ $dirty = if (git -C $repoRoot status --porcelain) { "true" } else { "false" }
 $outputName = [IO.Path]::GetFileName($output)
 
 docker run --rm --network cortex_default `
-    -e "DATABASE_URL=postgresql://diary_app:$appPassword@db:5432/diary_listener" `
-    -e "MIGRATION_DATABASE_URL=postgresql://diary_migrator:$migrationPassword@db:5432/diary_listener" `
+    -e "DATABASE_URL=postgresql://cortex_app:$appPassword@db:5432/cortex" `
+    -e "MIGRATION_DATABASE_URL=postgresql://cortex_migrator:$migrationPassword@db:5432/cortex" `
     -e "CAPACITY_GIT_COMMIT=$commit" -e "CAPACITY_GIT_DIRTY=$dirty" `
     --mount "type=bind,source=$backendPath,target=/src" `
     --mount "type=bind,source=$artifactPath,target=/artifacts" `

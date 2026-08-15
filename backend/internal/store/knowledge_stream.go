@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/domain"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"

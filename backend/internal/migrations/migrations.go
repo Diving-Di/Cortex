@@ -17,6 +17,28 @@ import (
 
 const advisoryLockID int64 = 0x44494152594d4947
 
+var cortexRoleReplacer = strings.NewReplacer(
+	"diary_app", "cortex_app",
+	"diary_migrator", "cortex_migrator",
+)
+
+var acceptedLegacyChecksums = map[int64]map[string]struct{}{
+	10: {"e0fa4cb4fe22b92551fe9666520742e681870d79f76a1fffc776b1dddcb8936e": {}},
+	11: {"01046b8740695e346c9399bf49df09eb19b9c03a71906473de9fab157cc667cc": {}},
+}
+
+func executableSQL(sql string) string {
+	return cortexRoleReplacer.Replace(sql)
+}
+
+func checksumAccepted(version int64, applied, current string) bool {
+	if applied == current {
+		return true
+	}
+	_, ok := acceptedLegacyChecksums[version][applied]
+	return ok
+}
+
 //go:embed sql/*.sql
 var migrationFiles embed.FS
 
@@ -145,7 +167,7 @@ func Up(ctx context.Context, conn *pgx.Conn, limit int) (int, error) {
 	count := 0
 	for _, migration := range available {
 		if item, ok := known[migration.Version]; ok {
-			if item.Checksum != migration.Checksum {
+			if !checksumAccepted(migration.Version, item.Checksum, migration.Checksum) {
 				return count, fmt.Errorf("migration %d checksum changed after application", migration.Version)
 			}
 			continue
@@ -157,7 +179,7 @@ func Up(ctx context.Context, conn *pgx.Conn, limit int) (int, error) {
 		if err != nil {
 			return count, err
 		}
-		if _, err = tx.Exec(ctx, migration.UpSQL); err == nil {
+		if _, err = tx.Exec(ctx, executableSQL(migration.UpSQL)); err == nil {
 			_, err = tx.Exec(ctx, `INSERT INTO public.schema_migrations(version, name, checksum) VALUES ($1, $2, $3)`,
 				migration.Version, migration.Name, migration.Checksum)
 		}
@@ -200,7 +222,7 @@ func Down(ctx context.Context, conn *pgx.Conn, steps int) (int, error) {
 		if err != nil {
 			return count, err
 		}
-		if _, err = tx.Exec(ctx, migration.DownSQL); err == nil {
+		if _, err = tx.Exec(ctx, executableSQL(migration.DownSQL)); err == nil {
 			_, err = tx.Exec(ctx, `DELETE FROM public.schema_migrations WHERE version = $1`, migration.Version)
 		}
 		if err != nil {

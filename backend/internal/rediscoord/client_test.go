@@ -9,7 +9,7 @@ import (
 func TestAIEventKeysKeepClusterTagAndVersion(t *testing.T) {
 	stable := AIEventKeys("event-1", "")
 	versioned := AIEventKeys("event-1", "v123")
-	if stable.ActiveVersion != "diary:ai-event:{event-1}:active_version" {
+	if stable.ActiveVersion != "cortex:ai-event:{event-1}:active_version" {
 		t.Fatalf("active key=%q", stable.ActiveVersion)
 	}
 	for _, key := range versioned.DataKeys() {

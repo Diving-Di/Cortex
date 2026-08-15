@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"diary-listener/backend/internal/config"
+	"cortex/backend/internal/config"
 )
 
 func TestRouterStartsAndServesHealth(t *testing.T) {

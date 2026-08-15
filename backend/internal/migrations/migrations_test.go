@@ -38,3 +38,23 @@ func TestAppliedMigrationChecksumsRemainStable(t *testing.T) {
 		t.Fatalf("expected migrations are missing: %#v", expected)
 	}
 }
+
+func TestExecutableSQLMapsLegacyDatabaseRoles(t *testing.T) {
+	input := "GRANT SELECT ON notes TO diary_app; ALTER DEFAULT PRIVILEGES FOR ROLE diary_migrator;"
+	want := "GRANT SELECT ON notes TO cortex_app; ALTER DEFAULT PRIVILEGES FOR ROLE cortex_migrator;"
+	if got := executableSQL(input); got != want {
+		t.Fatalf("executableSQL() = %q, want %q", got, want)
+	}
+}
+
+func TestChecksumAcceptedOnlyAllowsKnownLegacyValues(t *testing.T) {
+	if !checksumAccepted(10, "e0fa4cb4fe22b92551fe9666520742e681870d79f76a1fffc776b1dddcb8936e", "current") {
+		t.Fatal("known migration 10 checksum was rejected")
+	}
+	if checksumAccepted(10, "unknown", "current") {
+		t.Fatal("unknown checksum was accepted")
+	}
+	if !checksumAccepted(99, "same", "same") {
+		t.Fatal("matching checksum was rejected")
+	}
+}

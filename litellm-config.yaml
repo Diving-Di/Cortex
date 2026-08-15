@@ -5,19 +5,19 @@ model_list:
       api_base: os.environ/LOCAL_EMBEDDING_BASE_URL
       api_key: os.environ/LOCAL_EMBEDDING_API_KEY
       timeout: 60
-  - model_name: diary-default
+  - model_name: cortex-default
     litellm_params:
       model: deepseek/deepseek-chat
       api_base: https://api.deepseek.com/v1
       api_key: os.environ/DEEPSEEK_API_KEY
       timeout: 60
-  - model_name: diary-kimi-fallback
+  - model_name: cortex-kimi-fallback
     litellm_params:
       model: openai/kimi-k2.5
       api_base: https://api.moonshot.cn/v1
       api_key: os.environ/KIMI_API_KEY
       timeout: 60
-  - model_name: diary-openai-fallback
+  - model_name: cortex-openai-fallback
     litellm_params:
       model: openai/gpt-5.6
       api_base: https://api.openai.com/v1
@@ -30,9 +30,9 @@ litellm_settings:
   num_retries: 1
   request_timeout: 60
   fallbacks:
-    - diary-default:
-        - diary-kimi-fallback
-        - diary-openai-fallback
+    - cortex-default:
+        - cortex-kimi-fallback
+        - cortex-openai-fallback
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

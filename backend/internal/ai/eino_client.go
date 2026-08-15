@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"diary-listener/backend/internal/apierror"
+	"cortex/backend/internal/apierror"
 	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
@@ -63,7 +63,7 @@ func (c *EinoClient) StreamChain(
 	runner, err := compose.NewChain[map[string]any, *schema.Message]().
 		AppendChatTemplate(template).
 		AppendChatModel(chatModel).
-		Compile(ctx, compose.WithGraphName("diary-"+operation))
+		Compile(ctx, compose.WithGraphName("cortex-"+operation))
 	if err != nil {
 		return nil, stableEinoError(ctx, err)
 	}

@@ -29,7 +29,7 @@ type AIEventVersionKeys struct {
 }
 
 func AIEventKeys(eventID, version string) AIEventVersionKeys {
-	base := "diary:ai-event:{" + eventID + "}"
+	base := "cortex:ai-event:{" + eventID + "}"
 	suffix := ""
 	if version != "" {
 		suffix = ":" + version
@@ -332,7 +332,7 @@ func (c *Client) ApplyTemplateEvent(ctx context.Context, eventID, publicID, even
 	zone, _ := time.LoadLocation("Asia/Shanghai")
 	day := at.In(zone).Format("20060102")
 	script := `if not redis.call('SET',KEYS[1],'1','NX','EX',ARGV[1]) then return 0 end local t=ARGV[2] local d=tonumber(ARGV[3]) if t=='template.published' then redis.call('ZADD',KEYS[2],ARGV[4],ARGV[5]) elseif t=='template.like' then redis.call('ZINCRBY',KEYS[3],3*d,ARGV[5]) elseif t=='template.favorite' then redis.call('ZINCRBY',KEYS[3],5*d,ARGV[5]) elseif t=='template.used' then redis.call('ZINCRBY',KEYS[3],8*d,ARGV[5]) elseif t=='template.viewed' then redis.call('ZINCRBY',KEYS[3],d,ARGV[5]) redis.call('ZINCRBY',KEYS[4],d,ARGV[5]) if ARGV[6]~='' then redis.call('PFADD',KEYS[5],ARGV[6]) end end return 1`
-	_, err := c.commands(ctx, []string{"EVAL", script, "5", "diary:outbox:processed:" + eventID, "diary:tpl:rank:new", "diary:tpl:rank:trending", "diary:tpl:rank:daily:" + day, "diary:tpl:uv:" + publicID + ":" + day, "691200", eventType, strconv.FormatInt(delta, 10), strconv.FormatInt(at.Unix(), 10), publicID, visitor})
+	_, err := c.commands(ctx, []string{"EVAL", script, "5", "cortex:outbox:processed:" + eventID, "cortex:tpl:rank:new", "cortex:tpl:rank:trending", "cortex:tpl:rank:daily:" + day, "cortex:tpl:uv:" + publicID + ":" + day, "691200", eventType, strconv.FormatInt(delta, 10), strconv.FormatInt(at.Unix(), 10), publicID, visitor})
 	return err
 }
 
@@ -351,7 +351,7 @@ func (c *Client) ApplyTemplateProjection(ctx context.Context, eventID, publicID,
 		return err
 	}
 	script := `if not redis.call('SET',KEYS[1],'1','NX','EX',ARGV[1]) then return 0 end redis.call('ZADD',KEYS[2],ARGV[2],ARGV[5]) redis.call('ZADD',KEYS[3],ARGV[3],ARGV[5]) redis.call('ZADD',KEYS[4],ARGV[4],ARGV[5]) redis.call('EXPIRE',KEYS[4],ARGV[8]) if ARGV[6]=='template.viewed' and ARGV[7]~='' then redis.call('PFADD',KEYS[5],ARGV[7]) redis.call('EXPIRE',KEYS[5],ARGV[8]) end return 1`
-	_, err = c.commands(ctx, []string{"EVAL", script, "5", "diary:outbox:processed:" + eventID, newKey, trendingKey, TemplateRankingKey("daily", day), "diary:tpl:uv:" + publicID + ":" + day, "691200", strconv.FormatInt(publishedAt.Unix(), 10), strconv.FormatFloat(trending, 'f', -1, 64), strconv.FormatFloat(daily, 'f', -1, 64), publicID, eventType, visitor, "691200"})
+	_, err = c.commands(ctx, []string{"EVAL", script, "5", "cortex:outbox:processed:" + eventID, newKey, trendingKey, TemplateRankingKey("daily", day), "cortex:tpl:uv:" + publicID + ":" + day, "691200", strconv.FormatInt(publishedAt.Unix(), 10), strconv.FormatFloat(trending, 'f', -1, 64), strconv.FormatFloat(daily, 'f', -1, 64), publicID, eventType, visitor, "691200"})
 	return err
 }
 
@@ -361,7 +361,7 @@ func (c *Client) DeleteTemplateProjections(ctx context.Context, publicID string)
 		return err
 	}
 	if !ok {
-		return c.Delete(ctx, "diary:tpl:detail:"+publicID)
+		return c.Delete(ctx, "cortex:tpl:detail:"+publicID)
 	}
 	trendingKey, _, err := c.ActiveTemplateRankingKey(ctx, "trending", "")
 	if err != nil {
@@ -370,7 +370,7 @@ func (c *Client) DeleteTemplateProjections(ctx context.Context, publicID string)
 	_, err = c.commands(ctx,
 		[]string{"ZREM", newKey, publicID},
 		[]string{"ZREM", trendingKey, publicID},
-		[]string{"DEL", "diary:tpl:detail:" + publicID})
+		[]string{"DEL", "cortex:tpl:detail:" + publicID})
 	return err
 }
 
@@ -407,7 +407,7 @@ func (c *Client) Score(ctx context.Context, key, member string) (float64, bool, 
 }
 
 func (c *Client) TemplateUniqueVisitors(ctx context.Context, publicID, day string) (int64, error) {
-	r, err := c.commands(ctx, []string{"PFCOUNT", "diary:tpl:uv:" + publicID + ":" + day})
+	r, err := c.commands(ctx, []string{"PFCOUNT", "cortex:tpl:uv:" + publicID + ":" + day})
 	if err != nil {
 		return 0, err
 	}
@@ -482,13 +482,13 @@ type RankingProjection struct {
 	TrendingScore float64
 }
 
-const templateRankingActiveKey = "diary:tpl:rank:active_version"
+const templateRankingActiveKey = "cortex:tpl:rank:active_version"
 
 func TemplateRankingKey(ranking, version string) string {
 	if ranking == "daily" {
-		return "diary:tpl:rank:daily:" + version
+		return "cortex:tpl:rank:daily:" + version
 	}
-	return "diary:tpl:rank:{global}:" + ranking + ":" + version
+	return "cortex:tpl:rank:{global}:" + ranking + ":" + version
 }
 
 func (c *Client) ActiveTemplateRankingKey(ctx context.Context, ranking string, day string) (string, bool, error) {

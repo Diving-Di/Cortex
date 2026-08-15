@@ -32,8 +32,8 @@ env/
 .venv/
 
 # Backend runtime data
-backend/diary.sqlite3
-backend/diary.sqlite3-journal
+backend/cortex.sqlite3
+backend/cortex.sqlite3-journal
 backend/media/
 *.log
 

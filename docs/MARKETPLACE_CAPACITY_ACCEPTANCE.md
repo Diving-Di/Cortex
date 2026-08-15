@@ -24,7 +24,7 @@ docker stop cortex-marketplace-acceptance-redis
 === RUN   TestRedisCoordinationIntegration
 --- PASS: TestRedisCoordinationIntegration (0.50s)
 PASS
-ok diary-listener/backend/internal/rediscoord 0.506s
+ok cortex/backend/internal/rediscoord 0.506s
 ```
 
 线上性能数字仍需固定数据集、HTTP 压测客户端、连接池/数据库/Redis 指标和 p50/p95/p99 原始输出后才能发布。

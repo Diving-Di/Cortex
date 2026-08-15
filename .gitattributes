@@ -1,0 +1,2 @@
+*.sh text eol=lf
+backend/internal/migrations/sql/*.sql text eol=lf

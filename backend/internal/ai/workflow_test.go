@@ -47,7 +47,7 @@ func collectEvents(events <-chan StreamEvent) (string, error) {
 
 func TestWorkflowUsesEinoPromptChainForAllOperations(t *testing.T) {
 	m := &workflowModel{chunks: []string{`{"title":"标题","summary":"摘要","content":"正文"}`}}
-	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "diary-default"}
+	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "cortex-default"}
 
 	events, err := workflow.Organize(context.Background(), "不可信原文", "structured")
 	if err != nil {
@@ -88,7 +88,7 @@ func TestWorkflowUsesEinoPromptChainForAllOperations(t *testing.T) {
 
 func TestOrganizeRejectsInvalidStructuredOutputBeforeEmittingContent(t *testing.T) {
 	m := &workflowModel{chunks: []string{`{"title":`, `"broken"}`}}
-	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "diary-default"}
+	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "cortex-default"}
 	events, err := workflow.Organize(context.Background(), "content", "structured")
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestWorkflowMapsTimeoutWithoutLeakingUpstreamError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 0)
 	defer cancel()
 	m := &workflowModel{err: errors.New("upstream secret response")}
-	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "diary-default"}
+	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "cortex-default"}
 	_, err := workflow.GenerateReport(ctx, "material")
 	if !errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "secret") {
 		t.Fatalf("error = %v", err)
@@ -120,7 +120,7 @@ func TestExtractCitedClaimsRejectsMissingUnknownAndDuplicateCitations(t *testing
 
 func TestRewriteKnowledgeQueryResolvesFollowUpAndProtectsNewTopic(t *testing.T) {
 	m := &workflowModel{chunks: []string{`{"classification":"follow_up","query":"知识索引任务的 Worker 租约过期后如何处理？"}`}}
-	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "diary-default"}
+	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "cortex-default"}
 	result, err := workflow.RewriteKnowledgeQuery(context.Background(), "它过期后怎么办？", "用户：介绍租约\n助手：租约为五分钟")
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestRewriteKnowledgeQueryResolvesFollowUpAndProtectsNewTopic(t *testing.T) 
 
 func TestVerifierAcceptsFencedJSONAndNormalizedResult(t *testing.T) {
 	m := &workflowModel{chunks: []string{"```json\n{\"results\":[{\"claim\":\"租约为五分钟 [K1]\",\"result\":\" Entailed \"}]}\n```"}}
-	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "diary-default"}
+	workflow := Workflow{Client: &EinoClient{Model: m}, Model: "cortex-default"}
 	failures, err := workflow.verifyKnowledgeText(context.Background(), "租约为五分钟 [K1]。", []KnowledgeEvidence{{Citation: "K1", Content: "租约为五分钟"}})
 	if err != nil || len(failures) != 0 {
 		t.Fatalf("failures=%#v err=%v", failures, err)

@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"diary-listener/backend/internal/knowledge"
+	"cortex/backend/internal/knowledge"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

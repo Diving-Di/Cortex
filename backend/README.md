@@ -1,7 +1,7 @@
 # Cortex Go Backend
 
 Cortex 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。Go module、环境变量、
-数据库角色与数据目录继续保留旧技术标识（`diary-*` / `CORTEX_DATA_DIR`）。
+数据库角色、数据库名与数据目录统一使用 `cortex-*` / `CORTEX_DATA_DIR`；`DIARY_DATA_DIR` 仅作旧部署升级兼容。
 
 主要能力：
 
@@ -26,7 +26,7 @@ go build ./cmd/migrate
 服务启动时不会自动修改数据库。发布前使用迁移角色显式执行：
 
 ```powershell
-$env:MIGRATION_DATABASE_URL = "postgresql://diary_migrator:<password>@127.0.0.1:5432/diary_listener"
+$env:MIGRATION_DATABASE_URL = "postgresql://cortex_migrator:<password>@127.0.0.1:5432/cortex"
 go run ./cmd/migrate status
 go run ./cmd/migrate -steps=0 up
 go run ./cmd/migrate -steps=1 down
@@ -37,7 +37,7 @@ go run ./cmd/migrate -steps=1 down
 独立事务中执行，并校验已应用迁移的 SHA-256。
 
 LiteLLM 首次启动后，用 `scripts/provision-litellm-key.ps1` 签发仅允许
-`diary-default`、`cortex-embedding` 且带预算的虚拟密钥。传入
+`cortex-default`、`cortex-embedding` 且带预算的虚拟密钥。传入
 `-EnvironmentFile ..\..\.env` 可在不显示 key 的情况下原子更新本地 Compose
 Secret；生产环境应将值写入其 Secret 管理系统。应用不得使用 `LITELLM_MASTER_KEY`。
 
@@ -54,13 +54,13 @@ docker compose up --build
 运行时配置：
 
 ```text
-DATABASE_URL=postgresql://diary_app:<password>@db:5432/diary_listener
-MIGRATION_DATABASE_URL=postgresql://diary_migrator:<password>@db:5432/diary_listener
+DATABASE_URL=postgresql://cortex_app:<password>@db:5432/cortex
+MIGRATION_DATABASE_URL=postgresql://cortex_migrator:<password>@db:5432/cortex
 CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
 LISTEN_ADDRESS=0.0.0.0:8000
 AI_BASE_URL=http://llm-gateway:4000/v1
 AI_API_KEY=<gateway-key>
-AI_MODEL=diary-default
+AI_MODEL=cortex-default
 RAG_EMBEDDING_BASE_URL=http://embedding-service:4000/v1
 RAG_EMBEDDING_MODEL=iic/nlp_gte_sentence-embedding_chinese-small
 RAG_EMBEDDING_DIMENSIONS=512
@@ -74,7 +74,7 @@ RAG_CONTEXT_PARENT_TOP_K=4
 RAG_RERANK_MIN_SCORE=              # 由当前 reranker/embedding/评估集校准；留空不启用绝对分门控
 RAG_RERANK_MIN_MARGIN=             # 可选 Top1-Top2 分差门槛；留空不启用
 RAG_MIN_QUALIFIED_EVIDENCE=1
-RAG_VERIFIER_MODEL=diary-default
+RAG_VERIFIER_MODEL=cortex-default
 ```
 
 知识库全文通道使用应用层确定性 Unicode 2-gram：汉字连续片段生成相邻二元 token，英文和数字

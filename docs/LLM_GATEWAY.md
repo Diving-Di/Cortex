@@ -90,9 +90,9 @@ Cortex 后端
 
 | 逻辑模型 | 顺序 | 实际上游 | 用途 |
 | --- | ---: | --- | --- |
-| `diary-default` | 1 | DeepSeek `deepseek-chat` | 主模型；已通过真实 SSE、整理、报告和回忆验收 |
-| `diary-kimi-fallback` | 2 | Kimi `kimi-k2.5` | 第一备用，由 LiteLLM 在主模型失败时调度 |
-| `diary-openai-fallback` | 3 | OpenAI `gpt-5.6` | 第二备用；当前本地 OpenAI 账户为 `insufficient_quota` |
+| `cortex-default` | 1 | DeepSeek `deepseek-chat` | 主模型；已通过真实 SSE、整理、报告和回忆验收 |
+| `cortex-kimi-fallback` | 2 | Kimi `kimi-k2.5` | 第一备用，由 LiteLLM 在主模型失败时调度 |
+| `cortex-openai-fallback` | 3 | OpenAI `gpt-5.6` | 第二备用；当前本地 OpenAI 账户为 `insufficient_quota` |
 
 LiteLLM 配置以 DeepSeek 为主路由，并依次将 Kimi、OpenAI 放入 fallback。OpenAI 额度恢复前，OpenAI fallback 只用于验证路由行为，不作为可用性保障。
 
@@ -103,14 +103,14 @@ Cortex 后端继续只读取以下部署配置：
 ```env
 AI_BASE_URL=http://llm-gateway:4000/v1
 AI_API_KEY=<网关签发的虚拟密钥>
-AI_MODEL=diary-default
+AI_MODEL=cortex-default
 ```
 
 规则：
 
 - `AI_BASE_URL` 指向网关，不直接指向模型供应商。
 - `AI_API_KEY` 是网关虚拟密钥，不是供应商真实密钥。
-- `AI_MODEL` 优先使用稳定的逻辑模型名，例如 `diary-default`。
+- `AI_MODEL` 优先使用稳定的逻辑模型名，例如 `cortex-default`。
 - 供应商地址、真实密钥、部署名、权重和备用路由只在网关配置中维护。
 - API Key 不进入前端状态、浏览器存储、URL、Cookie、数据库业务字段、日志或审计详情。
 - 网关管理端口不得公开暴露；仅应用调用端口允许在内部网络访问。
@@ -142,18 +142,18 @@ child 文本和查询文本会发送给内部 Embedding 服务。精排由内部
 网关至少配置一个逻辑模型：
 
 ```text
-diary-default
+cortex-default
   1. 主模型
   2. 同等能力的备用模型或备用部署
 ```
 
 不同任务需要独立路由时，可增加：
 
-- `diary-chat`：交互式流式生成，优先低首 token 延迟。
-- `diary-organize`：笔记整理和结构化输出，优先遵循指令能力。
-- `diary-report`：周期报告，允许更长上下文和较长超时。
+- `cortex-chat`：交互式流式生成，优先低首 token 延迟。
+- `cortex-organize`：笔记整理和结构化输出，优先遵循指令能力。
+- `cortex-report`：周期报告，允许更长上下文和较长超时。
 
-首期可以全部映射到 `diary-default`，但名称应允许未来拆分。
+首期可以全部映射到 `cortex-default`，但名称应允许未来拆分。
 
 可靠性规则：
 
@@ -268,7 +268,7 @@ normalized_request_hash
 | --- | --- |
 | LiteLLM 健康检查 | `healthy` |
 | Go 后端通过网关启动 | `healthy` |
-| 后端模型配置 | `diary-default` |
+| 后端模型配置 | `cortex-default` |
 | 通用 SSE | 通过，4 个字符 |
 | AI 整理与确认 | 通过，196 个字符并落库 |
 | 报告生成与引用回查 | 通过，130 个字符、1 个来源 |
@@ -280,7 +280,7 @@ normalized_request_hash
 LiteLLM 已使用独立管理数据库。业务后端通过 `LITELLM_VIRTUAL_KEY` 访问网关；
 `LITELLM_MASTER_KEY` 仅用于管理。`backend/scripts/provision-litellm-key.ps1`
 负责签发只允许业务所需逻辑模型且具有预算周期的虚拟密钥；当前 Backend 的生成请求使用
-`diary-default`，菜谱 Embedding 由内部 `embedding-service` 提供；
+`cortex-default`，菜谱 Embedding 由内部 `embedding-service` 提供；
 默认不显示 key，传入 `-EnvironmentFile` 时可原子更新被忽略的本地 Compose
 环境文件。生产发布仍应接入平台 Secret 管理系统。
 

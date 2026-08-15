@@ -1,4 +1,4 @@
-const CACHE = 'diary-listener-shell-v1';
+const CACHE = 'cortex-shell-v1';
 const SHELL = ['/', '/offline.html', '/manifest.webmanifest', '/icons/app-icon.svg'];
 self.addEventListener('install', (event) =>
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL))),

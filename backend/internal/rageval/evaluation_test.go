@@ -6,8 +6,8 @@ import (
 	"math"
 	"testing"
 
-	"diary-listener/backend/internal/ai"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/ai"
+	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 

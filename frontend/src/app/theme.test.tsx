@@ -42,7 +42,7 @@ describe('ThemeProvider', () => {
     );
     fireEvent.click(screen.getByText('dark'));
     expect(screen.getByText('dark:dark')).toBeInTheDocument();
-    expect(localStorage.getItem('diary-listener.theme')).toBe('dark');
+    expect(localStorage.getItem('cortex.theme')).toBe('dark');
     expect(document.documentElement.dataset.theme).toBe('dark');
   });
 
@@ -56,6 +56,17 @@ describe('ThemeProvider', () => {
     systemDark = true;
     act(() => listeners.forEach((listener) => listener()));
     expect(screen.getByText('system:dark')).toBeInTheDocument();
+  });
+
+  it('migrates the legacy stored theme', () => {
+    localStorage.setItem('diary-listener.theme', 'dark');
+    render(
+      <ThemeProvider>
+        <Controls />
+      </ThemeProvider>,
+    );
+    expect(screen.getByText('dark:dark')).toBeInTheDocument();
+    expect(localStorage.getItem('cortex.theme')).toBe('dark');
   });
 
   it('falls back to system for an invalid stored value', () => {

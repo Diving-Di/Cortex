@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"diary-listener/backend/internal/apierror"
+	"cortex/backend/internal/apierror"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/schema"
 )

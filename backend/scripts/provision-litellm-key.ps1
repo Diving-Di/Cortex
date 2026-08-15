@@ -4,7 +4,7 @@ param(
     [string]$MasterKey,
     [decimal]$MaxBudget = 100,
     [string]$BudgetDuration = "30d",
-    [string]$KeyAlias = "diary-listener",
+    [string]$KeyAlias = "cortex",
     [string]$EnvironmentFile,
     [switch]$ShowKey
 )
@@ -16,11 +16,11 @@ $headers = @{
 }
 $body = @{
     key_alias = $KeyAlias
-    models = @("diary-default", "cortex-embedding")
+    models = @("cortex-default", "cortex-embedding")
     max_budget = $MaxBudget
     budget_duration = $BudgetDuration
     metadata = @{
-        application = "diary-listener"
+        application = "cortex"
         managed_by = "backend/scripts/provision-litellm-key.ps1"
     }
 } | ConvertTo-Json -Depth 5

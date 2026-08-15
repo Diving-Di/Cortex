@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"diary-listener/backend/internal/rediscoord"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/rediscoord"
+	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 

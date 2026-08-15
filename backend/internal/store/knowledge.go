@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"diary-listener/backend/internal/apierror"
-	"diary-listener/backend/internal/domain"
-	"diary-listener/backend/internal/knowledge"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
+	"cortex/backend/internal/knowledge"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

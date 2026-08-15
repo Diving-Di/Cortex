@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"diary-listener/backend/internal/domain"
+	"cortex/backend/internal/domain"
 	"github.com/jackc/pgx/v5"
 )
 

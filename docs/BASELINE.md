@@ -37,8 +37,8 @@
 ## 数据规则
 
 - PostgreSQL 是笔记正文的唯一权威来源。
-- `DATABASE_URL` 使用低权限 `diary_app`。
-- `MIGRATION_DATABASE_URL` 使用 `diary_migrator`，仅供版本化迁移和调度 claim。
+- `DATABASE_URL` 使用低权限 `cortex_app`。
+- `MIGRATION_DATABASE_URL` 使用 `cortex_migrator`，仅供版本化迁移和调度 claim。
 - 每次租户业务查询必须在同一个 `pgx.Tx` 内设置 transaction-local RLS 上下文。
 - 客户端不得提交或选择可信 `tenant_id`。
 - `backend/db/schema.sql` 是经过空库验收的初始化基线。

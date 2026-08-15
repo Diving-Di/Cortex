@@ -19,11 +19,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"diary-listener/backend/internal/ai"
-	"diary-listener/backend/internal/config"
-	"diary-listener/backend/internal/domain"
-	"diary-listener/backend/internal/research"
-	"diary-listener/backend/internal/store"
+	"cortex/backend/internal/ai"
+	"cortex/backend/internal/config"
+	"cortex/backend/internal/domain"
+	"cortex/backend/internal/research"
+	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 

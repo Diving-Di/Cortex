@@ -36,7 +36,7 @@ func TestEinoClientPreservesAIClientStreamingContract(t *testing.T) {
 	model := &fakeEinoModel{}
 	client := &EinoClient{Model: model}
 	events, err := client.StreamChat(context.Background(), ChatRequest{
-		Model: "diary-default",
+		Model: "cortex-default",
 		Messages: []Message{
 			{Role: "system", Content: "规则"},
 			{Role: "user", Content: "问题"},
@@ -62,7 +62,7 @@ func TestEinoClientPreservesAIClientStreamingContract(t *testing.T) {
 
 func TestEinoClientReturnsStableGatewayErrors(t *testing.T) {
 	client := &EinoClient{Model: &fakeEinoModel{err: errors.New("upstream 429 secret body")}}
-	_, err := client.StreamChat(context.Background(), ChatRequest{Model: "diary-default"})
+	_, err := client.StreamChat(context.Background(), ChatRequest{Model: "cortex-default"})
 	if err == nil || !strings.Contains(err.Error(), "AI_RATE_LIMITED") ||
 		strings.Contains(err.Error(), "secret") {
 		t.Fatalf("error = %v", err)
