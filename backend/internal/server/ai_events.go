@@ -73,11 +73,16 @@ func aiEventPathID(r *http.Request) (uuid.UUID, error) {
 	return id, nil
 }
 func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
+	totalStarted := time.Now()
+	defer func() { observeAIEventStage(&aiEventClaimTotalNanos, &aiEventClaimTotalCount, totalStarted) }()
+	rateStarted := time.Now()
 	if !s.allowUserRequest(r, "ai-event-claim", 3, time.Minute) {
+		observeAIEventStage(&aiEventClaimRateNanos, &aiEventClaimRateCount, rateStarted)
 		aiEventClaimsError.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("RATE_LIMITED", "领取请求过于频繁", 429))
 		return
 	}
+	observeAIEventStage(&aiEventClaimRateNanos, &aiEventClaimRateCount, rateStarted)
 	eventID, err := aiEventPathID(r)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -89,13 +94,14 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := principalFrom(r.Context())
-	if s.redis == nil {
+	if s.claimRedis == nil {
 		s.claimAIEventFallback(w, r, principal, eventID, requestID)
 		return
 	}
 	member := aiEventReservationMember(principal.TenantID)
+	redisStarted := time.Now()
 	stable := rediscoord.AIEventKeys(eventID.String(), "")
-	version, ok, redisErr := s.redis.Get(r.Context(), stable.ActiveVersion)
+	version, ok, redisErr := s.claimRedis.Get(r.Context(), stable.ActiveVersion)
 	if redisErr == nil && !ok {
 		redisErr = errors.New("AI event projection is not active")
 	}
@@ -103,19 +109,22 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 	var keys rediscoord.AIEventVersionKeys
 	if redisErr == nil {
 		keys = rediscoord.AIEventKeys(eventID.String(), version)
-		reserved, redisErr = s.redis.ReservePreparedVersioned(r.Context(), keys, version, member)
+		reserved, redisErr = s.claimRedis.ReservePreparedVersioned(r.Context(), keys, version, member)
 		if redisErr == nil && reserved == rediscoord.VersionChanged {
 			aiEventProjectionVersionChanged.Add(1)
-			if version, ok, redisErr = s.redis.Get(r.Context(), stable.ActiveVersion); redisErr == nil && ok {
+			if version, ok, redisErr = s.claimRedis.Get(r.Context(), stable.ActiveVersion); redisErr == nil && ok {
 				keys = rediscoord.AIEventKeys(eventID.String(), version)
-				reserved, redisErr = s.redis.ReservePreparedVersioned(r.Context(), keys, version, member)
+				reserved, redisErr = s.claimRedis.ReservePreparedVersioned(r.Context(), keys, version, member)
 			}
 		}
 	}
 	if redisErr != nil {
+		observeAIEventStage(&aiEventClaimRedisNanos, &aiEventClaimRedisCount, redisStarted)
+		aiEventClaimRedisErrors.Add(1)
 		s.claimAIEventFallback(w, r, principal, eventID, requestID)
 		return
 	}
+	observeAIEventStage(&aiEventClaimRedisNanos, &aiEventClaimRedisCount, redisStarted)
 	if reserved == -1 {
 		aiEventClaimsError.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_UNAVAILABLE", "活动领取尚未就绪", 503))
@@ -156,14 +165,33 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusOK, x)
 		return
 	}
+	dbStarted := time.Now()
+	queueCtx, queueCancel := context.WithTimeout(r.Context(), s.cfg.AIEventClaimQueueTimeout)
+	defer queueCancel()
+	select {
+	case s.aiEventClaimSlots <- struct{}{}:
+		defer func() { <-s.aiEventClaimSlots }()
+	case <-queueCtx.Done():
+		_ = s.claimRedis.Compensate(r.Context(), keys.Stock, keys.Claimed, keys.Window, keys.Points, keys.Pending, member)
+		aiEventClaimCapacityBusy.Add(1)
+		aiEventClaimsError.Add(1)
+		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_BUSY", "领取请求繁忙，请稍后重试", 503))
+		return
+	}
 	x, err := s.store.ClaimAIEventReserved(r.Context(), principal, eventID, requestID, version)
+	observeAIEventStage(&aiEventClaimDBNanos, &aiEventClaimDBCount, dbStarted)
 	if err != nil {
-		_ = s.redis.Compensate(r.Context(), keys.Stock, keys.Claimed, keys.Window, keys.Points, keys.Pending, member)
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			aiEventClaimDBTimeouts.Add(1)
+		}
+		_ = s.claimRedis.Compensate(r.Context(), keys.Stock, keys.Claimed, keys.Window, keys.Points, keys.Pending, member)
 		aiEventClaimsError.Add(1)
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	_ = s.redis.ConfirmReservation(r.Context(), keys.Pending, member)
+	confirmStarted := time.Now()
+	_ = s.claimRedis.ConfirmReservation(r.Context(), keys.Pending, member)
+	observeAIEventStage(&aiEventClaimConfirmNanos, &aiEventClaimConfirmCount, confirmStarted)
 	aiEventClaimsReserved.Add(1)
 	httpx.JSON(w, http.StatusOK, x)
 }
@@ -173,6 +201,7 @@ func (s *Server) claimAIEventFallback(w http.ResponseWriter, r *http.Request, pr
 	open := time.Now().Before(s.aiEventBreakerUntil)
 	s.aiEventBreakerMu.Unlock()
 	if open {
+		aiEventClaimFallbackBusy.Add(1)
 		aiEventClaimsError.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_UNAVAILABLE", "活动领取暂不可用", 503))
 		return
@@ -181,6 +210,7 @@ func (s *Server) claimAIEventFallback(w http.ResponseWriter, r *http.Request, pr
 	case s.aiEventFallbackSlots <- struct{}{}:
 		defer func() { <-s.aiEventFallbackSlots }()
 	default:
+		aiEventClaimFallbackBusy.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_BUSY", "领取请求繁忙，请稍后重试", 503))
 		return
 	}
@@ -245,11 +275,43 @@ func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, 
 	coord, _ := rediscoord.New(cfg.RedisURL)
 	builder := &aiEventProjectionBuilder{redis: coord, batchSize: cfg.AIEventBuildBatchSize, lease: cfg.AIEventBuildLease}
 	go func() {
-		ticker := time.NewTicker(time.Minute)
+		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
+			if err := db.ReconcileAIEventClaimCounts(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("reconcile AI event claimed slots", "error", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		var active *store.AIEventReservationState
+		for {
 			_ = db.EnsureDailyAIEvent(ctx, time.Now())
+			now := time.Now()
+			if active != nil && !now.Before(active.OpensAt) && now.Before(active.ClosesAt) && coord != nil {
+				stable := rediscoord.AIEventKeys(active.PublicID.String(), "")
+				if _, ok, err := coord.Get(ctx, stable.ActiveVersion); err == nil && ok {
+					aiEventProjectionBuildSkippedOpen.Add(1)
+					if err := db.SetAIEventReservationReady(ctx, active.PublicID, true); err != nil {
+						logger.Error("update AI event reservation readiness", "error", err)
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						continue
+					}
+				}
+			}
 			if state, err := db.GetAIEventReservationState(ctx); err == nil {
+				active = &state
 				ready := false
 				if coord != nil {
 					if err := builder.Build(ctx, state); err != nil {

@@ -60,6 +60,7 @@ type AIEventReservationState struct {
 	Remaining         int
 	Tenants           []uuid.UUID
 	Eligible          []AIEventEligibleTenant
+	SnapshotVersion   uuid.UUID
 }
 
 type AIEventEligibleTenant struct {
@@ -76,6 +77,12 @@ func (s *Store) GetAIEventReservationState(ctx context.Context) (AIEventReservat
 	var monthlyGrant int64
 	err := s.AdminPool.QueryRow(ctx, `SELECT e.id,e.public_id,e.event_date,e.timezone,e.opens_at,e.closes_at,e.total_slots,e.claimed_slots,e.points_cost,e.required_streak_days,s.monthly_grant_points FROM ai_flash_events e JOIN ai_flash_event_settings s ON s.id=1 WHERE e.event_date >= (now() AT TIME ZONE e.timezone)::date AND e.status NOT IN('paused','cancelled') ORDER BY e.event_date LIMIT 1`).Scan(&eventID, &x.PublicID, &eventDate, &timezone, &x.OpensAt, &x.ClosesAt, &total, &claimed, &x.PointsReward, &required, &monthlyGrant)
 	if err != nil {
+		return x, err
+	}
+	if err := s.PrepareAIEventInventory(ctx, eventID, total); err != nil {
+		return x, err
+	}
+	if err := s.AdminPool.QueryRow(ctx, `SELECT count(*) FROM ai_flash_event_inventory_slots WHERE event_id=$1 AND tenant_id IS NOT NULL`, eventID).Scan(&claimed); err != nil {
 		return x, err
 	}
 	x.Remaining = max(0, total-claimed)
@@ -95,15 +102,29 @@ func (s *Store) GetAIEventReservationState(ctx context.Context) (AIEventReservat
 		GROUP BY tenant_id,local_date`, timezone, eventDate, required, x.OpensAt); err != nil {
 		return x, err
 	}
+	x.SnapshotVersion = uuid.New()
+	periodStart := time.Date(eventDate.Year(), eventDate.Month(), 1, 0, 0, 0, 0, eventDate.Location())
+	if _, err = statsTx.Exec(ctx, `INSERT INTO ai_point_accounts(tenant_id,period_start,granted_points)
+		SELECT t.id,$1,$2 FROM tenants t WHERE t.status='active' AND t.deleted_at IS NULL
+		AND (SELECT count(*) FROM tenant_daily_writing_stats d WHERE d.tenant_id=t.id AND d.timezone=$3 AND d.local_date BETWEEN $4::date-($5::int-1) AND $4::date AND d.eligible_note_count>0)=$5
+		ON CONFLICT(tenant_id) DO UPDATE SET period_start=EXCLUDED.period_start,granted_points=EXCLUDED.granted_points,consumed_points=0,held_points=0,version=ai_point_accounts.version+1,updated_at=now()
+		WHERE ai_point_accounts.period_start<>EXCLUDED.period_start AND ai_point_accounts.held_points=0`, periodStart, monthlyGrant, timezone, eventDate, required); err != nil {
+		return x, err
+	}
+	if _, err = statsTx.Exec(ctx, `DELETE FROM ai_flash_event_eligibilities WHERE event_id=$1`, eventID); err != nil {
+		return x, err
+	}
+	if _, err = statsTx.Exec(ctx, `INSERT INTO ai_flash_event_eligibilities(event_id,tenant_id,streak_days,available_points,snapshot_version)
+		SELECT $1,t.id,$2,GREATEST(0,a.granted_points-a.consumed_points-a.held_points),$3
+		FROM tenants t JOIN ai_point_accounts a ON a.tenant_id=t.id
+		WHERE t.status='active' AND t.deleted_at IS NULL AND a.period_start=$4
+		AND (SELECT count(*) FROM tenant_daily_writing_stats d WHERE d.tenant_id=t.id AND d.timezone=$5 AND d.local_date BETWEEN $6::date-($2::int-1) AND $6::date AND d.eligible_note_count>0)=$2`, eventID, required, x.SnapshotVersion, periodStart, timezone, eventDate); err != nil {
+		return x, err
+	}
 	if err = statsTx.Commit(ctx); err != nil {
 		return x, err
 	}
-	eligibleRows, err := s.AdminPool.Query(ctx, `SELECT t.id,CASE
-		WHEN a.tenant_id IS NULL THEN $3::bigint
-		WHEN to_char(a.period_start,'YYYY-MM')=to_char($1::date,'YYYY-MM') THEN GREATEST(0,a.granted_points-a.consumed_points-a.held_points)
-		WHEN a.held_points=0 THEN $3::bigint ELSE 0 END
-		FROM tenants t LEFT JOIN ai_point_accounts a ON a.tenant_id=t.id
-		WHERE t.status='active' AND t.deleted_at IS NULL AND (SELECT count(*) FROM tenant_daily_writing_stats d WHERE d.tenant_id=t.id AND d.timezone=$2 AND d.local_date BETWEEN $1::date-($4::int-1) AND $1::date AND d.eligible_note_count>0)=$4`, eventDate, timezone, monthlyGrant, required)
+	eligibleRows, err := s.AdminPool.Query(ctx, `SELECT tenant_id,available_points FROM ai_flash_event_eligibilities WHERE event_id=$1 AND snapshot_version=$2`, eventID, x.SnapshotVersion)
 	if err != nil {
 		return x, err
 	}
@@ -136,6 +157,19 @@ func (s *Store) GetAIEventReservationState(ctx context.Context) (AIEventReservat
 
 func (s *Store) SetAIEventReservationReady(ctx context.Context, publicID uuid.UUID, ready bool) error {
 	_, err := s.AdminPool.Exec(ctx, `UPDATE ai_flash_events SET reservation_ready=$2,updated_at=now() WHERE public_id=$1 AND status NOT IN('cancelled')`, publicID, ready)
+	return err
+}
+
+func (s *Store) PrepareAIEventInventory(ctx context.Context, eventID int64, total int) error {
+	if _, err := s.AdminPool.Exec(ctx, `INSERT INTO ai_flash_event_inventory_slots(event_id,slot_number) SELECT $1,generate_series(1,$2) ON CONFLICT DO NOTHING`, eventID, total); err != nil {
+		return err
+	}
+	_, err := s.AdminPool.Exec(ctx, `DELETE FROM ai_flash_event_inventory_slots WHERE event_id=$1 AND slot_number>$2 AND tenant_id IS NULL`, eventID, total)
+	return err
+}
+
+func (s *Store) ReconcileAIEventClaimCounts(ctx context.Context) error {
+	_, err := s.AdminPool.Exec(ctx, `UPDATE ai_flash_events e SET claimed_slots=x.claimed,updated_at=now() FROM (SELECT e2.id,COALESCE(count(s.slot_number) FILTER(WHERE s.tenant_id IS NOT NULL),0)::integer claimed FROM ai_flash_events e2 LEFT JOIN ai_flash_event_inventory_slots s ON s.event_id=e2.id GROUP BY e2.id) x WHERE e.id=x.id AND e.claimed_slots<>x.claimed`)
 	return err
 }
 
@@ -290,13 +324,12 @@ func (s *Store) claimAIEvent(ctx context.Context, p domain.Principal, publicID, 
 			return err
 		}
 		var eventID int64
-		var date time.Time
-		var zone, eventStatus string
+		var eventStatus string
 		var reservationReady bool
 		var opens, closes time.Time
-		var slots, required int
+		var slots int
 		var cost int64
-		if err := tx.QueryRow(ctx, `SELECT id,event_date,timezone,opens_at,closes_at,total_slots,points_cost,required_streak_days,status,reservation_ready FROM ai_flash_events WHERE public_id=$1`, publicID).Scan(&eventID, &date, &zone, &opens, &closes, &slots, &cost, &required, &eventStatus, &reservationReady); errors.Is(err, pgx.ErrNoRows) {
+		if err := tx.QueryRow(ctx, `SELECT id,opens_at,closes_at,total_slots,points_cost,status,reservation_ready FROM ai_flash_events WHERE public_id=$1`, publicID).Scan(&eventID, &opens, &closes, &slots, &cost, &eventStatus, &reservationReady); errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("AI_EVENT_NOT_FOUND", "活动不存在", 404)
 		} else if err != nil {
 			return err
@@ -324,15 +357,14 @@ func (s *Store) claimAIEvent(ctx context.Context, p domain.Principal, publicID, 
 		if reusedRequest {
 			return apierror.New("IDEMPOTENCY_KEY_REUSED", "幂等键已用于其他活动", 409)
 		}
-		streak, err := aiEventStreakDays(ctx, tx, p, date, zone, opens, required)
-		if err != nil {
+		var streak int
+		if err := tx.QueryRow(ctx, `SELECT streak_days FROM ai_flash_event_eligibilities WHERE event_id=$1 AND tenant_id=$2`, eventID, p.TenantID).Scan(&streak); errors.Is(err, pgx.ErrNoRows) {
+			return apierror.New("AI_EVENT_INELIGIBLE", "连续记录天数不足", 409)
+		} else if err != nil {
 			return err
 		}
-		if streak < required {
-			return apierror.New("AI_EVENT_INELIGIBLE", "连续记录天数不足", 409)
-		}
-		var claimedSlots int
-		if err := tx.QueryRow(ctx, `UPDATE ai_flash_events SET claimed_slots=claimed_slots+1,updated_at=now() WHERE id=$1 AND claimed_slots<total_slots RETURNING claimed_slots`, eventID).Scan(&claimedSlots); errors.Is(err, pgx.ErrNoRows) {
+		var slotNumber int
+		if err := tx.QueryRow(ctx, `SELECT slot_number FROM ai_flash_event_inventory_slots WHERE event_id=$1 AND tenant_id IS NULL ORDER BY slot_number FOR UPDATE SKIP LOCKED LIMIT 1`, eventID).Scan(&slotNumber); errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("AI_EVENT_SOLD_OUT", "活动名额已领完", 409)
 		} else if err != nil {
 			return err
@@ -349,6 +381,11 @@ func (s *Store) claimAIEvent(ctx context.Context, p domain.Principal, publicID, 
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO ai_flash_claims(event_id,tenant_id,user_id,request_id,status,points_cost,streak_days_at_claim,finished_at,reservation_token,reservation_version) VALUES($1,$2,$3,$4,'succeeded',$5,$6,now(),$4,$7) RETURNING id,status,points_cost,streak_days_at_claim,claimed_at,finished_at,report_note_id,error_code`, eventID, p.TenantID, p.UserID, requestID, cost, streak, projectionVersion).Scan(&result.ID, &result.Status, &result.PointsReward, &result.StreakDays, &result.ClaimedAt, &result.FinishedAt, &result.ReportNoteID, &result.ErrorCode); err != nil {
 			return err
+		}
+		if tag, err := tx.Exec(ctx, `UPDATE ai_flash_event_inventory_slots SET tenant_id=$1,claim_id=$2,claimed_at=now() WHERE event_id=$3 AND slot_number=$4 AND tenant_id IS NULL`, p.TenantID, result.ID, eventID, slotNumber); err != nil {
+			return err
+		} else if tag.RowsAffected() != 1 {
+			return apierror.New("AI_EVENT_BUSY", "活动库存正在更新，请稍后重试", 503)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO ai_event_reservations(token,event_id,tenant_id,projection_version,state,resolved_at) VALUES($1,$2,$3,$4,'confirmed',now()) ON CONFLICT(token) DO UPDATE SET state='confirmed',resolved_at=now()`, requestID, eventID, p.TenantID, projectionVersion); err != nil {
 			return err

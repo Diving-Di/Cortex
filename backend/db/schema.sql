@@ -3704,6 +3704,49 @@ GRANT SELECT,USAGE ON SEQUENCE public.xhs_authorizations_id_seq TO cortex_app;
 
 --
 -- PostgreSQL database dump complete
+
+-- AI event claim scaling baseline (migration 000032).
+CREATE TABLE IF NOT EXISTS public.ai_flash_event_eligibilities (
+    event_id bigint NOT NULL REFERENCES public.ai_flash_events(id) ON DELETE CASCADE,
+    tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    streak_days integer NOT NULL CHECK (streak_days > 0),
+    available_points bigint NOT NULL CHECK (available_points >= 0),
+    snapshot_version uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (event_id, tenant_id)
+);
+ALTER TABLE public.ai_flash_event_eligibilities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ai_flash_event_eligibilities FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ai_flash_event_eligibilities_tenant_isolation ON public.ai_flash_event_eligibilities;
+CREATE POLICY ai_flash_event_eligibilities_tenant_isolation ON public.ai_flash_event_eligibilities
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+GRANT SELECT ON TABLE public.ai_flash_event_eligibilities TO cortex_app;
+CREATE INDEX IF NOT EXISTS idx_notes_created_by ON public.notes USING btree (created_by);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs USING btree (user_id);
+
+-- Parallel, database-enforced inventory for AI event claims (migration 000034).
+CREATE TABLE IF NOT EXISTS public.ai_flash_event_inventory_slots (
+    event_id bigint NOT NULL REFERENCES public.ai_flash_events(id) ON DELETE CASCADE,
+    slot_number integer NOT NULL CHECK (slot_number > 0),
+    tenant_id uuid REFERENCES public.tenants(id) ON DELETE CASCADE,
+    claim_id bigint UNIQUE REFERENCES public.ai_flash_claims(id) ON DELETE CASCADE,
+    claimed_at timestamp with time zone,
+    PRIMARY KEY (event_id, slot_number),
+    CHECK ((tenant_id IS NULL AND claim_id IS NULL AND claimed_at IS NULL)
+        OR (tenant_id IS NOT NULL AND claim_id IS NOT NULL AND claimed_at IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ai_flash_event_inventory_slots_tenant_unique
+    ON public.ai_flash_event_inventory_slots(event_id, tenant_id) WHERE tenant_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ai_flash_event_inventory_slots_available
+    ON public.ai_flash_event_inventory_slots(event_id, slot_number) WHERE tenant_id IS NULL;
+ALTER TABLE public.ai_flash_event_inventory_slots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ai_flash_event_inventory_slots FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ai_flash_event_inventory_slots_tenant_isolation ON public.ai_flash_event_inventory_slots;
+CREATE POLICY ai_flash_event_inventory_slots_tenant_isolation ON public.ai_flash_event_inventory_slots
+    USING (tenant_id IS NULL OR tenant_id = current_setting('app.current_tenant_id', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+GRANT SELECT,UPDATE ON public.ai_flash_event_inventory_slots TO cortex_app;
 --
 
 \unrestrict N7Z6ph1r3cllyLc3xgdXNxvhOwaIOGBkXuRB5gh68CnibCoULewsoUfhEuQpbkn

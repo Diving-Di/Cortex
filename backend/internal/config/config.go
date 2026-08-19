@@ -18,6 +18,7 @@ type Config struct {
 	TokenTTL                     time.Duration
 	StatementTimeout             time.Duration
 	PoolSize                     int32
+	AuthPoolSize                 int32
 	LogLevel                     slog.Level
 	DataDir                      string
 	MaxAttachmentBytes           int64
@@ -73,6 +74,9 @@ type Config struct {
 	RedisURL                     string
 	AIEventBuildBatchSize        int
 	AIEventBuildLease            time.Duration
+	AIEventClaimIPLimit          int
+	AIEventClaimConcurrency      int
+	AIEventClaimQueueTimeout     time.Duration
 }
 
 func Load() (Config, error) {
@@ -106,6 +110,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	poolSize, err := positiveInt("DB_POOL_SIZE", 5)
+	if err != nil {
+		return Config{}, err
+	}
+	authPoolSize, err := positiveInt("AUTH_DB_POOL_SIZE", 32)
 	if err != nil {
 		return Config{}, err
 	}
@@ -223,6 +231,18 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	aiEventClaimIPLimit, err := positiveInt("AI_EVENT_CLAIM_IP_LIMIT", 60)
+	if err != nil {
+		return Config{}, err
+	}
+	aiEventClaimConcurrency, err := positiveInt("AI_EVENT_CLAIM_CONCURRENCY", 16)
+	if err != nil {
+		return Config{}, err
+	}
+	aiEventClaimQueueTimeoutMS, err := positiveInt("AI_EVENT_CLAIM_QUEUE_TIMEOUT_MS", 10000)
+	if err != nil {
+		return Config{}, err
+	}
 	ragVectorTopK, err := positiveInt("RAG_VECTOR_TOP_K", 15)
 	if err != nil {
 		return Config{}, err
@@ -266,6 +286,7 @@ func Load() (Config, error) {
 		TokenTTL:                time.Duration(tokenHours) * time.Hour,
 		StatementTimeout:        time.Duration(statementMS) * time.Millisecond,
 		PoolSize:                int32(poolSize),
+		AuthPoolSize:            int32(authPoolSize),
 		LogLevel:                parseLogLevel(valueOrDefault("LOG_LEVEL", "INFO")),
 		DataDir:                 dataDir,
 		MaxAttachmentBytes:      int64(maxAttachmentBytes),
@@ -317,6 +338,9 @@ func Load() (Config, error) {
 		RedisURL:                     valueOrDefault("REDIS_URL", "redis://redis:6379/0"),
 		AIEventBuildBatchSize:        aiEventProjectionBuildBatchSize,
 		AIEventBuildLease:            time.Duration(aiEventProjectionBuildLeaseSeconds) * time.Second,
+		AIEventClaimIPLimit:          aiEventClaimIPLimit,
+		AIEventClaimConcurrency:      aiEventClaimConcurrency,
+		AIEventClaimQueueTimeout:     time.Duration(aiEventClaimQueueTimeoutMS) * time.Millisecond,
 	}, nil
 }
 

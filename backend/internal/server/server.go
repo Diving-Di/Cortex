@@ -23,6 +23,7 @@ import (
 	"cortex/backend/internal/store"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 )
 
 type Server struct {
@@ -31,9 +32,13 @@ type Server struct {
 	logger                 *slog.Logger
 	version                string
 	redis                  *rediscoord.Client
+	authRedis              *rediscoord.Client
+	claimRedis             *rediscoord.Client
 	rateMu                 sync.Mutex
 	localRates             map[string]localRateWindow
 	aiEventFallbackSlots   chan struct{}
+	aiEventClaimSlots      chan struct{}
+	authResolveGroup       singleflight.Group
 	aiEventBreakerMu       sync.Mutex
 	aiEventBreakerFailures int
 	aiEventBreakerUntil    time.Time
@@ -54,8 +59,10 @@ var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
-	s := &Server{cfg: cfg, store: db, logger: logger, version: version, localRates: make(map[string]localRateWindow), aiEventFallbackSlots: make(chan struct{}, 2)}
+	s := &Server{cfg: cfg, store: db, logger: logger, version: version, localRates: make(map[string]localRateWindow), aiEventFallbackSlots: make(chan struct{}, 2), aiEventClaimSlots: make(chan struct{}, max(1, cfg.AIEventClaimConcurrency))}
 	s.redis, _ = rediscoord.New(cfg.RedisURL)
+	s.authRedis, _ = rediscoord.New(cfg.RedisURL)
+	s.claimRedis, _ = rediscoord.New(cfg.RedisURL)
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(s.requestTracing())
@@ -284,15 +291,17 @@ func authCacheKey(raw string) string {
 func tenantAuthVersionKey(id uuid.UUID) string { return "cortex:auth:tenant-version:" + id.String() }
 
 func (s *Server) resolvePrincipal(ctx context.Context, raw string) (domain.Principal, error) {
+	started := time.Now()
+	defer func() { observeAIEventStage(&aiEventClaimAuthNanos, &aiEventClaimAuthCount, started) }()
 	key := authCacheKey(raw)
-	if s.redis != nil {
-		if encoded, ok, err := s.redis.Get(ctx, key); err == nil && ok {
+	if s.authRedis != nil {
+		if encoded, ok, err := s.authRedis.Get(ctx, key); err == nil && ok {
 			if encoded == invalidPrincipalCache {
 				return domain.Principal{}, apierror.New("AUTHENTICATION_REQUIRED", "Invalid or expired token.", 401)
 			}
 			var p domain.Principal
 			if json.Unmarshal([]byte(encoded), &p) == nil && time.Now().Before(p.TokenExpiresAt) {
-				version, exists, versionErr := s.redis.Get(ctx, tenantAuthVersionKey(p.TenantID))
+				version, exists, versionErr := s.authRedis.Get(ctx, tenantAuthVersionKey(p.TenantID))
 				if versionErr == nil && exists && version == fmt.Sprint(p.TenantVersion) {
 					p.AuthCacheKey = key
 					return p, nil
@@ -300,20 +309,23 @@ func (s *Server) resolvePrincipal(ctx context.Context, raw string) (domain.Princ
 			}
 		}
 	}
-	p, err := s.store.ResolvePrincipal(ctx, raw)
+	resolved, err, _ := s.authResolveGroup.Do(key, func() (any, error) {
+		return s.store.ResolvePrincipal(ctx, raw)
+	})
 	if err != nil {
-		if s.redis != nil {
-			_ = s.redis.Set(ctx, key, invalidPrincipalCache, 15*time.Second)
+		if s.authRedis != nil {
+			_ = s.authRedis.Set(ctx, key, invalidPrincipalCache, 15*time.Second)
 		}
 		return domain.Principal{}, err
 	}
+	p := resolved.(domain.Principal)
 	p.AuthCacheKey = key
-	if s.redis != nil {
-		_ = s.redis.Set(ctx, tenantAuthVersionKey(p.TenantID), fmt.Sprint(p.TenantVersion), 24*time.Hour)
+	if s.authRedis != nil {
+		_ = s.authRedis.Set(ctx, tenantAuthVersionKey(p.TenantID), fmt.Sprint(p.TenantVersion), 24*time.Hour)
 		if encoded, marshalErr := json.Marshal(p); marshalErr == nil {
 			ttl := min(5*time.Minute, time.Until(p.TokenExpiresAt))
 			if ttl > 0 {
-				_ = s.redis.Set(ctx, key, string(encoded), ttl)
+				_ = s.authRedis.Set(ctx, key, string(encoded), ttl)
 			}
 		}
 	}
@@ -322,7 +334,7 @@ func (s *Server) resolvePrincipal(ctx context.Context, raw string) (domain.Princ
 
 func (s *Server) preAuthClaimIPLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !s.allowIPRequest(c.Request, "ai-event-claim-anonymous", 60, time.Minute) {
+		if !s.allowIPRequest(c.Request, "ai-event-claim-anonymous", s.cfg.AIEventClaimIPLimit, time.Minute) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"code": "RATE_LIMITED", "message": "请求过于频繁"})
 			return
 		}

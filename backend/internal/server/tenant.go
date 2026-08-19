@@ -48,10 +48,10 @@ func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	if s.redis != nil {
-		_ = s.redis.Set(r.Context(), tenantAuthVersionKey(p.TenantID), "deleted", 24*time.Hour)
+	if s.authRedis != nil {
+		_ = s.authRedis.Set(r.Context(), tenantAuthVersionKey(p.TenantID), "deleted", 24*time.Hour)
 		if p.AuthCacheKey != "" {
-			_ = s.redis.Delete(r.Context(), p.AuthCacheKey)
+			_ = s.authRedis.Delete(r.Context(), p.AuthCacheKey)
 		}
 		for _, id := range ids {
 			_ = s.redis.DeleteTemplateProjections(r.Context(), id.String())

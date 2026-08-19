@@ -470,8 +470,8 @@ func (s *Server) allowIPRequest(r *http.Request, scope string, limit int, window
 }
 
 func (s *Server) allowRateKey(r *http.Request, key string, limit int, window time.Duration) bool {
-	if s.redis != nil {
-		if ok, err := s.redis.Allow(r.Context(), key, limit, window); err == nil {
+	if s.authRedis != nil {
+		if ok, err := s.authRedis.Allow(r.Context(), key, limit, window); err == nil {
 			return ok
 		}
 	}

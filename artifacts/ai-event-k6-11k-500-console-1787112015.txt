@@ -1,0 +1,126 @@
+time="2026-08-19T12:02:35+08:00" level=warning msg="SSLKEYLOGFILE was specified, logging TLS connection keys to 'D:\\ssl_key\\sslog.log'..." test_path="file:///E:/Codebase/Cortex/backend/loadtest/ai_event_claim_100k.js"
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: backend/loadtest/ai_event_claim_100k.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 2000 max VUs, 20m30s max duration (incl. graceful stop):
+              * mixed_claims: 11000 iterations shared among 2000 VUs (maxDuration: 20m0s, gracefulStop: 30s)
+
+
+running (00m00.8s), 2000/2000 VUs, 0 complete and 0 interrupted iterations
+mixed_claims   [   0% ] 2000 VUs  00m00.8s/20m0s  00000/11000 shared iters
+
+running (00m01.8s), 2000/2000 VUs, 6 complete and 0 interrupted iterations
+mixed_claims   [   0% ] 2000 VUs  00m01.8s/20m0s  00006/11000 shared iters
+
+running (00m02.8s), 2000/2000 VUs, 475 complete and 0 interrupted iterations
+mixed_claims   [   4% ] 2000 VUs  00m02.8s/20m0s  00475/11000 shared iters
+
+running (00m03.8s), 2000/2000 VUs, 1784 complete and 0 interrupted iterations
+mixed_claims   [  16% ] 2000 VUs  00m03.8s/20m0s  01784/11000 shared iters
+
+running (00m04.8s), 2000/2000 VUs, 3630 complete and 0 interrupted iterations
+mixed_claims   [  33% ] 2000 VUs  00m04.8s/20m0s  03630/11000 shared iters
+
+running (00m05.8s), 2000/2000 VUs, 6156 complete and 0 interrupted iterations
+mixed_claims   [  56% ] 2000 VUs  00m05.8s/20m0s  06156/11000 shared iters
+
+running (00m06.8s), 2000/2000 VUs, 6630 complete and 0 interrupted iterations
+mixed_claims   [  60% ] 2000 VUs  00m06.8s/20m0s  06630/11000 shared iters
+
+running (00m07.8s), 2000/2000 VUs, 6897 complete and 0 interrupted iterations
+mixed_claims   [  63% ] 2000 VUs  00m07.8s/20m0s  06897/11000 shared iters
+
+running (00m08.8s), 2000/2000 VUs, 7308 complete and 0 interrupted iterations
+mixed_claims   [  66% ] 2000 VUs  00m08.8s/20m0s  07308/11000 shared iters
+
+running (00m09.8s), 2000/2000 VUs, 7620 complete and 0 interrupted iterations
+mixed_claims   [  69% ] 2000 VUs  00m09.8s/20m0s  07620/11000 shared iters
+
+running (00m10.8s), 2000/2000 VUs, 8226 complete and 0 interrupted iterations
+mixed_claims   [  75% ] 2000 VUs  00m10.8s/20m0s  08226/11000 shared iters
+
+running (00m11.8s), 2000/2000 VUs, 8895 complete and 0 interrupted iterations
+mixed_claims   [  81% ] 2000 VUs  00m11.8s/20m0s  08895/11000 shared iters
+
+running (00m12.8s), 1798/2000 VUs, 9202 complete and 0 interrupted iterations
+mixed_claims   [  84% ] 2000 VUs  00m12.8s/20m0s  09202/11000 shared iters
+
+running (00m13.8s), 1784/2000 VUs, 9216 complete and 0 interrupted iterations
+mixed_claims   [  84% ] 2000 VUs  00m13.8s/20m0s  09216/11000 shared iters
+
+running (00m14.8s), 1354/2000 VUs, 9646 complete and 0 interrupted iterations
+mixed_claims   [  88% ] 2000 VUs  00m14.8s/20m0s  09646/11000 shared iters
+
+running (00m15.8s), 1001/2000 VUs, 9999 complete and 0 interrupted iterations
+mixed_claims   [  91% ] 2000 VUs  00m15.8s/20m0s  09999/11000 shared iters
+
+running (00m16.8s), 0357/2000 VUs, 10643 complete and 0 interrupted iterations
+mixed_claims   [  97% ] 2000 VUs  00m16.8s/20m0s  10643/11000 shared iters
+
+
+  █ THRESHOLDS 
+
+    claim_accepted
+    ✓ 'count==500' count=500
+
+    claim_ineligible
+    ✓ 'count==1000' count=1000
+
+    claim_sold_out
+    ✓ 'count==9500' count=9500
+
+    claim_unexpected
+    ✓ 'count==0' count=0
+
+    http_req_duration
+    ✓ 'p(95)<10000' p(95)=5.49s
+    ✓ 'p(99)<20000' p(99)=5.83s
+
+    http_req_failed
+    ✓ 'rate<0.001' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 11000   639.473669/s
+    checks_succeeded...: 100.00% 11000 out of 11000
+    checks_failed......: 0.00%   0 out of 11000
+
+    ✓ mixed claim result is expected
+
+    CUSTOM
+    claim_accepted.................: 500    29.066985/s
+    claim_ineligible...............: 1000   58.13397/s
+    claim_sold_out.................: 9500   552.272714/s
+    claim_unexpected...............: 0      0/s
+
+    HTTP
+    http_req_duration..............: avg=2.76s min=758.73ms med=2.57s max=6.33s p(90)=5.24s p(95)=5.49s
+      { expected_response:true }...: avg=2.76s min=758.73ms med=2.57s max=6.33s p(90)=5.24s p(95)=5.49s
+    http_req_failed................: 0.00%  0 out of 11000
+    http_reqs......................: 11000  639.473669/s
+
+    EXECUTION
+    iteration_duration.............: avg=2.78s min=759.16ms med=2.68s max=6.33s p(90)=5.24s p(95)=5.5s 
+    iterations.....................: 11000  639.473669/s
+    vus............................: 357    min=357        max=2000
+    vus_max........................: 2000   min=2000       max=2000
+
+    NETWORK
+    data_received..................: 2.9 MB 170 kB/s
+    data_sent......................: 3.6 MB 208 kB/s
+
+
+
+
+running (00m17.2s), 0000/2000 VUs, 11000 complete and 0 interrupted iterations
+mixed_claims ✓ [ 100% ] 2000 VUs  00m17.2s/20m0s  11000/11000 shared iters

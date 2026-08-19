@@ -130,6 +130,11 @@ services:
       - XHS_SESSION_KEY_VERSION=${XHS_SESSION_KEY_VERSION:-1}
       - XHS_CHROME_PATH=${XHS_CHROME_PATH:-/usr/bin/chromium}
       - REDIS_URL=redis://default:${REDIS_PASSWORD:-change-me}@redis:6379/0
+      - AI_EVENT_CLAIM_IP_LIMIT=${AI_EVENT_CLAIM_IP_LIMIT:-60}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-20}
+      - AUTH_DB_POOL_SIZE=${AUTH_DB_POOL_SIZE:-32}
+      - AI_EVENT_CLAIM_CONCURRENCY=${AI_EVENT_CLAIM_CONCURRENCY:-16}
+      - AI_EVENT_CLAIM_QUEUE_TIMEOUT_MS=${AI_EVENT_CLAIM_QUEUE_TIMEOUT_MS:-10000}
     depends_on:
       db:
         condition: service_healthy

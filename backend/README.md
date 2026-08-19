@@ -74,6 +74,10 @@ RAG_CONTEXT_PARENT_TOP_K=4
 RAG_RERANK_MIN_SCORE=              # 由当前 reranker/embedding/评估集校准；留空不启用绝对分门控
 RAG_RERANK_MIN_MARGIN=             # 可选 Top1-Top2 分差门槛；留空不启用
 RAG_MIN_QUALIFIED_EVIDENCE=1
+AI_EVENT_CLAIM_IP_LIMIT=60          # 领取接口每 IP 每分钟上限；仅隔离压测环境临时调高
+AUTH_DB_POOL_SIZE=32                 # Token 认证专用连接池，避免挤占业务事务连接
+AI_EVENT_CLAIM_CONCURRENCY=16       # 单实例同时执行的领取落账事务数
+AI_EVENT_CLAIM_QUEUE_TIMEOUT_MS=10000 # 领取舱壁等待超时，超时返回 AI_EVENT_BUSY
 RAG_VERIFIER_MODEL=cortex-default
 ```
 

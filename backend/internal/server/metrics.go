@@ -31,6 +31,17 @@ var aiEventProjectionBuildFailed atomic.Uint64
 var aiEventProjectionBuildAbandoned atomic.Uint64
 var aiEventProjectionBuildDurationNanos atomic.Uint64
 var aiEventProjectionVersionChanged atomic.Uint64
+var aiEventProjectionBuildSkippedOpen atomic.Uint64
+var aiEventClaimRedisErrors atomic.Uint64
+var aiEventClaimFallbackBusy atomic.Uint64
+var aiEventClaimCapacityBusy atomic.Uint64
+var aiEventClaimDBTimeouts atomic.Uint64
+var aiEventClaimRateNanos, aiEventClaimRateCount atomic.Uint64
+var aiEventClaimAuthNanos, aiEventClaimAuthCount atomic.Uint64
+var aiEventClaimRedisNanos, aiEventClaimRedisCount atomic.Uint64
+var aiEventClaimDBNanos, aiEventClaimDBCount atomic.Uint64
+var aiEventClaimConfirmNanos, aiEventClaimConfirmCount atomic.Uint64
+var aiEventClaimTotalNanos, aiEventClaimTotalCount atomic.Uint64
 var templateOutboxLeaseRenewed atomic.Uint64
 var templateOutboxLeaseLost atomic.Uint64
 var templateOutboxFinishFenced atomic.Uint64
@@ -72,6 +83,17 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, "cortex_ai_event_projection_build_total{result=\"abandoned\"} %d\n", aiEventProjectionBuildAbandoned.Load())
 	_, _ = fmt.Fprintf(w, "cortex_ai_event_projection_build_duration_seconds %.6f\n", float64(aiEventProjectionBuildDurationNanos.Load())/float64(time.Second))
 	_, _ = fmt.Fprintf(w, "cortex_ai_event_projection_version_changed_total %d\n", aiEventProjectionVersionChanged.Load())
+	_, _ = fmt.Fprintf(w, "cortex_ai_event_projection_build_skipped_total{reason=\"open_frozen\"} %d\n", aiEventProjectionBuildSkippedOpen.Load())
+	_, _ = fmt.Fprintf(w, "cortex_ai_event_claim_errors_total{stage=\"redis\"} %d\n", aiEventClaimRedisErrors.Load())
+	_, _ = fmt.Fprintf(w, "cortex_ai_event_claim_errors_total{stage=\"fallback_busy\"} %d\n", aiEventClaimFallbackBusy.Load())
+	_, _ = fmt.Fprintf(w, "cortex_ai_event_claim_errors_total{stage=\"capacity_busy\"} %d\n", aiEventClaimCapacityBusy.Load())
+	_, _ = fmt.Fprintf(w, "cortex_ai_event_claim_errors_total{stage=\"database_timeout\"} %d\n", aiEventClaimDBTimeouts.Load())
+	writeAIEventStageMetric(w, "rate_limit", &aiEventClaimRateNanos, &aiEventClaimRateCount)
+	writeAIEventStageMetric(w, "authentication", &aiEventClaimAuthNanos, &aiEventClaimAuthCount)
+	writeAIEventStageMetric(w, "redis_reserve", &aiEventClaimRedisNanos, &aiEventClaimRedisCount)
+	writeAIEventStageMetric(w, "database_finalize", &aiEventClaimDBNanos, &aiEventClaimDBCount)
+	writeAIEventStageMetric(w, "redis_confirm", &aiEventClaimConfirmNanos, &aiEventClaimConfirmCount)
+	writeAIEventStageMetric(w, "total", &aiEventClaimTotalNanos, &aiEventClaimTotalCount)
 	_, _ = fmt.Fprintf(w, "cortex_template_outbox_lease_renew_total %d\n", templateOutboxLeaseRenewed.Load())
 	_, _ = fmt.Fprintf(w, "cortex_template_outbox_lease_lost_total %d\n", templateOutboxLeaseLost.Load())
 	_, _ = fmt.Fprintf(w, "cortex_template_outbox_finish_fenced_total %d\n", templateOutboxFinishFenced.Load())
@@ -88,6 +110,22 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		ready = 1
 	}
 	_, _ = fmt.Fprintf(w, "cortex_database_ready %d\n", ready)
+	pool := s.store.Pool.Stat()
+	_, _ = fmt.Fprintf(w, "cortex_database_pool_connections{state=\"acquired\"} %d\n", pool.AcquiredConns())
+	_, _ = fmt.Fprintf(w, "cortex_database_pool_connections{state=\"idle\"} %d\n", pool.IdleConns())
+	_, _ = fmt.Fprintf(w, "cortex_database_pool_connections{state=\"total\"} %d\n", pool.TotalConns())
+	_, _ = fmt.Fprintf(w, "cortex_database_pool_acquire_total %d\n", pool.AcquireCount())
+	_, _ = fmt.Fprintf(w, "cortex_database_pool_acquire_duration_seconds_total %.6f\n", pool.AcquireDuration().Seconds())
+	_, _ = fmt.Fprintf(w, "cortex_database_pool_empty_acquire_total %d\n", pool.EmptyAcquireCount())
+	if s.store.AuthPool != nil {
+		authPool := s.store.AuthPool.Stat()
+		_, _ = fmt.Fprintf(w, "cortex_auth_database_pool_connections{state=\"acquired\"} %d\n", authPool.AcquiredConns())
+		_, _ = fmt.Fprintf(w, "cortex_auth_database_pool_connections{state=\"idle\"} %d\n", authPool.IdleConns())
+		_, _ = fmt.Fprintf(w, "cortex_auth_database_pool_connections{state=\"total\"} %d\n", authPool.TotalConns())
+		_, _ = fmt.Fprintf(w, "cortex_auth_database_pool_acquire_total %d\n", authPool.AcquireCount())
+		_, _ = fmt.Fprintf(w, "cortex_auth_database_pool_acquire_duration_seconds_total %.6f\n", authPool.AcquireDuration().Seconds())
+		_, _ = fmt.Fprintf(w, "cortex_auth_database_pool_empty_acquire_total %d\n", authPool.EmptyAcquireCount())
+	}
 	if m, err := s.store.GetOperationsMetrics(r.Context()); err == nil {
 		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"queued\"} %d\n", m.KnowledgeQueued)
 		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"running\"} %d\n", m.KnowledgeRunning)
@@ -108,6 +146,15 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "cortex_ai_event_slot_records_drifted %d\n", m.EventSlotDrifted)
 		_, _ = fmt.Fprintf(w, "cortex_ai_event_succeeded_claims_invalid %d\n", m.SucceededClaimsInvalid)
 	}
+}
+
+func observeAIEventStage(total, count *atomic.Uint64, started time.Time) {
+	total.Add(uint64(time.Since(started)))
+	count.Add(1)
+}
+func writeAIEventStageMetric(w http.ResponseWriter, stage string, total, count *atomic.Uint64) {
+	_, _ = fmt.Fprintf(w, "cortex_ai_event_claim_stage_duration_seconds_sum{stage=\"%s\"} %.6f\n", stage, float64(total.Load())/float64(time.Second))
+	_, _ = fmt.Fprintf(w, "cortex_ai_event_claim_stage_duration_seconds_count{stage=\"%s\"} %d\n", stage, count.Load())
 }
 
 func boolMetric(value bool) int {

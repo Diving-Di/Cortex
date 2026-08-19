@@ -55,6 +55,7 @@ soak-results/
 /.recipe-corpus-tmp/
 artifacts/rag-eval*/
 artifacts/capacity-*.json
+artifacts/ai-event-k6-*.json
 backend/testdata/rag/diving_notes/
 backend/testdata/rag/diving_existing_notes.jsonl
 

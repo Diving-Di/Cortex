@@ -122,8 +122,10 @@ docker compose config --quiet
 私有模板受租户 RLS 保护，作者明确上架时生成不含租户标识的公开快照；作者下架或删除租户时
 立即使快照不可见。
 
-每日活动配置保存在 PostgreSQL，Redis Lua 负责库存和重复领取预扣，数据库唯一约束与点数账本保存
-最终事实。当前活动是免费点数领取：成功后点数即时到账。Redis 不可用时通过带独立并发舱壁、短超时
+每日活动配置保存在 PostgreSQL，Redis Lua 负责库存和重复领取预扣，数据库唯一约束、库存槽位和点数账本保存
+最终事实。每个名额对应一条启用 RLS 的库存槽位，领取事务通过 `FOR UPDATE SKIP LOCKED` 并行绑定 Claim，
+`claimed_slots` 由后台按秒汇总，避免所有成功事务串行更新同一活动行。Token 认证使用独立数据库连接池，
+摘要缓存未命中时不会挤占普通业务和领取事务连接。当前活动是免费点数领取：成功后点数即时到账。Redis 不可用时通过带独立并发舱壁、短超时
 和熔断的 PostgreSQL fallback 完整校验资格并原子写入；核心笔记功能不受影响。
 
 活动参数集中保存在 `ai_flash_event_settings`。scheduler 使用 PostgreSQL 剩余名额和既有领取记录

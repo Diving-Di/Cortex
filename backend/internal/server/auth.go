@@ -103,6 +103,12 @@ func (s *Server) authenticateCredentials(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, s.logger, err)
 		return "", "", false
 	}
+	// Populate the digest-keyed cache before returning the raw token so the
+	// client's first authenticated request does not need another database read.
+	if _, err := s.resolvePrincipal(r.Context(), token); err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return "", "", false
+	}
 	return token, username, true
 }
 
@@ -121,8 +127,8 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	if s.redis != nil && p.AuthCacheKey != "" {
-		_ = s.redis.Delete(r.Context(), p.AuthCacheKey)
+	if s.authRedis != nil && p.AuthCacheKey != "" {
+		_ = s.authRedis.Delete(r.Context(), p.AuthCacheKey)
 	}
 	s.clearAuthCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
