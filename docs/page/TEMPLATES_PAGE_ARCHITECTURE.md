@@ -124,7 +124,7 @@ Markdown 正文和公开昵称，不携带租户 ID、登录名或私有笔记�
    telemetry 和连接健康能力。
 4. 搜索 SQL 仍使用包含匹配语义，但迁移 000025 已建立对应 trigram GIN 索引；需用生产规模数据执行
    `EXPLAIN (ANALYZE, BUFFERS)` 验证计划稳定性。
-5. 本地可复现容量结果见 `docs/MARKETPLACE_CAPACITY_ACCEPTANCE.md`。仓库仍没有真实线上 QPS、HTTP
+5. 本地可复现容量与活动热点结果见 `docs/operations/AI_EVENT_LOAD_TEST_20260816.md`。仓库仍没有真实线上 QPS、HTTP
    p95/p99、缓存命中率证据，不得把本地 Go 测试 wall time 表述为线上性能。
 
 ## 代码定位
