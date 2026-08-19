@@ -1,11 +1,18 @@
 # 实现与生产验收待办
 
-> 更新日期：2026-08-12
+> 更新日期：2026-08-19
 
 ## 当前边界
 
 - 个人知识库 v2 已实现：上传单个 `.md` 或 Markdown `.zip`、知识集合、文档列表与删除、
-  个人笔记知识开关、3 GiB 配额，以及带来源保存的混合问答（`/api/v1/knowledge/*`）。
+  个人笔记知识开关、3 GiB 配额，以及带会话、公开检索进度、来源、反馈和不完整语义的混合问答
+  （`/api/v1/knowledge/*`）。
+- 弱证据门控已区分 `ambiguous`、`scope_conflict`、`absent`；前两类使用持久化 15 分钟状态进行
+  一次性恢复，绑定 tenant/user/conversation/request/scope，重复恢复幂等回放，恢复失败不循环澄清。
+- 迁移 `000035_knowledge_index_progress` 增加租约 fenced 的阶段与单调块进度；迁移
+  `000036_knowledge_clarifications` 增加一次性澄清状态与 RLS。
+- 复杂问题规则计划器已作为默认关闭的实验开关实现，最多 4 个并行子查询；启用前仍需在真实冻结
+  `comparison/trend/cross_period` 数据集上完成质量、延迟与成本消融。
 - 迁移 `000017_personal_knowledge_v2` 新增 `knowledge_*` 九张表并启用 RLS，是当前知识库的
   数据库基线；`/knowledge` 页面已上线，`/recipes` 与 `/assistant` 路由重定向到 `/knowledge`。
 - HowToCook 固定语料已从仓库移除（`backend/resources/howtocook` 不再存在），并一次性迁移到
@@ -59,16 +66,18 @@
   `template_ai_event_acceptance.ps1`；模板/活动变更还要运行
   `template_ai_event_redis_failure_acceptance.ps1` 和 `ai_event_concurrency_acceptance.ps1`。
 - 验证个人知识库：上传 `.md` / `.zip`、配额与并发预占、文档删除后退出检索、笔记知识开关、
-  混合问答的来源保存与 `KNOWLEDGE_NO_EVIDENCE`、跨租户 404 隔离。
+  持久化索引阶段与单调进度、混合问答的公开 progress/来源/incomplete、正常/重复/过期澄清恢复、
+  `KNOWLEDGE_NO_EVIDENCE`、跨用户/跨租户 404 隔离。
 - 验证知识问答质量回流：保存完成/失败结果时只生成脱敏 trace；五类反馈可按 request ID 幂等更新，
   本人复核后可晋升到 draft 数据集，冻结时生成 manifest hash；不存在或跨租户资源返回 404。
   CI 运行合成 fixture 的 schema/hash 门禁，真实检索指标仍在受控发布环境运行。
-- 确认新实例能由 `backend/db/schema.sql` 基线加版本化迁移完成初始化（当前共 55 张表），
-  且 `/recipes`、`/assistant` 均重定向到 `/knowledge`。
+- 确认新实例能由 `backend/db/schema.sql` 基线加版本化迁移完成初始化（当前共 56 张表），
+  且 `/recipes`、`/assistant` 均重定向到 `/knowledge`。新增澄清表后当前预期为 56 张表。
 - 确认仓库不再包含 `/api/v1/recipes/*` 路由与忌口、时区偏好字段。
 
 ## 非当前范围
 
 - 团队知识库、云盘同步、计费和桌面组件。
 - 数据库与 Markdown 双向同步。
+- PDF、Word、Excel 摄取及其隔离解析 worker。
 - 管理员审核公开模板；模板上架与下架由作者自主决定。

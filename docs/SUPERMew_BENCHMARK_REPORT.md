@@ -66,6 +66,10 @@ Cortex 的检索底座已经不弱于 SuperMew，而且在租户隔离、引用�
 
 ## 4. 值得借鉴的部分
 
+> 实施状态（2026-08-19）：4.1、4.2、4.4、4.5 已按 Cortex 的 Go/PostgreSQL/RLS 边界落地；
+> 4.3 已作为默认关闭、最多 4 子查询的规则实验路径落地，仍需真实冻结集消融后才能启用；
+> 4.7 继续沿用离线实验而不替换线上数据模型。按本轮范围，4.6 PDF/Word/Excel 摄取明确未实现。
+
 ### 4.1 P0：低置信度澄清与恢复
 
 SuperMew 将证据决策路由为 `answer`、`rewrite`、`clarify`、`scope_select` 和 `no_knowledge`。`clarify`/`scope_select` 会持久化待恢复状态；用户补充后直接进行一次针对性检索，不重新进入完整 Agent 链路。相关行为有专门测试覆盖。

@@ -1,7 +1,7 @@
 # Cortex 工程基线
 
 > 状态：当前有效
-> 更新日期：2026-08-12
+> 更新日期：2026-08-19
 
 ## 产品范围
 
@@ -11,9 +11,11 @@
 - 每个账号对应一个服务端解析的个人租户。
 - Markdown ZIP 内容导出和笔记版本恢复。
 - 用户自主上架的 Markdown 模板广场，以及每日限量免费 AI 点数活动。
-- 个人知识库：上传 Markdown / Markdown ZIP、知识集合、个人笔记入库开关与混合问答（每租户 3 GiB 配额）。
+- 个人知识库：上传 Markdown / Markdown ZIP、知识集合、个人笔记入库开关、带会话/来源/反馈的混合问答、
+  可恢复的一次性澄清和持久化索引阶段进度（每租户 3 GiB 配额）。
 
 桌面组件、团队协作、计费和数据库/Markdown 双向同步不属于当前范围。
+PDF、Word、Excel 摄取仍不属于当前知识库摄取范围。
 
 > 2026-08-05：HowToCook 固定语料与菜谱接口（`/api/v1/recipes/*`）已移除，语料一次性迁移到用户
 > `Diving` 的运行时私有知识库；前端 `/recipes`、`/assistant` 已重定向到 `/knowledge`。
@@ -57,6 +59,8 @@
 - 知识检索精排使用 Compose 内部 `reranker-service` 加载固定 revision 的
   `BAAI/bge-reranker-v2-m3`；两个模型服务均不暴露宿主机端口。
 - 个人知识库上传限制由 `KNOWLEDGE_MAX_*` 环境变量控制；每租户容量上限 3 GiB。
+- `RAG_PLANNER_ENABLED` 默认关闭；只有冻结评测集证明复杂查询优于单查询基线后才允许启用，
+  `RAG_PLANNER_MAX_SUBQUERIES` 不得超过 4。
 
 ## 必须通过的验证
 
@@ -78,7 +82,7 @@ docker compose up -d --build
 - 所有 Go 源码必须通过 `gofmt`；允许使用 Go 惯例中的 Tab 缩进。
 - `db`、`llm-gateway` 和 `backend` 必须为 healthy。
 - 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
-- 新 PostgreSQL 空库必须完成全部版本化迁移（当前 55 张表）、RLS、注册和登录验收。
+- 新 PostgreSQL 空库必须完成全部版本化迁移（当前 56 张表）、RLS、注册和登录验收。
 - 模板广场还需验证 Outbox 类型隔离、排行 active pointer 原子切换、daily/HLL 8 天 TTL、匿名 UV
   读取和 Redis 故障回表降级。本地容量结果不能作为线上 QPS 或 p95/p99。
-- 个人知识库上传、索引、混合问答、跨租户隔离和 3 GiB 配额验收通过。
+- 个人知识库上传、索引阶段/进度、混合问答、一次性澄清恢复、幂等回放、跨租户隔离和 3 GiB 配额验收通过。

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cortex/backend/internal/ai"
@@ -227,28 +228,75 @@ func (s *Server) setNoteKnowledge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
+	requestStarted := time.Now()
+	progress := make([]retrievalProgress, 0, 5)
 	var req struct {
-		Question       string      `json:"question"`
-		RequestID      string      `json:"request_id"`
-		ConversationID *int32      `json:"conversation_id"`
-		CollectionIDs  []uuid.UUID `json:"collection_ids"`
+		Question              string      `json:"question"`
+		RequestID             string      `json:"request_id"`
+		ConversationID        *int32      `json:"conversation_id"`
+		CollectionIDs         []uuid.UUID `json:"collection_ids"`
+		ResumeClarificationID string      `json:"resume_clarification_id"`
+		Clarification         string      `json:"clarification"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
+	p := principalFrom(r.Context())
+	if req.ResumeClarificationID != "" {
+		clarificationID, parseErr := uuid.Parse(req.ResumeClarificationID)
+		req.Clarification = strings.TrimSpace(req.Clarification)
+		if parseErr != nil || len([]rune(req.Clarification)) == 0 || len([]rune(req.Clarification)) > 1000 {
+			httpx.WriteError(w, s.logger, apierror.Validation(nil))
+			return
+		}
+		pending, consumeErr := s.store.ConsumeKnowledgeClarification(r.Context(), p, clarificationID)
+		if consumeErr != nil {
+			httpx.WriteError(w, s.logger, consumeErr)
+			return
+		}
+		req.Question = pending.OriginalQuestion + "\n用户补充：" + req.Clarification
+		req.ConversationID = &pending.ConversationID
+		req.CollectionIDs = pending.CollectionIDs
+		req.RequestID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(pending.OriginalRequestID)).String() + ":resume"
+		if pending.AlreadyResumed {
+			previous, found, replayErr := s.store.GetKnowledgeRequest(r.Context(), p, req.RequestID)
+			if replayErr != nil {
+				httpx.WriteError(w, s.logger, replayErr)
+				return
+			}
+			if found {
+				s.writeKnowledgeReplay(w, previous)
+				return
+			}
+			httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_CLARIFICATION_IN_PROGRESS", "澄清请求正在处理", http.StatusConflict))
+			return
+		}
+	}
 	req.Question = strings.TrimSpace(req.Question)
+	if req.RequestID == "" {
+		req.RequestID = uuid.NewString()
+	}
 	if len([]rune(req.Question)) == 0 || len([]rune(req.Question)) > 5000 || (req.RequestID != "" && !requestIDPattern.MatchString(req.RequestID)) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	p := principalFrom(r.Context())
 	if previous, found, err := s.store.GetKnowledgeRequest(r.Context(), p, req.RequestID); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	} else if found {
 		s.writeKnowledgeReplay(w, previous)
 		return
+	}
+	if req.ResumeClarificationID == "" {
+		resumeRequestID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(req.RequestID)).String() + ":resume"
+		if previous, found, err := s.store.GetKnowledgeRequest(r.Context(), p, resumeRequestID); err != nil {
+			httpx.WriteError(w, s.logger, err)
+			return
+		} else if found {
+			s.writeKnowledgeReplay(w, previous)
+			return
+		}
 	}
 	if err := s.store.ValidateKnowledgeCollections(r.Context(), p, req.CollectionIDs); err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -269,19 +317,66 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
+	progress = append(progress, newRetrievalProgress("rewrite", time.Since(requestStarted), func(v *retrievalProgress) {
+		v.Rewritten = rewrite.Query != req.Question
+	}))
 	retrievalQuery := rewrite.Query
+	retrievalQueries, planned := planKnowledgeQueries(retrievalQuery, s.cfg.RAGPlannerEnabled, s.cfg.RAGPlannerMaxSubqueries)
+	embeddingStarted := time.Now()
 	embeddingClient := ai.LocalEmbeddingClient{BaseURL: s.cfg.EmbeddingBaseURL, APIKey: s.cfg.EmbeddingAPIKey, Model: s.cfg.EmbeddingModel, Dimensions: s.cfg.EmbeddingDimensions, SendDimensions: s.cfg.EmbeddingSendDimensions}
-	vectors, err := embeddingClient.Embed(r.Context(), []string{retrievalQuery})
+	vectors, err := embeddingClient.Embed(r.Context(), retrievalQueries)
 	if err != nil {
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_EMBEDDING_UNAVAILABLE", "知识检索服务暂时不可用", 503))
 		return
 	}
-	candidates, err := s.store.SearchKnowledge(r.Context(), p, retrievalQuery, vectors[0], s.cfg.EmbeddingModel, req.CollectionIDs,
-		s.cfg.RAGVectorTopK, s.cfg.RAGTitleTopK, s.cfg.RAGKeywordTopK, s.cfg.RAGFusionTopK)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
+	progress = append(progress, newRetrievalProgress("embedding", time.Since(embeddingStarted), nil))
+	retrievalStarted := time.Now()
+	retrievalCtx, cancelRetrieval := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancelRetrieval()
+	var candidateMu sync.Mutex
+	candidateByParent := make(map[uuid.UUID]store.KnowledgeCandidate)
+	var retrievalErr error
+	var retrievalWG sync.WaitGroup
+	for i, query := range retrievalQueries {
+		i, query := i, query
+		retrievalWG.Add(1)
+		go func() {
+			defer retrievalWG.Done()
+			items, searchErr := s.store.SearchKnowledge(retrievalCtx, p, query, vectors[i], s.cfg.EmbeddingModel, req.CollectionIDs,
+				max(1, s.cfg.RAGVectorTopK/len(retrievalQueries)), max(1, s.cfg.RAGTitleTopK/len(retrievalQueries)), max(1, s.cfg.RAGKeywordTopK/len(retrievalQueries)), max(1, s.cfg.RAGFusionTopK/len(retrievalQueries)))
+			candidateMu.Lock()
+			defer candidateMu.Unlock()
+			if searchErr != nil {
+				if retrievalErr == nil {
+					retrievalErr = searchErr
+				}
+				return
+			}
+			for _, item := range items {
+				if current, found := candidateByParent[item.ParentID]; !found || item.Score > current.Score {
+					candidateByParent[item.ParentID] = item
+				}
+			}
+		}()
+	}
+	retrievalWG.Wait()
+	if retrievalErr != nil && len(candidateByParent) == 0 {
+		httpx.WriteError(w, s.logger, retrievalErr)
 		return
 	}
+	candidates := make([]store.KnowledgeCandidate, 0, len(candidateByParent))
+	for _, item := range candidateByParent {
+		candidates = append(candidates, item)
+	}
+	sortKnowledgeCandidates(candidates)
+	if len(candidates) > s.cfg.RAGFusionTopK {
+		candidates = candidates[:s.cfg.RAGFusionTopK]
+	}
+	progress = append(progress, newRetrievalProgress("retrieval", time.Since(retrievalStarted), func(v *retrievalProgress) {
+		v.CandidateCount = len(candidates)
+		v.Planned = planned
+		v.SubqueryCount = len(retrievalQueries)
+	}))
 	if len(candidates) == 0 {
 		knowledgeNoEvidence.Add(1)
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_NO_EVIDENCE", "没有找到当前知识库中的有效依据", 422))
@@ -292,6 +387,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		documents[i] = ai.FormatRerankDocument(candidates[i].Title, candidates[i].SourceType, candidates[i].Heading, candidates[i].Content)
 	}
 	reranker := ai.LocalRerankClient{BaseURL: s.cfg.RerankBaseURL, Model: s.cfg.RerankModel, MaxDocuments: s.cfg.RAGFusionTopK}
+	rerankStarted := time.Now()
 	scores, err := reranker.Rerank(r.Context(), retrievalQuery, documents)
 	if err != nil {
 		knowledgeRerankFailed.Add(1)
@@ -303,12 +399,31 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 	}
 	sortKnowledgeCandidates(candidates)
 	candidates = filterRerankEvidence(candidates, s.cfg.RAGRerankMinScore)
-	if len(candidates) < s.cfg.RAGMinQualifiedEvidence || rerankMarginTooSmall(candidates, s.cfg.RAGRerankMinMargin) {
+	progress = append(progress, newRetrievalProgress("rerank", time.Since(rerankStarted), func(v *retrievalProgress) {
+		v.CandidateCount = len(documents)
+		v.QualifiedCount = len(candidates)
+	}))
+	marginConflict := rerankMarginTooSmall(candidates, s.cfg.RAGRerankMinMargin)
+	if len(candidates) < s.cfg.RAGMinQualifiedEvidence || marginConflict {
 		knowledgeNoEvidence.Add(1)
+		decision := decideWeakKnowledgeEvidence(req.Question, marginConflict)
+		if decision != knowledgeDecisionAbsent && req.ResumeClarificationID == "" {
+			pending, stateErr := s.store.CreateKnowledgeClarification(r.Context(), p, req.ConversationID, req.RequestID, req.Question, req.CollectionIDs, string(decision), clarificationPrompt(decision), 15*time.Minute)
+			if stateErr != nil {
+				httpx.WriteError(w, s.logger, stateErr)
+				return
+			}
+			httpx.WriteError(w, s.logger, &apierror.Error{Code: "KNOWLEDGE_CLARIFICATION_REQUIRED", Message: pending.Prompt, StatusCode: http.StatusConflict, Details: pending})
+			return
+		}
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_NO_EVIDENCE", "没有找到当前知识库中的有效依据", 422))
 		return
 	}
 	candidates = store.SelectKnowledgeContexts(retrievalQuery, candidates, s.cfg.RAGContextTopK)
+	progress = append(progress, newRetrievalProgress("evidence_gate", time.Since(requestStarted), func(v *retrievalProgress) {
+		v.QualifiedCount = len(candidates)
+		v.SourceCount = len(candidates)
+	}))
 	evidence := make([]ai.KnowledgeEvidence, len(candidates))
 	sources := make([]map[string]any, len(candidates))
 	for i := range candidates {
@@ -323,10 +438,31 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	s.writeKnowledgeSSE(w, r, events, sources, func(ctx context.Context, answer, status, errorCode, upstreamStage string, outputTokens int) (int32, int32, error) {
+	s.writeKnowledgeSSE(w, r, events, sources, progress, func(ctx context.Context, answer, status, errorCode, upstreamStage string, outputTokens int) (int32, int32, error) {
 		traceConfig := store.KnowledgeTraceConfig{EmbeddingModel: s.cfg.EmbeddingModel, RerankModel: s.cfg.RerankModel, GenerateModel: s.cfg.AIModel, VerifierModel: s.cfg.RAGVerifierModel, VectorTopK: s.cfg.RAGVectorTopK, TitleTopK: s.cfg.RAGTitleTopK, KeywordTopK: s.cfg.RAGKeywordTopK, FusionTopK: s.cfg.RAGFusionTopK, ContextTopK: s.cfg.RAGContextTopK}
 		return s.store.SaveKnowledgeAnswerOutcome(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, status, errorCode, upstreamStage, outputTokens, candidates, traceConfig)
 	})
+}
+
+type retrievalProgress struct {
+	SchemaVersion  int    `json:"schema_version"`
+	Stage          string `json:"stage"`
+	Status         string `json:"status"`
+	ElapsedMS      int64  `json:"elapsed_ms"`
+	CandidateCount int    `json:"candidate_count,omitempty"`
+	QualifiedCount int    `json:"qualified_count,omitempty"`
+	SourceCount    int    `json:"source_count,omitempty"`
+	Rewritten      bool   `json:"rewritten,omitempty"`
+	Planned        bool   `json:"planned,omitempty"`
+	SubqueryCount  int    `json:"subquery_count,omitempty"`
+}
+
+func newRetrievalProgress(stage string, elapsed time.Duration, enrich func(*retrievalProgress)) retrievalProgress {
+	value := retrievalProgress{SchemaVersion: 1, Stage: stage, Status: "completed", ElapsedMS: elapsed.Milliseconds()}
+	if enrich != nil {
+		enrich(&value)
+	}
+	return value
 }
 
 func (s *Server) createKnowledgeFeedback(w http.ResponseWriter, r *http.Request) {
@@ -480,7 +616,7 @@ func filterRerankEvidence(items []store.KnowledgeCandidate, threshold *float64) 
 func rerankMarginTooSmall(items []store.KnowledgeCandidate, threshold *float64) bool {
 	return threshold != nil && len(items) > 1 && items[0].Score-items[1].Score < *threshold
 }
-func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, events <-chan ai.StreamEvent, sources []map[string]any, save func(context.Context, string, string, string, string, int) (int32, int32, error)) {
+func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, events <-chan ai.StreamEvent, sources []map[string]any, progress []retrievalProgress, save func(context.Context, string, string, string, string, int) (int32, int32, error)) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return
@@ -490,6 +626,9 @@ func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, event
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(200)
+	for _, item := range progress {
+		_ = writeNamedSSE(w, "retrieval_progress", item)
+	}
 	_ = writeNamedSSE(w, "retrieval", map[string]any{"count": len(sources), "items": sources})
 	flusher.Flush()
 	var answer strings.Builder

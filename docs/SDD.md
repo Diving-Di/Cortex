@@ -49,6 +49,8 @@ flowchart LR
     INDEX --> DB
     API["/api/v1/knowledge/*"] --> DB
     UI["/knowledge"] --> API
+    API --> HITL["一次性澄清恢复"]
+    HITL --> DB
 ```
 
 - 上传经 `internal/knowledge` 校验类型、配额与 ZIP 路径安全后，保存到
@@ -58,6 +60,15 @@ flowchart LR
 - 问答只检索当前租户 `knowledge_documents`（含开启知识问答的个人笔记），向量 + 全文混合召回，
   经 `reranker-service`（`BAAI/bge-reranker-v2-m3`）精排后取前 `RAG_CONTEXT_PARENT_TOP_K` 个
   parent；来源写入 `knowledge_message_sources`。无当前租户证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
+- 公开 SSE 使用 `schema_version=1` 的 `retrieval_progress` DTO 展示改写、Embedding、召回、精排与
+  证据门控统计，不暴露 prompt、正文块、身份、内部地址或上游响应。
+- 弱证据分为 `ambiguous`、`scope_conflict` 和 `absent`。前两类持久化到
+  `knowledge_clarifications`，绑定服务端 Principal、knowledge conversation、原 request ID 和集合
+  范围，15 分钟内只允许补充一次；`absent` 与恢复后仍不足均直接拒答。
+- `knowledge_index_jobs` 持久化稳定阶段与块进度，更新受 owner lease fencing 保护；已有活动版本的
+  文档在重建期间保持可查询。
+- 默认关闭的规则计划器仅识别明确比较、趋势和跨周期问题，最多并行召回 4 个子查询；所有子查询
+  继承同一 RLS Principal、集合范围、候选预算与总 deadline。
 
 主要接口：
 
@@ -89,12 +100,13 @@ AI 未配置或不可用时，认证、笔记、搜索、附件、导出和知�
 问答返回稳定错误（`KNOWLEDGE_EMBEDDING_UNAVAILABLE` / `KNOWLEDGE_RERANK_UNAVAILABLE`）。
 后端只持有 LiteLLM 虚拟密钥；供应商真实 Key 不进入前端、业务数据库或日志。
 流式响应已经输出内容后不得从头重试。
+PDF、Word、Excel 不属于当前知识库摄取范围；不得仅通过放开文件扩展名接入。
 
 ## 8. 部署与验证
 
 Compose 下数据库、LiteLLM、Embedding 和 Reranker 服务不暴露宿主机端口。
 `/healthz` 只反映进程存活，`/readyz` 只验证数据库可用。新实例由 `backend/db/schema.sql`
-基线加版本化迁移初始化（当前共 55 张表）。
+基线加版本化迁移初始化（当前共 56 张表）。
 
 ```powershell
 Set-Location backend

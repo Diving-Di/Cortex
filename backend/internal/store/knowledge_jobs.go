@@ -27,7 +27,7 @@ func (s *Store) ClaimKnowledgeJobs(ctx context.Context, owner uuid.UUID, limit i
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `WITH c AS (SELECT id FROM knowledge_index_jobs WHERE (status='queued' AND available_at<=now()) OR (status='running' AND lease_until<now()) ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE knowledge_index_jobs j SET status='running',lease_owner=$2,lease_until=now()+$3::interval,attempts=attempts+1,updated_at=now() FROM c WHERE j.id=c.id RETURNING j.id,j.tenant_id,j.document_id,j.target_index_version,j.lease_owner`, limit, owner, lease.String())
+	rows, err := tx.Query(ctx, `WITH c AS (SELECT id FROM knowledge_index_jobs WHERE (status='queued' AND available_at<=now()) OR (status='running' AND lease_until<now()) ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE knowledge_index_jobs j SET status='running',stage='loading',processed_chunks=0,total_chunks=0,lease_owner=$2,lease_until=now()+$3::interval,attempts=attempts+1,updated_at=now() FROM c WHERE j.id=c.id RETURNING j.id,j.tenant_id,j.document_id,j.target_index_version,j.lease_owner`, limit, owner, lease.String())
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +47,25 @@ func (s *Store) ClaimKnowledgeJobs(ctx context.Context, owner uuid.UUID, limit i
 		return nil, err
 	}
 	return jobs, nil
+}
+
+// UpdateKnowledgeJobProgress is lease-fenced and monotonic within a stage. A
+// stale worker cannot overwrite the progress of a newly claimed attempt.
+func (s *Store) UpdateKnowledgeJobProgress(ctx context.Context, j KnowledgeIndexJob, stage string, processed, total int) error {
+	command, err := s.AdminPool.Exec(ctx, `UPDATE knowledge_index_jobs SET
+		stage=$4,
+		processed_chunks=CASE WHEN stage=$4 THEN greatest(processed_chunks,$5) ELSE $5 END,
+		total_chunks=greatest(total_chunks,$6),updated_at=now()
+		WHERE id=$1 AND tenant_id=$2 AND status='running' AND lease_owner=$3 AND lease_until>now()
+		AND $5>=0 AND $6>=$5 AND $4 IN ('loading','parsing','embedding','persisting')`,
+		j.ID, j.TenantID, j.LeaseOwner, stage, processed, total)
+	if err != nil {
+		return err
+	}
+	if command.RowsAffected() != 1 {
+		return ErrKnowledgeIndexLeaseLost
+	}
+	return nil
 }
 func (s *Store) LoadKnowledgeJobDocument(ctx context.Context, j *KnowledgeIndexJob) error {
 	return s.WithTx(ctx, func(tx pgx.Tx) error {
@@ -70,7 +89,7 @@ func (s *Store) writeKnowledgeChunks(ctx context.Context, j KnowledgeIndexJob, p
 			return err
 		}
 		var fencedID int64
-		if err := tx.QueryRow(ctx, `UPDATE knowledge_index_jobs SET status='success',lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='running' AND lease_owner=$3 AND lease_until>now() RETURNING id`, j.TenantID, j.ID, j.LeaseOwner).Scan(&fencedID); err != nil {
+		if err := tx.QueryRow(ctx, `UPDATE knowledge_index_jobs SET status='success',stage='completed',processed_chunks=total_chunks,lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='running' AND lease_owner=$3 AND lease_until>now() RETURNING id`, j.TenantID, j.ID, j.LeaseOwner).Scan(&fencedID); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrKnowledgeIndexLeaseLost
 			}
@@ -119,7 +138,7 @@ func (s *Store) FailKnowledgeJob(ctx context.Context, j KnowledgeIndexJob, code 
 	}
 	defer tx.Rollback(ctx)
 	var jobStatus string
-	if err := tx.QueryRow(ctx, `UPDATE knowledge_index_jobs SET status=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,available_at=now()+make_interval(secs=>least(3600,attempts*attempts*10)),failure_code=$2,lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND tenant_id=$3 AND status='running' AND lease_owner=$4 AND lease_until>now() RETURNING status`, j.ID, code, j.TenantID, j.LeaseOwner).Scan(&jobStatus); err != nil {
+	if err := tx.QueryRow(ctx, `UPDATE knowledge_index_jobs SET status=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,stage=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,available_at=now()+make_interval(secs=>least(3600,attempts*attempts*10)),failure_code=$2,lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND tenant_id=$3 AND status='running' AND lease_owner=$4 AND lease_until>now() RETURNING status`, j.ID, code, j.TenantID, j.LeaseOwner).Scan(&jobStatus); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrKnowledgeIndexLeaseLost
 		}

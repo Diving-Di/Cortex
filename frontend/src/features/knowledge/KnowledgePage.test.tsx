@@ -8,6 +8,11 @@ vi.mock('../../api/knowledge', () => ({
   listKnowledge: vi.fn(),
   uploadKnowledge: vi.fn(),
   deleteKnowledge: vi.fn(),
+  listKnowledgeConversations: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+  getKnowledgeConversation: vi.fn(),
+  sendKnowledgeFeedback: vi.fn(),
+  streamKnowledge: vi.fn(),
+  KnowledgeStreamError: class extends Error {},
 }));
 
 const mockedListKnowledge = vi.mocked(listKnowledge);

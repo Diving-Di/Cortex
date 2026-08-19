@@ -90,8 +90,18 @@ RAG_VERIFIER_MODEL=cortex-default
 ```
 
 知识问答不会给 Reranker 套用未经校准的默认分数。配置门槛后，只有合格证据会进入生成；
-答案会先缓冲并逐条核验引用，最多基于失败声明重写一次。SSE 依次发送 `retrieval`、
+答案会先缓冲并逐条核验引用，最多基于失败声明重写一次。SSE 先发送一个或多个版本化
+`retrieval_progress` 白名单事件，再依次发送 `retrieval`、
 `verifying`、`verified`、`sources`、`done`，核验失败则发送 `rejected`，不会发送未经核验的正文。
+
+精排门控不足时，业务状态机会区分 `ambiguous`、`scope_conflict` 和 `absent`。前两类将原请求、
+当前用户/租户、knowledge conversation 和服务端 collection scope 保存到
+`knowledge_clarifications`，15 分钟内只允许补充一次；重复恢复幂等回放，过期、跨用户或跨租户
+访问统一返回 404。恢复后仍无证据直接返回 `KNOWLEDGE_NO_EVIDENCE`，不会形成澄清循环。
+
+实验性复杂问题计划器默认关闭。设置 `RAG_PLANNER_ENABLED=true` 后，仅明确比较、趋势或跨周期
+问题执行 2～4 个并行子查询；`RAG_PLANNER_MAX_SUBQUERIES` 最大为 4。子查询继承同一 Principal、
+RLS、集合范围和 12 秒检索 deadline；普通问题不进入计划器。
 
 传入 `conversation_id` 时，知识问答会先校验当前租户、当前用户及 `knowledge` 会话范围，
 再加载最近 5 个成功问答轮次（最多 8,000 字符）。历史仅用于判断追问/新话题和改写独立检索
@@ -102,6 +112,10 @@ Query；Embedding、全文检索、标题召回及 Reranker 使用改写 Query�
 Embedding 输出严格为 512 维，Reranker 使用 BGE CrossEncoder。
 个人知识库按 Markdown 标题切分 parent 与不超过 500 字的 child，向量与全文检索使用 RRF
 融合，rerank 后按 parent 展开供生成使用。
+
+索引任务通过 `knowledge_index_jobs.stage`、`processed_chunks` 和 `total_chunks` 持久化
+`queued → loading → parsing → embedding → persisting → completed/failed`。阶段更新校验未过期
+owner lease 且同阶段进度单调，旧 worker 不能覆盖新 claim 的进度。
 
 个人知识库来源是当前租户上传资料与主动开启的笔记。历史 HowToCook 内置语料已一次性迁移到
 用户 `Diving` 的私有知识库，不再随应用镜像分发。运行时文件统一保存到

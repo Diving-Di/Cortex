@@ -38,6 +38,8 @@ type Config struct {
 	RAGRerankMinMargin           *float64
 	RAGMinQualifiedEvidence      int
 	RAGVerifierModel             string
+	RAGPlannerEnabled            bool
+	RAGPlannerMaxSubqueries      int
 	AIAPIKey                     string
 	AIBaseURL                    string
 	AIModel                      string
@@ -278,6 +280,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	plannerMaxSubqueries, err := positiveInt("RAG_PLANNER_MAX_SUBQUERIES", 4)
+	if err != nil || plannerMaxSubqueries > 4 {
+		return Config{}, fmt.Errorf("RAG_PLANNER_MAX_SUBQUERIES must be between 1 and 4")
+	}
 	return Config{
 		DatabaseURL:             databaseURL,
 		MigrationDatabaseURL:    migrationDatabaseURL,
@@ -302,6 +308,8 @@ func Load() (Config, error) {
 		RAGRerankMinScore: rerankMinScore, RAGRerankMinMargin: rerankMinMargin,
 		RAGMinQualifiedEvidence:      minQualifiedEvidence,
 		RAGVerifierModel:             valueOrDefault("RAG_VERIFIER_MODEL", valueOrDefault("AI_MODEL", "gpt-5.6")),
+		RAGPlannerEnabled:            parseBool(valueOrDefault("RAG_PLANNER_ENABLED", "false")),
+		RAGPlannerMaxSubqueries:      plannerMaxSubqueries,
 		AIAPIKey:                     strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIBaseURL:                    valueOrDefault("AI_BASE_URL", "https://api.openai.com/v1"),
 		AIModel:                      valueOrDefault("AI_MODEL", "gpt-5.6"),

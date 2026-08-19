@@ -26,6 +26,7 @@ func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store,
 				logger.Error("knowledge job claim failed", "code", "KNOWLEDGE_INDEX_FAILED")
 			} else {
 				for _, job := range jobs {
+					_ = s.UpdateKnowledgeJobProgress(ctx, job, "loading", 0, 0)
 					if err := s.LoadKnowledgeJobDocument(ctx, &job); err != nil {
 						if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_DOCUMENT_UNAVAILABLE"), store.ErrKnowledgeIndexLeaseLost) {
 							knowledgeIndexLeaseLost.Add(1)
@@ -50,6 +51,7 @@ func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store,
 						}
 						content = string(data)
 					}
+					_ = s.UpdateKnowledgeJobProgress(ctx, job, "parsing", 0, 0)
 					parents := knowledge.Chunk(job.Title, job.SourceType, content)
 					if len(parents) == 0 {
 						if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_MARKDOWN_INVALID"), store.ErrKnowledgeIndexLeaseLost) {
@@ -63,6 +65,7 @@ func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store,
 							texts = append(texts, child.EmbeddingText)
 						}
 					}
+					_ = s.UpdateKnowledgeJobProgress(ctx, job, "embedding", 0, len(texts))
 					vectors, embedErr := client.Embed(ctx, texts)
 					if embedErr != nil {
 						logger.Error("knowledge embedding failed", "document_id", job.DocumentID.String(), "code", "KNOWLEDGE_EMBEDDING_UNAVAILABLE", "error", embedErr)
@@ -71,6 +74,7 @@ func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store,
 						}
 						continue
 					}
+					_ = s.UpdateKnowledgeJobProgress(ctx, job, "persisting", len(texts), len(texts))
 					nested := make([][][]float32, len(parents))
 					offset := 0
 					for pi, p := range parents {

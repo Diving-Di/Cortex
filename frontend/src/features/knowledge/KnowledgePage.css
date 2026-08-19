@@ -4,6 +4,17 @@
   max-width: 1200px;
   margin: 0 auto;
 }
+
+.knowledge-trace,
+.knowledge-answer,
+.knowledge-sources,
+.knowledge-feedback {
+  margin-top: 16px;
+}
+
+.knowledge-index-progress {
+  min-width: 180px;
+}
 .knowledge-page h2 {
   margin: 0;
 }

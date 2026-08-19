@@ -192,7 +192,24 @@ reranker 返回的 index 必须完整、唯一且在候选范围内；缺失、�
 Top-1 与 Top-2 的分差不小于该值。任一条件不满足均返回 `KNOWLEDGE_NO_EVIDENCE`，不会调用生成。
 离线 `rag-eval` 当前记录 rerank 分数并支持阈值校准，但普通全链路评测不会执行这三个在线门控。
 
-### 6.2 文档优先的上下文选择
+门控失败会先做可恢复性判定：明确指代缺失为 `ambiguous`，不同高分范围且 margin 不足为
+`scope_conflict`，其余为 `absent`。前两类在 `knowledge_clarifications` 中保存 15 分钟的一次性状态，
+绑定 tenant、user、knowledge conversation、原 request ID 与服务端集合范围；恢复补充最多 1000 字，
+且恢复请求不会再次进入澄清。`absent` 保持 `KNOWLEDGE_NO_EVIDENCE`，无合格证据始终不调用生成。
+
+### 6.2 复杂问题实验路径
+
+`RAG_PLANNER_ENABLED` 默认 `false`。开启时，仅含比较、差异、趋势或跨周期标记的明确复杂问题
+进入规则计划器；普通问题不调用计划器且只检索一次。计划器生成 2～4 个去重子查询（上限由
+`RAG_PLANNER_MAX_SUBQUERIES` 控制），并行召回继承同一 Principal、RLS 与 collection scope，共享
+12 秒检索 deadline 和原有总候选预算。部分子查询失败但其他查询有证据时继续门控；全部失败才
+返回错误。公开 progress 只报告 `planned` 和 `subquery_count`。
+
+上线开关前必须在冻结集按 `comparison/trend/cross_period` 标签比较单查询基线，至少记录 Hit@K、
+MRR、Context Recall/Precision、引用通过率、P95、token 与模型调用次数。Step-back、HyDE 和更多层级
+分块只作为 `rag-eval --retrieval-only` 的候选消融，不改变线上 PostgreSQL 数据模型。
+
+### 6.3 文档优先的上下文选择
 
 精排后由 `SelectKnowledgeContexts`（`backend/internal/store/knowledge_retrieval.go`）选择
 最终上下文：
@@ -205,7 +222,7 @@ Top-1 与 Top-2 的分差不小于该值。任一条件不满足均返回 `KNOWL
 该策略把“召回哪个文档”和“取文档哪一章”解耦，是本轮 Context Recall 与 Context Precision
 同时提升的关键（见第 9 节）。
 
-### 6.3 生成与来源保存
+### 6.4 生成与来源保存
 
 最终 parent 转为 `KnowledgeEvidence`（引用 `K1`…`Kn`），在线调用
 `Workflow.AnswerKnowledgeGrounded`。该流程先通过 `AnswerKnowledge` 生成完整草稿并在服务端缓冲，
@@ -236,6 +253,7 @@ Top-1 与 Top-2 的分差不小于该值。任一条件不满足均返回 `KNOWL
 | 没有候选 | 返回 `KNOWLEDGE_NO_EVIDENCE`，不生成无来源答案 |
 | reranker 未配置、调用失败或返回不完整 | 返回 `KNOWLEDGE_RERANK_UNAVAILABLE`，不静默用粗排结果 |
 | 精排分数、合格证据数或可选 Margin 不达标 | 返回 `KNOWLEDGE_NO_EVIDENCE`，不调用生成 |
+| 弱证据且问题有歧义/范围冲突 | 保存一次性澄清状态；过期、重复、跨租户恢复均为 404 |
 | 上下文选择后为空 | 同“没有候选”，返回无依据语义 |
 | Query 改写返回非法结构 | 返回 `AI_INVALID_STRUCTURED_OUTPUT`，不使用非法改写 |
 | 生成结果引用或语义核验失败 | 最多重写一次；仍失败发送 `rejected` 并保存失败结果 |

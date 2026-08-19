@@ -1,8 +1,8 @@
 # 个人知识库页
 
 `/knowledge` 是个人知识库 v2 的入口，用于上传 Markdown / Markdown ZIP 资料、查看文档索引
-状态与容量配额、删除不再需要的知识文档，并作为知识问答（`/api/v1/knowledge/chat/stream`）
-的来源管理页面。`/recipes` 与 `/assistant` 已重定向到本页。
+状态与容量配额、删除不再需要的知识文档，并提供知识问答、历史会话、检索过程、来源与反馈。
+问答使用 `POST /api/v1/knowledge/chat/stream`；`/recipes` 与 `/assistant` 已重定向到本页。
 
 ## 页面目标、范围与非目标
 
@@ -19,13 +19,25 @@
   建立索引。
 - 配额区：展示已用、剩余容量和进度条，容量判断以后端返回为准。
 - 文档列表：显示标题、来源类型（上传资料 / 个人笔记）、大小、索引状态与失败摘要，支持删除。
+- 问答区：支持新会话或选择历史 knowledge 会话、停止当前请求、展示完整或 incomplete 回答，
+  完成后可提交“答案不正确”或“引用无依据”反馈。
+- 检索过程：默认以标签展示公开阶段与耗时，来源以折叠列表展示引用编号、标题和章节路径。
+- 澄清恢复：收到 `KNOWLEDGE_CLARIFICATION_REQUIRED` 后展示服务端安全提示；用户最多补充
+  1000 字并继续原请求，前端不得修改原问题、集合或 tenant。
 - 状态：首次索引使用 `uploaded`、`parsing`、`indexing`、`ready`、`failed`，删除使用
   `deleting`；已有活动版本的文档重建时保持 `ready`，另由 `index_job_status` 展示后台任务状态，
-  重建失败记录 `last_index_failure_code` 且旧版本继续服务。
+  重建失败记录 `last_index_failure_code` 且旧版本继续服务。任务详情用 `index_stage` 展示
+  `queued/loading/parsing/embedding/persisting/completed/failed`，并用
+  `processed_chunks/total_chunks` 计算进度。
 
 ## 前端数据流
 
 - `useQuery(['knowledge'])` 每 5 秒轮询 `GET /api/v1/knowledge/documents` 刷新列表与配额。
+- `useQuery(['knowledge-conversations'])` 加载 `source_scope=knowledge` 的历史会话；切换会话时只读取
+  当前用户可见消息。
+- POST SSE 使用 `fetch` + `ReadableStream` 解析命名事件；组件卸载和用户停止时通过
+  `AbortController` 取消。只有 `done` 表示完成，`error.incomplete=true` 保留已收到的部分回答且不
+  自动从头重试。
 - 上传使用 `multipart/form-data` 的 mutation；删除使用确认弹窗（Popconfirm）后调用 DELETE。
 - 上传/删除成功或失败均展示稳定提示；失败只显示后端返回的 `code`/`message`，不含内部路径。
 
@@ -52,6 +64,10 @@
   `knowledge_quotas`、`knowledge_collections`、`knowledge_uploads`、`knowledge_documents`、
   `knowledge_assets`、`knowledge_parent_chunks`、`knowledge_child_chunks`、
   `knowledge_index_jobs`、`knowledge_message_sources`。
+- `000035_knowledge_index_progress` 为索引 job 增加阶段、已处理块数与总块数；更新必须持有当前未
+  过期 lease，同阶段数值只能前进。
+- `000036_knowledge_clarifications` 新增 RLS 隔离的一次性恢复状态；状态绑定 tenant、user、
+  conversation 和原 request ID，collection scope 只读取服务端保存值。
 - 后台 `RunKnowledgeIndexer`（`backend/internal/server/knowledge_worker.go`）按 Markdown 标题
   切分 parent 与不超过 500 字的 child，经 Compose 内部 `embedding-service`
   （`iic/nlp_gte_sentence-embedding_chinese-small`，512 维）生成向量写入
@@ -66,15 +82,19 @@
 
 `POST /api/v1/knowledge/chat/stream`：
 
-1. `LocalEmbeddingClient` 对问题生成 512 维向量；
-2. `Store.SearchKnowledge` 在同一个 `pgx.Tx` 内设置 RLS 上下文，只检索当前租户
+1. 有会话历史时先生成独立检索 Query；普通问题走单查询快速路径。默认关闭的实验计划器只为
+   明确比较/趋势/跨周期问题生成最多 4 个查询；
+2. `LocalEmbeddingClient` 对检索 Query 批量生成 512 维向量；
+3. `Store.SearchKnowledge` 在每个子查询的 `pgx.Tx` 内设置同一 RLS 上下文，只检索当前租户
    `status='ready'`、`knowledge_enabled`、`index_version=active_index_version` 的文档
    （可选 `collection_ids` 过滤），向量 + 全文召回用 RRF 融合；
-3. `reranker-service`（`BAAI/bge-reranker-v2-m3`）精排，取前 `RAG_CONTEXT_PARENT_TOP_K` 个
+4. `reranker-service`（`BAAI/bge-reranker-v2-m3`）精排，取前 `RAG_CONTEXT_PARENT_TOP_K` 个
    parent；
-4. `AnswerKnowledge` 经 LiteLLM 流式生成，SSE 事件为 `retrieval` → `delta` → `sources` →
-   `done`；来源写入 `knowledge_message_sources`；
-5. 无当前租户证据返回 `KNOWLEDGE_NO_EVIDENCE`；Embedding / Reranker 不可用分别返回
+5. 证据门控不足时区分歧义、范围冲突和确实无知识。前两者返回一次性澄清状态，恢复只执行一次
+   定向检索；无证据或恢复仍失败不调用生成；
+6. `AnswerKnowledge` 经 LiteLLM 生成并核验，SSE 先发送版本化 `retrieval_progress`，随后发送
+   `retrieval`、核验状态、正文、`sources` 与 `done`；来源写入 `knowledge_message_sources`；
+7. 无当前租户证据返回 `KNOWLEDGE_NO_EVIDENCE`；Embedding / Reranker 不可用分别返回
    `KNOWLEDGE_EMBEDDING_UNAVAILABLE` / `KNOWLEDGE_RERANK_UNAVAILABLE`。
 
 ## 租户、安全、降级与删除
@@ -88,5 +108,6 @@
 ## 测试与验收
 
 - 覆盖：`.md` / `.zip` 上传与配额（含并发预占）、跨租户 404 隔离、文档删除后退出检索、
-  笔记知识开关、混合问答来源保存与 `KNOWLEDGE_NO_EVIDENCE`、Embedding/Reranker 降级。
+  笔记知识开关、公开 progress DTO、混合问答来源与 incomplete、澄清正常/重复/过期/跨租户恢复、
+  简单问题不规划、子查询/恢复次数上限、索引进度 fencing、`KNOWLEDGE_NO_EVIDENCE` 和模型降级。
 - 端到端：`non_ai_smoke.ps1`、`ai_acceptance.ps1`。

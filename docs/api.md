@@ -158,6 +158,8 @@ AI 限量活动的 Redis 投影使用 `active_version` 指针和版本化数据�
 已有活动索引的文档在重建期间仍返回 `Status: "ready"`；`index_job_status` 单独表示
 `queued`、`running`、`success` 或 `failed`。重建失败通过 `last_index_failure_code` 暴露，旧索引
 继续可查询；只有 `active_index_version=0` 的首次索引最终失败时，文档才进入 `failed`。
+最新索引任务还返回稳定的 `index_stage`（`queued/loading/parsing/embedding/persisting/completed/failed`）、
+`processed_chunks` 和 `total_chunks`。进度由持久化租约 owner 单调更新，不能用它推断正文或内部路径。
 
 ## 用户设置
 
@@ -179,6 +181,9 @@ AI 限量活动的 Redis 投影使用 `active_version` 指针和版本化数据�
 知识问答 SSE 事件顺序如下：
 
 ```text
+event: retrieval_progress
+data: {"schema_version":1,"stage":"rerank","status":"completed","elapsed_ms":84,"candidate_count":12,"qualified_count":4}
+
 event: retrieval
 data: {"count":2,"items":[...]}
 
@@ -191,6 +196,18 @@ data: {"items":[...]}
 event: done
 data: {"conversation_id":12,"message_id":34}
 ```
+
+`retrieval_progress` 是公开白名单 DTO；当前发送阶段为
+`rewrite/embedding/retrieval/rerank/evidence_gate`，`generation/verification` 为协议保留阶段。
+事件不包含 prompt、块正文、内部 URL、上游响应或身份标识。客户端必须忽略未知字段，以
+`schema_version` 判断不兼容升级。
+
+弱证据若被判定为指代歧义或资料范围冲突，HTTP 409 返回
+`KNOWLEDGE_CLARIFICATION_REQUIRED`，`details` 包含服务端生成的 `clarification_id`、`conversation_id`、
+`kind`、安全提示和过期时间。客户端以同一知识流接口提交
+`resume_clarification_id` 与最多 1000 字的 `clarification`；服务端忽略客户端的新问题、会话和集合范围，
+恢复原请求并只允许消费一次。过期、重复或跨租户/跨用户恢复统一返回 404。恢复后仍无证据时返回
+`KNOWLEDGE_NO_EVIDENCE`，不会再次澄清。
 
 失败使用 `event: error`，`data` 只包含稳定 `code` 和脱敏 `message`。来源包含
 `source_type`、`source_id`、`title`、`rank`、`source_deleted` 与最小 `snippet`。

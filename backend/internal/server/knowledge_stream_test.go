@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"cortex/backend/internal/ai"
 )
@@ -20,7 +21,7 @@ func TestWriteKnowledgeSSEPersistsPartialFailureWithoutDone(t *testing.T) {
 	var savedTokens int
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/v1/knowledge/chat/stream", nil)
-	(&Server{}).writeKnowledgeSSE(w, r, events, nil, func(_ context.Context, answer, status, errorCode, stage string, outputTokens int) (int32, int32, error) {
+	(&Server{}).writeKnowledgeSSE(w, r, events, nil, nil, func(_ context.Context, answer, status, errorCode, stage string, outputTokens int) (int32, int32, error) {
 		savedContent, savedStatus, savedStage, savedTokens = answer, status, stage, outputTokens
 		if errorCode != "AI_REQUEST_FAILED" {
 			t.Fatalf("unexpected error code %q", errorCode)
@@ -46,11 +47,33 @@ func TestWriteKnowledgeSSEDoesNotMislabelStorageFailureAsInvalidSource(t *testin
 	close(events)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/v1/knowledge/chat/stream", nil)
-	(&Server{}).writeKnowledgeSSE(w, r, events, nil, func(context.Context, string, string, string, string, int) (int32, int32, error) {
+	(&Server{}).writeKnowledgeSSE(w, r, events, nil, nil, func(context.Context, string, string, string, string, int) (int32, int32, error) {
 		return 0, 0, errors.New("database unavailable")
 	})
 	body := w.Body.String()
 	if !strings.Contains(body, `"code":"KNOWLEDGE_SAVE_FAILED"`) || strings.Contains(body, `"code":"KNOWLEDGE_SOURCE_INVALID"`) {
 		t.Fatalf("wrong persistence error contract: %s", body)
+	}
+}
+
+func TestWriteKnowledgeSSEPublishesVersionedSafeProgress(t *testing.T) {
+	events := make(chan ai.StreamEvent)
+	close(events)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/knowledge/chat/stream", nil)
+	progress := []retrievalProgress{newRetrievalProgress("rerank", 84*time.Millisecond, func(v *retrievalProgress) {
+		v.CandidateCount, v.QualifiedCount = 12, 4
+	})}
+	(&Server{}).writeKnowledgeSSE(w, r, events, nil, progress, func(context.Context, string, string, string, string, int) (int32, int32, error) {
+		return 1, 2, nil
+	})
+	body := w.Body.String()
+	if !strings.Contains(body, "event: retrieval_progress") || !strings.Contains(body, `"schema_version":1`) || !strings.Contains(body, `"candidate_count":12`) {
+		t.Fatalf("missing public retrieval progress: %s", body)
+	}
+	for _, forbidden := range []string{"prompt", "api_key", "content\""} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("progress leaked forbidden field %q: %s", forbidden, body)
+		}
 	}
 }

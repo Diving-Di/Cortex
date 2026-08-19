@@ -26,6 +26,9 @@ type KnowledgeDocument struct {
 	FailureSummary            *string `json:"failure_summary,omitempty"`
 	LastIndexFailureCode      *string `json:"last_index_failure_code,omitempty"`
 	IndexJobStatus            *string `json:"index_job_status,omitempty"`
+	IndexStage                *string `json:"index_stage,omitempty"`
+	ProcessedChunks           int     `json:"processed_chunks"`
+	TotalChunks               int     `json:"total_chunks"`
 	CreatedAt, UpdatedAt      time.Time
 }
 type KnowledgeUpload struct {
@@ -73,7 +76,7 @@ func (s *Store) RetryKnowledgeDocument(ctx context.Context, p domain.Principal, 
 		} else if err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO knowledge_index_jobs(tenant_id,document_id,target_index_version) VALUES($1,$2,$3) ON CONFLICT(tenant_id,document_id,target_index_version) DO UPDATE SET status='queued',available_at=now(),failure_code=NULL,updated_at=now()`, p.TenantID, id, version)
+		_, err := tx.Exec(ctx, `INSERT INTO knowledge_index_jobs(tenant_id,document_id,target_index_version) VALUES($1,$2,$3) ON CONFLICT(tenant_id,document_id,target_index_version) DO UPDATE SET status='queued',stage='queued',processed_chunks=0,total_chunks=0,available_at=now(),failure_code=NULL,updated_at=now()`, p.TenantID, id, version)
 		return err
 	})
 }
@@ -190,14 +193,14 @@ func (s *Store) ListKnowledgeDocuments(ctx context.Context, p domain.Principal) 
 			return err
 		}
 		_ = tx.QueryRow(ctx, `SELECT used_bytes,reserved_bytes FROM knowledge_quotas WHERE tenant_id=$1`, p.TenantID).Scan(&used, &reserved)
-		rows, err := tx.Query(ctx, `SELECT d.id,d.upload_id,d.collection_id,d.source_type,d.title,d.status,d.stored_path,d.size_bytes,d.active_index_version,d.failure_code,d.failure_summary,d.last_index_failure_code,j.status,d.created_at,d.updated_at FROM knowledge_documents d LEFT JOIN LATERAL (SELECT status FROM knowledge_index_jobs WHERE tenant_id=d.tenant_id AND document_id=d.id ORDER BY target_index_version DESC,id DESC LIMIT 1) j ON true WHERE d.tenant_id=$1 AND d.deleted_at IS NULL ORDER BY d.updated_at DESC`, p.TenantID)
+		rows, err := tx.Query(ctx, `SELECT d.id,d.upload_id,d.collection_id,d.source_type,d.title,d.status,d.stored_path,d.size_bytes,d.active_index_version,d.failure_code,d.failure_summary,d.last_index_failure_code,j.status,j.stage,coalesce(j.processed_chunks,0),coalesce(j.total_chunks,0),d.created_at,d.updated_at FROM knowledge_documents d LEFT JOIN LATERAL (SELECT status,stage,processed_chunks,total_chunks FROM knowledge_index_jobs WHERE tenant_id=d.tenant_id AND document_id=d.id ORDER BY target_index_version DESC,id DESC LIMIT 1) j ON true WHERE d.tenant_id=$1 AND d.deleted_at IS NULL ORDER BY d.updated_at DESC`, p.TenantID)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var v KnowledgeDocument
-			if err := rows.Scan(&v.ID, &v.UploadID, &v.CollectionID, &v.SourceType, &v.Title, &v.Status, &v.StoredPath, &v.SizeBytes, &v.ActiveIndexVersion, &v.FailureCode, &v.FailureSummary, &v.LastIndexFailureCode, &v.IndexJobStatus, &v.CreatedAt, &v.UpdatedAt); err != nil {
+			if err := rows.Scan(&v.ID, &v.UploadID, &v.CollectionID, &v.SourceType, &v.Title, &v.Status, &v.StoredPath, &v.SizeBytes, &v.ActiveIndexVersion, &v.FailureCode, &v.FailureSummary, &v.LastIndexFailureCode, &v.IndexJobStatus, &v.IndexStage, &v.ProcessedChunks, &v.TotalChunks, &v.CreatedAt, &v.UpdatedAt); err != nil {
 				return err
 			}
 			out = append(out, v)
@@ -257,7 +260,7 @@ func (s *Store) SetNoteKnowledge(ctx context.Context, p domain.Principal, noteID
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO knowledge_index_jobs(tenant_id,document_id,target_index_version) SELECT $1,$2,active_index_version+1 FROM knowledge_documents WHERE tenant_id=$1 AND id=$2 ON CONFLICT(tenant_id,document_id,target_index_version) DO UPDATE SET status='queued',available_at=now(),failure_code=NULL,lease_owner=NULL,lease_until=NULL,updated_at=now()`, p.TenantID, id)
+		_, err = tx.Exec(ctx, `INSERT INTO knowledge_index_jobs(tenant_id,document_id,target_index_version) SELECT $1,$2,active_index_version+1 FROM knowledge_documents WHERE tenant_id=$1 AND id=$2 ON CONFLICT(tenant_id,document_id,target_index_version) DO UPDATE SET status='queued',stage='queued',processed_chunks=0,total_chunks=0,available_at=now(),failure_code=NULL,lease_owner=NULL,lease_until=NULL,updated_at=now()`, p.TenantID, id)
 		return err
 	})
 }
