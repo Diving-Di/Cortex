@@ -1,146 +1,146 @@
 package store
 
 import (
-    "context"
-    "errors"
-    "time"
+	"context"
+	"errors"
+	"time"
 
-    "cortex/backend/internal/apierror"
-    "cortex/backend/internal/domain"
-    "github.com/jackc/pgx/v5"
+	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
+	"github.com/jackc/pgx/v5"
 )
 
 type Attachment struct {
-    ID           int32     `json:"id"`
-    NoteID       int32     `json:"note_id"`
-    OriginalName string    `json:"original_name"`
-    StoredPath   string    `json:"-"`
-    MIMEType     string    `json:"mime_type"`
-    Size         int64     `json:"size"`
-    SHA256       string    `json:"sha256"`
-    CreatedAt    time.Time `json:"-"`
+	ID           int32     `json:"id"`
+	NoteID       int32     `json:"note_id"`
+	OriginalName string    `json:"original_name"`
+	StoredPath   string    `json:"-"`
+	MIMEType     string    `json:"mime_type"`
+	Size         int64     `json:"size"`
+	SHA256       string    `json:"sha256"`
+	CreatedAt    time.Time `json:"-"`
 }
 
 type AttachmentResponse struct {
-    ID           int32  `json:"id"`
-    NoteID       int32  `json:"note_id"`
-    OriginalName string `json:"original_name"`
-    MIMEType     string `json:"mime_type"`
-    Size         int64  `json:"size"`
-    SHA256       string `json:"sha256"`
-    CreatedAt    string `json:"created_at"`
+	ID           int32  `json:"id"`
+	NoteID       int32  `json:"note_id"`
+	OriginalName string `json:"original_name"`
+	MIMEType     string `json:"mime_type"`
+	Size         int64  `json:"size"`
+	SHA256       string `json:"sha256"`
+	CreatedAt    string `json:"created_at"`
 }
 
 func (a Attachment) Response() AttachmentResponse {
-    return AttachmentResponse{
-        ID: a.ID, NoteID: a.NoteID, OriginalName: a.OriginalName,
-        MIMEType: a.MIMEType, Size: a.Size, SHA256: a.SHA256,
-        CreatedAt: a.CreatedAt.Format(time.RFC3339Nano),
-    }
+	return AttachmentResponse{
+		ID: a.ID, NoteID: a.NoteID, OriginalName: a.OriginalName,
+		MIMEType: a.MIMEType, Size: a.Size, SHA256: a.SHA256,
+		CreatedAt: a.CreatedAt.Format(time.RFC3339Nano),
+	}
 }
 
 func (s *Store) AddAttachment(ctx context.Context, principal domain.Principal, item Attachment) (Attachment, error) {
-    var result Attachment
-    err := s.WithTx(ctx, func(tx pgx.Tx) error {
-        if err := setTenant(ctx, tx, principal); err != nil {
-            return err
-        }
-        if _, err := getNoteTx(ctx, tx, principal, item.NoteID); err != nil {
-            return err
-        }
-        var quota, used int64
-        if err := tx.QueryRow(ctx, `SELECT attachment_quota_bytes FROM tenants WHERE id=$1 FOR UPDATE`, principal.TenantID).Scan(&quota); err != nil {
-            return err
-        }
-        if err := tx.QueryRow(ctx, `SELECT COALESCE(sum(size),0) FROM attachments WHERE tenant_id=$1`, principal.TenantID).Scan(&used); err != nil {
-            return err
-        }
-        if used+item.Size > quota {
-            return apierror.New("ATTACHMENT_QUOTA_EXCEEDED", "附件空间配额不足", 409)
-        }
-        return tx.QueryRow(ctx, `INSERT INTO attachments
+	var result Attachment
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		if _, err := getNoteTx(ctx, tx, principal, item.NoteID); err != nil {
+			return err
+		}
+		var quota, used int64
+		if err := tx.QueryRow(ctx, `SELECT attachment_quota_bytes FROM tenants WHERE id=$1 FOR UPDATE`, principal.TenantID).Scan(&quota); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(sum(size),0) FROM attachments WHERE tenant_id=$1`, principal.TenantID).Scan(&used); err != nil {
+			return err
+		}
+		if used+item.Size > quota {
+			return apierror.New("ATTACHMENT_QUOTA_EXCEEDED", "附件空间配额不足", 409)
+		}
+		return tx.QueryRow(ctx, `INSERT INTO attachments
             (tenant_id,uploaded_by,note_id,original_name,stored_path,mime_type,size,sha256)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
             RETURNING id,note_id,original_name,stored_path,mime_type,size,sha256,created_at`,
-            principal.TenantID, principal.UserID, item.NoteID, item.OriginalName,
-            item.StoredPath, item.MIMEType, item.Size, item.SHA256,
-        ).Scan(
-            &result.ID, &result.NoteID, &result.OriginalName, &result.StoredPath,
-            &result.MIMEType, &result.Size, &result.SHA256, &result.CreatedAt,
-        )
-    })
-    return result, err
+			principal.TenantID, principal.UserID, item.NoteID, item.OriginalName,
+			item.StoredPath, item.MIMEType, item.Size, item.SHA256,
+		).Scan(
+			&result.ID, &result.NoteID, &result.OriginalName, &result.StoredPath,
+			&result.MIMEType, &result.Size, &result.SHA256, &result.CreatedAt,
+		)
+	})
+	return result, err
 }
 
 func (s *Store) GetAttachment(ctx context.Context, principal domain.Principal, attachmentID int32) (Attachment, error) {
-    var result Attachment
-    err := s.WithTx(ctx, func(tx pgx.Tx) error {
-        if err := setTenant(ctx, tx, principal); err != nil {
-            return err
-        }
-        var err error
-        result, err = getAttachmentTx(ctx, tx, principal, attachmentID)
-        return err
-    })
-    return result, err
+	var result Attachment
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		var err error
+		result, err = getAttachmentTx(ctx, tx, principal, attachmentID)
+		return err
+	})
+	return result, err
 }
 
 func (s *Store) ListAttachments(ctx context.Context, principal domain.Principal, noteID int32) ([]Attachment, error) {
-    var result []Attachment
-    err := s.WithTx(ctx, func(tx pgx.Tx) error {
-        if err := setTenant(ctx, tx, principal); err != nil {
-            return err
-        }
-        if _, err := getNoteTx(ctx, tx, principal, noteID); err != nil {
-            return err
-        }
-        rows, err := tx.Query(ctx, `SELECT id,note_id,original_name,stored_path,mime_type,size,sha256,created_at
+	var result []Attachment
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		if _, err := getNoteTx(ctx, tx, principal, noteID); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, `SELECT id,note_id,original_name,stored_path,mime_type,size,sha256,created_at
             FROM attachments WHERE tenant_id=$1 AND note_id=$2 ORDER BY id`, principal.TenantID, noteID)
-        if err != nil {
-            return err
-        }
-        defer rows.Close()
-        for rows.Next() {
-            var item Attachment
-            if err := rows.Scan(
-                &item.ID, &item.NoteID, &item.OriginalName, &item.StoredPath,
-                &item.MIMEType, &item.Size, &item.SHA256, &item.CreatedAt,
-            ); err != nil {
-                return err
-            }
-            result = append(result, item)
-        }
-        return rows.Err()
-    })
-    return result, err
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var item Attachment
+			if err := rows.Scan(
+				&item.ID, &item.NoteID, &item.OriginalName, &item.StoredPath,
+				&item.MIMEType, &item.Size, &item.SHA256, &item.CreatedAt,
+			); err != nil {
+				return err
+			}
+			result = append(result, item)
+		}
+		return rows.Err()
+	})
+	return result, err
 }
 
 func (s *Store) DeleteAttachment(ctx context.Context, principal domain.Principal, attachmentID int32) error {
-    return s.WithTx(ctx, func(tx pgx.Tx) error {
-        if err := setTenant(ctx, tx, principal); err != nil {
-            return err
-        }
-        command, err := tx.Exec(ctx, `DELETE FROM attachments WHERE tenant_id=$1 AND id=$2`, principal.TenantID, attachmentID)
-        if err != nil {
-            return err
-        }
-        if command.RowsAffected() == 0 {
-            return apierror.New("ATTACHMENT_NOT_FOUND", "附件不存在", 404)
-        }
-        return nil
-    })
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		command, err := tx.Exec(ctx, `DELETE FROM attachments WHERE tenant_id=$1 AND id=$2`, principal.TenantID, attachmentID)
+		if err != nil {
+			return err
+		}
+		if command.RowsAffected() == 0 {
+			return apierror.New("ATTACHMENT_NOT_FOUND", "附件不存在", 404)
+		}
+		return nil
+	})
 }
 
 func getAttachmentTx(ctx context.Context, tx pgx.Tx, principal domain.Principal, attachmentID int32) (Attachment, error) {
-    var item Attachment
-    err := tx.QueryRow(ctx, `SELECT id,note_id,original_name,stored_path,mime_type,size,sha256,created_at
+	var item Attachment
+	err := tx.QueryRow(ctx, `SELECT id,note_id,original_name,stored_path,mime_type,size,sha256,created_at
         FROM attachments WHERE tenant_id=$1 AND id=$2`, principal.TenantID, attachmentID,
-    ).Scan(
-        &item.ID, &item.NoteID, &item.OriginalName, &item.StoredPath,
-        &item.MIMEType, &item.Size, &item.SHA256, &item.CreatedAt,
-    )
-    if errors.Is(err, pgx.ErrNoRows) {
-        return item, apierror.New("ATTACHMENT_NOT_FOUND", "附件不存在", 404)
-    }
-    return item, err
+	).Scan(
+		&item.ID, &item.NoteID, &item.OriginalName, &item.StoredPath,
+		&item.MIMEType, &item.Size, &item.SHA256, &item.CreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return item, apierror.New("ATTACHMENT_NOT_FOUND", "附件不存在", 404)
+	}
+	return item, err
 }

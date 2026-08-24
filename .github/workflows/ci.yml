@@ -24,10 +24,19 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "$unformatted" ]]; then
+            printf 'The following Go files are not gofmt-formatted:\n%s\n' "$unformatted"
+            exit 1
+          fi
       - run: go vet ./...
       - run: go test ./...
       - run: go run ./cmd/rag-regression-check
       - run: go build ./cmd/server
+      - run: go build ./cmd/migrate
 
   frontend:
     name: Frontend
