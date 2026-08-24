@@ -46,9 +46,9 @@ type KnowledgeCollection struct {
 }
 
 type KnowledgeAsset struct {
-	ID               uuid.UUID
-	StoredPath, MIME string
-	SizeBytes        int64
+	ID                               uuid.UUID
+	StoredPath, StorageBackend, MIME string
+	SizeBytes                        int64
 }
 
 func (s *Store) GetKnowledgeAsset(ctx context.Context, p domain.Principal, documentID, assetID uuid.UUID) (KnowledgeAsset, error) {
@@ -57,7 +57,7 @@ func (s *Store) GetKnowledgeAsset(ctx context.Context, p domain.Principal, docum
 		if err := setTenant(ctx, tx, p); err != nil {
 			return err
 		}
-		err := tx.QueryRow(ctx, `SELECT a.id,a.stored_path,a.mime_type,a.size_bytes FROM knowledge_assets a JOIN knowledge_documents d ON d.tenant_id=a.tenant_id AND d.id=a.document_id WHERE a.tenant_id=$1 AND a.document_id=$2 AND a.id=$3 AND d.deleted_at IS NULL`, p.TenantID, documentID, assetID).Scan(&a.ID, &a.StoredPath, &a.MIME, &a.SizeBytes)
+		err := tx.QueryRow(ctx, `SELECT a.id,coalesce(a.object_key,a.stored_path),a.storage_backend,a.mime_type,a.size_bytes FROM knowledge_assets a JOIN knowledge_documents d ON d.tenant_id=a.tenant_id AND d.id=a.document_id WHERE a.tenant_id=$1 AND a.document_id=$2 AND a.id=$3 AND d.deleted_at IS NULL`, p.TenantID, documentID, assetID).Scan(&a.ID, &a.StoredPath, &a.StorageBackend, &a.MIME, &a.SizeBytes)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("KNOWLEDGE_SCOPE_NOT_FOUND", "知识库资源不存在", 404)
 		}
@@ -77,6 +77,10 @@ func (s *Store) RetryKnowledgeDocument(ctx context.Context, p domain.Principal, 
 			return err
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO knowledge_index_jobs(tenant_id,document_id,target_index_version) VALUES($1,$2,$3) ON CONFLICT(tenant_id,document_id,target_index_version) DO UPDATE SET status='queued',stage='queued',processed_chunks=0,total_chunks=0,available_at=now(),failure_code=NULL,updated_at=now()`, p.TenantID, id, version)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,topic,partition_key,schema_version) VALUES($1,'knowledge',$2::text,'knowledge.index.requested','cortex.knowledge.index.v1',$2::text,1)`, uuid.New(), id.String())
 		return err
 	})
 }
@@ -113,7 +117,7 @@ func (s *Store) CreateKnowledgeCollection(ctx context.Context, p domain.Principa
 	return c, err
 }
 
-func (s *Store) CreateKnowledgeUpload(ctx context.Context, p domain.Principal, uploadID uuid.UUID, idempotencyKey, originalName, storedRoot string, prepared knowledge.Prepared) (KnowledgeUpload, error) {
+func (s *Store) CreateKnowledgeUpload(ctx context.Context, p domain.Principal, uploadID uuid.UUID, idempotencyKey, originalName, storedRoot, storageBackend string, prepared knowledge.Prepared) (KnowledgeUpload, error) {
 	var result KnowledgeUpload
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, p); err != nil {
@@ -147,10 +151,13 @@ func (s *Store) CreateKnowledgeUpload(ctx context.Context, p domain.Principal, u
 		for _, d := range prepared.Documents {
 			var documentID uuid.UUID
 			stored := storedRoot + "/" + d.RelativePath
-			if err := tx.QueryRow(ctx, `INSERT INTO knowledge_documents(tenant_id,upload_id,source_type,title,stored_path,source_encoding,size_bytes,content_hash,status) VALUES($1,$2,'upload',$3,$4,$5,$6,$7,'indexing') RETURNING id`, p.TenantID, uploadID, d.Title, stored, d.Encoding, d.Size, d.Hash).Scan(&documentID); err != nil {
+			if err := tx.QueryRow(ctx, `INSERT INTO knowledge_documents(tenant_id,upload_id,source_type,title,stored_path,storage_backend,object_key,source_encoding,size_bytes,content_hash,status) VALUES($1,$2,'upload',$3,$4,$5,$4,$6,$7,$8,'indexing') RETURNING id`, p.TenantID, uploadID, d.Title, stored, storageBackend, d.Encoding, d.Size, d.Hash).Scan(&documentID); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO knowledge_index_jobs(tenant_id,document_id,target_index_version) VALUES($1,$2,1)`, p.TenantID, documentID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,topic,partition_key,schema_version) VALUES($1,'knowledge',$2::text,'knowledge.index.requested','cortex.knowledge.index.v1',$2::text,1)`, uuid.New(), documentID.String()); err != nil {
 				return err
 			}
 		}
@@ -161,7 +168,8 @@ func (s *Store) CreateKnowledgeUpload(ctx context.Context, p domain.Principal, u
 				return err
 			}
 			for _, a := range prepared.Assets {
-				if _, err := tx.Exec(ctx, `INSERT INTO knowledge_assets(tenant_id,document_id,stored_path,mime_type,size_bytes,sha256) VALUES($1,$2,$3,$4,$5,$6)`, p.TenantID, first, storedRoot+"/"+a.RelativePath, a.MIME, a.Size, a.Hash); err != nil {
+				stored := storedRoot + "/" + a.RelativePath
+				if _, err := tx.Exec(ctx, `INSERT INTO knowledge_assets(tenant_id,document_id,stored_path,storage_backend,object_key,mime_type,size_bytes,sha256) VALUES($1,$2,$3,$4,$3,$5,$6,$7)`, p.TenantID, first, stored, storageBackend, a.MIME, a.Size, a.Hash); err != nil {
 					return err
 				}
 			}
@@ -217,10 +225,20 @@ func (s *Store) DeleteKnowledgeDocument(ctx context.Context, p domain.Principal,
 			return err
 		}
 		var uploadID *uuid.UUID
-		err := tx.QueryRow(ctx, `UPDATE knowledge_documents SET status='deleting',deleted_at=now(),updated_at=now() WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING coalesce(stored_path,''),size_bytes,upload_id`, p.TenantID, id).Scan(&stored, &size, &uploadID)
+		var backend string
+		err := tx.QueryRow(ctx, `UPDATE knowledge_documents SET status='deleting',deleted_at=now(),updated_at=now() WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING coalesce(object_key,stored_path,''),storage_backend,size_bytes,upload_id`, p.TenantID, id).Scan(&stored, &backend, &size, &uploadID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("KNOWLEDGE_SCOPE_NOT_FOUND", "知识库资源不存在", 404)
 		}
+		if err != nil {
+			return err
+		}
+		if stored != "" {
+			if _, err = tx.Exec(ctx, `INSERT INTO object_gc_jobs(tenant_id,storage_backend,object_key) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, p.TenantID, backend, stored); err != nil {
+				return err
+			}
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO object_gc_jobs(tenant_id,storage_backend,object_key) SELECT tenant_id,storage_backend,coalesce(object_key,stored_path) FROM knowledge_assets WHERE tenant_id=$1 AND document_id=$2 ON CONFLICT DO NOTHING`, p.TenantID, id)
 		return err
 	})
 	return stored, size, err
@@ -261,6 +279,10 @@ func (s *Store) SetNoteKnowledge(ctx context.Context, p domain.Principal, noteID
 			return err
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO knowledge_index_jobs(tenant_id,document_id,target_index_version) SELECT $1,$2,active_index_version+1 FROM knowledge_documents WHERE tenant_id=$1 AND id=$2 ON CONFLICT(tenant_id,document_id,target_index_version) DO UPDATE SET status='queued',stage='queued',processed_chunks=0,total_chunks=0,available_at=now(),failure_code=NULL,lease_owner=NULL,lease_until=NULL,updated_at=now()`, p.TenantID, id)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,topic,partition_key,schema_version) VALUES($1,'knowledge',$2::text,'knowledge.index.requested','cortex.knowledge.index.v1',$2::text,1)`, uuid.New(), id.String())
 		return err
 	})
 }

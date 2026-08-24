@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS public.event_dead_letters;DROP TABLE IF EXISTS public.consumer_receipts;ALTER TABLE public.outbox_events DROP COLUMN IF EXISTS partition_key,DROP COLUMN IF EXISTS topic,DROP COLUMN IF EXISTS published_at,DROP COLUMN IF EXISTS publish_status,DROP COLUMN IF EXISTS schema_version;

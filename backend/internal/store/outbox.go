@@ -120,7 +120,7 @@ func (s *Store) ClaimOutboxEvent(ctx context.Context, aggregateType, owner strin
 	var id uuid.UUID
 	var event OutboxEvent
 	err = tx.QueryRow(ctx, `SELECT id,aggregate_type,aggregate_id,event_type,occurred_at,payload FROM outbox_events
-		WHERE aggregate_type=$1 AND processed_at IS NULL AND available_at<=now() AND (lease_until IS NULL OR lease_until<now())
+		WHERE ($1='*' OR aggregate_type=$1) AND processed_at IS NULL AND available_at<=now() AND (lease_until IS NULL OR lease_until<now())
 		ORDER BY occurred_at FOR UPDATE SKIP LOCKED LIMIT 1`, aggregateType).Scan(&id, &event.AggregateType, &event.AggregateID, &event.EventType, &event.OccurredAt, &event.Payload)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -129,7 +129,7 @@ func (s *Store) ClaimOutboxEvent(ctx context.Context, aggregateType, owner strin
 		return nil, err
 	}
 	event.ID = id.String()
-	if _, err = tx.Exec(ctx, `UPDATE outbox_events SET lease_owner=$2,lease_until=now()+$3::interval,attempt_count=attempt_count+1 WHERE id=$1`, id, owner, lease.String()); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE outbox_events SET lease_owner=$2,lease_until=now()+$3::interval,attempt_count=attempt_count+1,publish_status='publishing' WHERE id=$1`, id, owner, lease.String()); err != nil {
 		return nil, err
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -154,13 +154,13 @@ func (s *Store) FinishOutboxEvent(ctx context.Context, id, owner string, process
 	}
 	if processingErr == nil {
 		var tag pgconn.CommandTag
-		tag, err = s.AdminPool.Exec(ctx, `UPDATE outbox_events SET processed_at=now(),lease_owner=NULL,lease_until=NULL,last_error_code=NULL WHERE id=$1 AND lease_owner=$2 AND processed_at IS NULL AND lease_until>=now()`, eventID, owner)
+		tag, err = s.AdminPool.Exec(ctx, `UPDATE outbox_events SET processed_at=now(),published_at=now(),publish_status='published',lease_owner=NULL,lease_until=NULL,last_error_code=NULL WHERE id=$1 AND lease_owner=$2 AND processed_at IS NULL AND lease_until>=now()`, eventID, owner)
 		if err == nil && tag.RowsAffected() != 1 {
 			err = errors.New("outbox lease lost")
 		}
 	} else {
 		var tag pgconn.CommandTag
-		tag, err = s.AdminPool.Exec(ctx, `UPDATE outbox_events SET available_at=now()+least(interval '5 minutes',interval '2 seconds'*power(2,least(attempt_count,7))),lease_owner=NULL,lease_until=NULL,last_error_code='PROJECTION_UNAVAILABLE' WHERE id=$1 AND lease_owner=$2 AND processed_at IS NULL AND lease_until>=now()`, eventID, owner)
+		tag, err = s.AdminPool.Exec(ctx, `UPDATE outbox_events SET available_at=now()+least(interval '5 minutes',interval '2 seconds'*power(2,least(attempt_count,7))),publish_status='failed',lease_owner=NULL,lease_until=NULL,last_error_code='PUBLISH_UNAVAILABLE' WHERE id=$1 AND lease_owner=$2 AND processed_at IS NULL AND lease_until>=now()`, eventID, owner)
 		if err == nil && tag.RowsAffected() != 1 {
 			err = errors.New("outbox lease lost")
 		}

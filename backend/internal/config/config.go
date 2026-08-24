@@ -21,6 +21,20 @@ type Config struct {
 	AuthPoolSize                 int32
 	LogLevel                     slog.Level
 	DataDir                      string
+	StorageBackend               string
+	MinIOEndpoint                string
+	MinIOBucket                  string
+	MinIOAccessKey               string
+	MinIOSecretKey               string
+	MinIOSecure                  bool
+	EventBus                     string
+	KafkaRESTURL                 string
+	KafkaClientID                string
+	RAGRetrievalBackend          string
+	ElasticsearchURLs            []string
+	ElasticsearchUsername        string
+	ElasticsearchPassword        string
+	ElasticsearchIndexAlias      string
 	MaxAttachmentBytes           int64
 	EmbeddingBaseURL             string
 	EmbeddingAPIKey              string
@@ -140,6 +154,31 @@ func Load() (Config, error) {
 	dataDir, err := filepath.Abs(dataDirSetting)
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve CORTEX_DATA_DIR: %w", err)
+	}
+	storageBackend := strings.ToLower(valueOrDefault("STORAGE_BACKEND", "local"))
+	if storageBackend != "local" && storageBackend != "minio" {
+		return Config{}, fmt.Errorf("STORAGE_BACKEND must be local or minio")
+	}
+	minioEndpoint, minioBucket := strings.TrimSpace(os.Getenv("MINIO_ENDPOINT")), valueOrDefault("MINIO_BUCKET", "cortex-private")
+	minioAccessKey, minioSecretKey := strings.TrimSpace(os.Getenv("MINIO_ACCESS_KEY")), strings.TrimSpace(os.Getenv("MINIO_SECRET_KEY"))
+	if storageBackend == "minio" && (minioEndpoint == "" || minioAccessKey == "" || minioSecretKey == "") {
+		return Config{}, fmt.Errorf("MinIO configuration is required when STORAGE_BACKEND=minio")
+	}
+	eventBus := strings.ToLower(valueOrDefault("EVENT_BUS", "postgres"))
+	if eventBus != "postgres" && eventBus != "kafka" {
+		return Config{}, fmt.Errorf("EVENT_BUS must be postgres or kafka")
+	}
+	kafkaRESTURL := strings.TrimRight(strings.TrimSpace(os.Getenv("KAFKA_REST_URL")), "/")
+	if eventBus == "kafka" && kafkaRESTURL == "" {
+		return Config{}, fmt.Errorf("KAFKA_REST_URL is required when EVENT_BUS=kafka")
+	}
+	retrievalBackend := strings.ToLower(valueOrDefault("RAG_RETRIEVAL_BACKEND", "postgres"))
+	if retrievalBackend != "postgres" && retrievalBackend != "elasticsearch" {
+		return Config{}, fmt.Errorf("RAG_RETRIEVAL_BACKEND must be postgres or elasticsearch")
+	}
+	esURLs := splitCSV(os.Getenv("ELASTICSEARCH_URLS"))
+	if retrievalBackend == "elasticsearch" && len(esURLs) == 0 {
+		return Config{}, fmt.Errorf("ELASTICSEARCH_URLS is required when RAG_RETRIEVAL_BACKEND=elasticsearch")
 	}
 	researchWorkers, err := positiveInt("RESEARCH_WORKERS", 1)
 	if err != nil {
@@ -285,16 +324,20 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("RAG_PLANNER_MAX_SUBQUERIES must be between 1 and 4")
 	}
 	return Config{
-		DatabaseURL:             databaseURL,
-		MigrationDatabaseURL:    migrationDatabaseURL,
-		ListenAddress:           valueOrDefault("LISTEN_ADDRESS", "0.0.0.0:8000"),
-		CORSOrigins:             origins,
-		TokenTTL:                time.Duration(tokenHours) * time.Hour,
-		StatementTimeout:        time.Duration(statementMS) * time.Millisecond,
-		PoolSize:                int32(poolSize),
-		AuthPoolSize:            int32(authPoolSize),
-		LogLevel:                parseLogLevel(valueOrDefault("LOG_LEVEL", "INFO")),
-		DataDir:                 dataDir,
+		DatabaseURL:          databaseURL,
+		MigrationDatabaseURL: migrationDatabaseURL,
+		ListenAddress:        valueOrDefault("LISTEN_ADDRESS", "0.0.0.0:8000"),
+		CORSOrigins:          origins,
+		TokenTTL:             time.Duration(tokenHours) * time.Hour,
+		StatementTimeout:     time.Duration(statementMS) * time.Millisecond,
+		PoolSize:             int32(poolSize),
+		AuthPoolSize:         int32(authPoolSize),
+		LogLevel:             parseLogLevel(valueOrDefault("LOG_LEVEL", "INFO")),
+		DataDir:              dataDir,
+		StorageBackend:       storageBackend, MinIOEndpoint: minioEndpoint, MinIOBucket: minioBucket,
+		MinIOAccessKey: minioAccessKey, MinIOSecretKey: minioSecretKey, MinIOSecure: parseBool(valueOrDefault("MINIO_SECURE", "false")),
+		EventBus: eventBus, KafkaRESTURL: kafkaRESTURL, KafkaClientID: valueOrDefault("KAFKA_CLIENT_ID", "cortex"),
+		RAGRetrievalBackend: retrievalBackend, ElasticsearchURLs: esURLs, ElasticsearchUsername: strings.TrimSpace(os.Getenv("ELASTICSEARCH_USERNAME")), ElasticsearchPassword: strings.TrimSpace(os.Getenv("ELASTICSEARCH_PASSWORD")), ElasticsearchIndexAlias: valueOrDefault("ELASTICSEARCH_INDEX_ALIAS", "cortex-knowledge-read"),
 		MaxAttachmentBytes:      int64(maxAttachmentBytes),
 		EmbeddingBaseURL:        valueOrDefault("RAG_EMBEDDING_BASE_URL", "http://llm-gateway:4000/v1"),
 		EmbeddingAPIKey:         strings.TrimSpace(os.Getenv("RAG_EMBEDDING_API_KEY")),

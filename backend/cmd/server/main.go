@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"cortex/backend/internal/blobstore"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/rediscoord"
 	"cortex/backend/internal/server"
@@ -24,6 +25,7 @@ func main() {
 		slog.Error("load configuration", "error", err)
 		os.Exit(1)
 	}
+	localBlobs, _ := blobstore.NewLocal(cfg.DataDir)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(logger)
 
@@ -36,9 +38,21 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	var blobs blobstore.BlobStore
+	if cfg.StorageBackend == "minio" {
+		blobs, err = blobstore.NewS3(cfg.MinIOEndpoint, cfg.MinIOBucket, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOSecure)
+	} else {
+		blobs, err = blobstore.NewLocal(cfg.DataDir)
+	}
+	if err != nil {
+		logger.Error("open object store", "error", err)
+		os.Exit(1)
+	}
 
 	handler := server.New(cfg, db, logger, version)
-	server.RunKnowledgeIndexer(ctx, cfg, db, logger)
+	if cfg.EventBus != "kafka" {
+		server.RunKnowledgeIndexer(ctx, cfg, db, blobs, localBlobs, logger)
+	}
 	go server.RunScheduler(ctx, cfg, db, logger)
 	server.RunResearchWorkers(ctx, cfg, db, logger)
 	server.RunXHSAuthorizationWorkers(ctx, cfg, db, logger)

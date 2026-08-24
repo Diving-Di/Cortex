@@ -1,17 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"io"
 	"mime"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"cortex/backend/internal/apierror"
@@ -49,34 +47,23 @@ func (s *Server) uploadAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := principalFrom(r.Context())
-	now := time.Now().UTC()
-	relative := filepath.Join(
-		"attachments", principal.TenantID.String(), now.Format("2006"), now.Format("01"),
-		uuid.NewString()+extension,
-	)
-	target, err := s.safeDataPath(relative, "attachments")
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0750); err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if err := os.WriteFile(target, data, 0640); err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
 	digest := sha256.Sum256(data)
+	digestText := hex.EncodeToString(digest[:])
+	key := filepath.ToSlash(filepath.Join("tenants", principal.TenantID.String(), "attachments", uuid.NewString(), digestText+extension))
+	object, err := s.blobs.Put(r.Context(), key, bytes.NewReader(data), int64(len(data)), digestText)
+	if err != nil {
+		httpx.WriteError(w, s.logger, apierror.New("ATTACHMENT_STORAGE_UNAVAILABLE", "附件存储暂不可用", 503))
+		return
+	}
 	originalName := filepath.Base(header.Filename)
 	originalName = truncateRunes(originalName, 255)
 	item, err := s.store.AddAttachment(r.Context(), principal, store.Attachment{
 		NoteID: noteID, OriginalName: originalName,
-		StoredPath: filepath.ToSlash(relative), MIMEType: mimeType,
-		Size: int64(len(data)), SHA256: hex.EncodeToString(digest[:]),
+		StoredPath: key, StorageBackend: s.cfg.StorageBackend, ObjectKey: key, ObjectVersion: object.VersionID, ETag: object.ETag, MIMEType: mimeType,
+		Size: int64(len(data)), SHA256: digestText,
 	})
 	if err != nil {
-		_ = os.Remove(target)
+		_ = s.blobs.Delete(r.Context(), key)
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
@@ -112,29 +99,25 @@ func (s *Server) downloadAttachment(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	path, err := s.safeDataPath(item.StoredPath, "attachments")
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
+	key := item.ObjectKey
+	if key == "" {
+		key = item.StoredPath
 	}
-	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
+	backend := s.blobs
+	if item.StorageBackend == "local" {
+		backend = s.localBlobs
+	}
+	file, info, err := backend.Open(r.Context(), key)
+	if err != nil {
 		httpx.WriteError(w, s.logger, apierror.New("ATTACHMENT_FILE_MISSING", "附件文件缺失", 410))
 		return
 	}
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
 	defer file.Close()
-	stat, err := file.Stat()
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
 	w.Header().Set("Content-Type", item.MIMEType)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": item.OriginalName}))
-	http.ServeContent(w, r, item.OriginalName, stat.ModTime(), file)
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size, 10))
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, file)
 }
 
 func (s *Server) deleteAttachment(w http.ResponseWriter, r *http.Request) {
@@ -144,33 +127,9 @@ func (s *Server) deleteAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := principalFrom(r.Context())
-	item, err := s.store.GetAttachment(r.Context(), principal, attachmentID)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	path, err := s.safeDataPath(item.StoredPath, "attachments")
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	tombstone := path + ".deleting"
-	moved := false
-	if err := os.Rename(path, tombstone); err == nil {
-		moved = true
-	} else if !errors.Is(err, os.ErrNotExist) {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
 	if err := s.store.DeleteAttachment(r.Context(), principal, attachmentID); err != nil {
-		if moved {
-			_ = os.Rename(tombstone, path)
-		}
 		httpx.WriteError(w, s.logger, err)
 		return
-	}
-	if moved {
-		_ = os.Remove(tombstone)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

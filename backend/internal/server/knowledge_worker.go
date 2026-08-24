@@ -3,18 +3,19 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
-	"os"
 	"time"
 
 	"cortex/backend/internal/ai"
+	"cortex/backend/internal/blobstore"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/knowledge"
 	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 
-func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store, logger *slog.Logger) {
+func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store, blobs, localBlobs blobstore.BlobStore, logger *slog.Logger) {
 	client := ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, MaxBatchSize: cfg.KnowledgeIndexBatchSize}
 	owner := uuid.New()
 	go func() {
@@ -35,14 +36,16 @@ func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store,
 					}
 					content := job.Content
 					if job.SourceType == "upload" {
-						abs, pathErr := safeDataPath(cfg.DataDir, job.StoredPath)
-						if pathErr != nil {
-							if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_ARCHIVE_UNSAFE"), store.ErrKnowledgeIndexLeaseLost) {
-								knowledgeIndexLeaseLost.Add(1)
-							}
-							continue
+						backend := blobs
+						if job.StorageBackend == "local" {
+							backend = localBlobs
 						}
-						data, readErr := os.ReadFile(abs)
+						reader, _, readErr := backend.Open(ctx, job.StoredPath)
+						var data []byte
+						if readErr == nil {
+							data, readErr = io.ReadAll(io.LimitReader(reader, cfg.KnowledgeMaxFileBytes+1))
+							reader.Close()
+						}
 						if readErr != nil {
 							if errors.Is(s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_FILE_MISSING"), store.ErrKnowledgeIndexLeaseLost) {
 								knowledgeIndexLeaseLost.Add(1)

@@ -86,3 +86,28 @@ func TestLegacyDataDirRemainsCompatible(t *testing.T) {
 		t.Fatalf("DataDir = %q, want %q", cfg.DataDir, want)
 	}
 }
+
+func TestExternalInfrastructureFailFast(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgresql://cortex_app:test@localhost/cortex")
+	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://cortex_migrator:test@localhost/cortex")
+	t.Setenv("STORAGE_BACKEND", "minio")
+	if _, err := Load(); err == nil {
+		t.Fatal("missing MinIO credentials accepted")
+	}
+	t.Setenv("MINIO_ENDPOINT", "http://minio:9000")
+	t.Setenv("MINIO_ACCESS_KEY", "app")
+	t.Setenv("MINIO_SECRET_KEY", "secret")
+	t.Setenv("EVENT_BUS", "kafka")
+	if _, err := Load(); err == nil {
+		t.Fatal("missing Kafka URL accepted")
+	}
+	t.Setenv("KAFKA_REST_URL", "http://kafka:8082")
+	t.Setenv("RAG_RETRIEVAL_BACKEND", "elasticsearch")
+	if _, err := Load(); err == nil {
+		t.Fatal("missing Elasticsearch URL accepted")
+	}
+	t.Setenv("ELASTICSEARCH_URLS", "http://elasticsearch:9200")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+}

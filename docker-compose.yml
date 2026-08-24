@@ -1,4 +1,72 @@
 services:
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    volumes: ["minio_data:/data"]
+    expose: ["9000", "9001"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set cortex http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" &&
+        mc mb --ignore-existing cortex/cortex-private &&
+        mc anonymous set none cortex/cortex-private &&
+        (mc admin user add cortex "$${MINIO_ACCESS_KEY}" "$${MINIO_SECRET_KEY}" || true) &&
+        mc admin policy attach cortex readwrite --user "$${MINIO_ACCESS_KEY}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY}
+    depends_on:
+      minio: {condition: service_healthy}
+
+  kafka:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.2.5
+    command: ["redpanda", "start", "--mode", "dev-container", "--smp", "1", "--memory", "1G", "--reserve-memory", "0M", "--node-id", "0", "--kafka-addr", "internal://0.0.0.0:9092", "--advertise-kafka-addr", "internal://kafka:9092", "--pandaproxy-addr", "0.0.0.0:8082", "--advertise-pandaproxy-addr", "kafka:8082"]
+    volumes: ["kafka_data:/var/lib/redpanda/data"]
+    expose: ["9092", "8082"]
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health --exit-when-healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  kafka-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.2.5
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        (rpk topic create cortex.knowledge.index.v1 cortex.search.projection.v1 cortex.audit.export.v1
+        --brokers kafka:9092 --partitions 6 --replicas 1 || true) &&
+        rpk cluster config set auto_create_topics_enabled false --api-urls kafka:9644
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.2
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=${ELASTICSEARCH_PASSWORD:?set ELASTICSEARCH_PASSWORD}
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    volumes: ["elasticsearch_data:/usr/share/elasticsearch/data"]
+    expose: ["9200"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u elastic:${ELASTICSEARCH_PASSWORD} http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
   redis:
     image: redis:7.4.2-alpine
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD:-change-me}"]
@@ -87,6 +155,17 @@ services:
       - CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
       - LISTEN_ADDRESS=0.0.0.0:8000
       - CORTEX_DATA_DIR=/app/data
+      - STORAGE_BACKEND=minio
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_BUCKET=cortex-private
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY}
+      - EVENT_BUS=kafka
+      - KAFKA_REST_URL=http://kafka:8082
+      - RAG_RETRIEVAL_BACKEND=elasticsearch
+      - ELASTICSEARCH_URLS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD:?set ELASTICSEARCH_PASSWORD}
       - MAX_ATTACHMENT_BYTES=${MAX_ATTACHMENT_BYTES:-20971520}
       - RAG_EMBEDDING_API_KEY=${LITELLM_VIRTUAL_KEY:?set LITELLM_VIRTUAL_KEY}
       - RAG_EMBEDDING_BASE_URL=http://embedding-service:4000/v1
@@ -146,6 +225,105 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      elasticsearch:
+        condition: service_healthy
+
+  outbox-relay:
+    build:
+      context: ./backend
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    environment:
+      - CORTEX_PROCESS=outbox-relay
+      - DATABASE_URL=postgresql://cortex_app:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}@db:5432/cortex
+      - MIGRATION_DATABASE_URL=postgresql://cortex_migrator:${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}@db:5432/cortex
+      - EVENT_BUS=kafka
+      - KAFKA_REST_URL=http://kafka:8082
+      - REDIS_URL=redis://default:${REDIS_PASSWORD:-change-me}@redis:6379/0
+    depends_on:
+      db: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+    healthcheck: {disable: true}
+
+  file-gc-consumer:
+    build:
+      context: ./backend
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    environment:
+      - CORTEX_PROCESS=file-gc-consumer
+      - DATABASE_URL=postgresql://cortex_app:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}@db:5432/cortex
+      - MIGRATION_DATABASE_URL=postgresql://cortex_migrator:${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}@db:5432/cortex
+      - STORAGE_BACKEND=minio
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_BUCKET=cortex-private
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY}
+      - REDIS_URL=redis://default:${REDIS_PASSWORD:-change-me}@redis:6379/0
+    depends_on:
+      db: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+    healthcheck: {disable: true}
+
+  projection-consumer:
+    build:
+      context: ./backend
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    environment:
+      - CORTEX_PROCESS=projection-consumer
+      - DATABASE_URL=postgresql://cortex_app:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}@db:5432/cortex
+      - MIGRATION_DATABASE_URL=postgresql://cortex_migrator:${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}@db:5432/cortex
+      - EVENT_BUS=kafka
+      - KAFKA_REST_URL=http://kafka:8082
+      - RAG_RETRIEVAL_BACKEND=elasticsearch
+      - ELASTICSEARCH_URLS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD:?set ELASTICSEARCH_PASSWORD}
+      - REDIS_URL=redis://default:${REDIS_PASSWORD:-change-me}@redis:6379/0
+    depends_on:
+      db: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      elasticsearch: {condition: service_healthy}
+    healthcheck: {disable: true}
+
+  knowledge-consumer:
+    build:
+      context: ./backend
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    environment:
+      - CORTEX_PROCESS=knowledge-consumer
+      - DATABASE_URL=postgresql://cortex_app:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}@db:5432/cortex
+      - MIGRATION_DATABASE_URL=postgresql://cortex_migrator:${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}@db:5432/cortex
+      - STORAGE_BACKEND=minio
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_BUCKET=cortex-private
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY}
+      - EVENT_BUS=kafka
+      - KAFKA_REST_URL=http://kafka:8082
+      - RAG_EMBEDDING_API_KEY=${LITELLM_VIRTUAL_KEY:?set LITELLM_VIRTUAL_KEY}
+      - RAG_EMBEDDING_BASE_URL=http://embedding-service:4000/v1
+      - RAG_EMBEDDING_DIMENSIONS=512
+      - REDIS_URL=redis://default:${REDIS_PASSWORD:-change-me}@redis:6379/0
+    depends_on:
+      db: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      minio-init: {condition: service_completed_successfully}
+      embedding-service: {condition: service_healthy}
+    healthcheck: {disable: true}
 
   embedding-service:
     build:
@@ -212,3 +390,6 @@ volumes:
     name: cortex_app_data_v2
     external: true
   redis_data:
+  minio_data:
+  kafka_data:
+  elasticsearch_data:

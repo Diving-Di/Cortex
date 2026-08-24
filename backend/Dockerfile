@@ -22,6 +22,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w" \
     -o /out/rag-eval ./cmd/rag-eval
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/outbox-relay ./cmd/outbox-relay
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/file-gc-consumer ./cmd/file-gc-consumer
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/projection-consumer ./cmd/projection-consumer
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/knowledge-consumer ./cmd/knowledge-consumer
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/blob-migrate ./cmd/blob-migrate
 
 FROM alpine:3.23
 
@@ -36,6 +41,11 @@ WORKDIR /app
 COPY --from=builder /out/server /app/server
 COPY --from=builder /out/migrate /app/migrate
 COPY --from=builder /out/rag-eval /app/rag-eval
+COPY --from=builder /out/outbox-relay /app/outbox-relay
+COPY --from=builder /out/file-gc-consumer /app/file-gc-consumer
+COPY --from=builder /out/projection-consumer /app/projection-consumer
+COPY --from=builder /out/knowledge-consumer /app/knowledge-consumer
+COPY --from=builder /out/blob-migrate /app/blob-migrate
 COPY --from=builder /src/resources /app/resources
 COPY --from=builder /src/testdata/rag /app/testdata/rag
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

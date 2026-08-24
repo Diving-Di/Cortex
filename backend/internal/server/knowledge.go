@@ -68,28 +68,49 @@ func (s *Server) uploadKnowledge(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New(code, "知识库文件校验失败", status))
 		return
 	}
-	finalRel := filepath.ToSlash(filepath.Join("knowledge", p.TenantID.String(), uploadID.String(), "source"))
-	finalAbs, err := safeDataPath(s.cfg.DataDir, finalRel)
+	finalRel := filepath.ToSlash(filepath.Join("tenants", p.TenantID.String(), "knowledge", uploadID.String(), "source"))
+	uploaded := make([]string, 0, len(prepared.Documents)+len(prepared.Assets))
+	all := append(append([]knowledge.Document(nil), prepared.Documents...), func() []knowledge.Document {
+		x := make([]knowledge.Document, len(prepared.Assets))
+		for i, a := range prepared.Assets {
+			x[i] = knowledge.Document{RelativePath: a.RelativePath, Hash: a.Hash, Size: a.Size}
+		}
+		return x
+	}()...)
+	for _, item := range all {
+		f, openErr := os.Open(filepath.Join(sourceRoot, filepath.FromSlash(item.RelativePath)))
+		if openErr != nil {
+			err = openErr
+			break
+		}
+		key := finalRel + "/" + item.RelativePath
+		_, putErr := s.blobs.Put(r.Context(), key, f, item.Size, item.Hash)
+		f.Close()
+		if putErr != nil {
+			err = putErr
+			break
+		}
+		uploaded = append(uploaded, key)
+	}
 	if err != nil {
-		httpx.WriteError(w, s.logger, err)
+		for _, key := range uploaded {
+			_ = s.blobs.Delete(r.Context(), key)
+		}
+		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_STORAGE_UNAVAILABLE", "知识文件存储暂不可用", 503))
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(finalAbs), 0o750); err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if err := os.Rename(sourceRoot, finalAbs); err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	created, err := s.store.CreateKnowledgeUpload(r.Context(), p, uploadID, strings.TrimSpace(r.Header.Get("Idempotency-Key")), header.Filename, finalRel, prepared)
+	created, err := s.store.CreateKnowledgeUpload(r.Context(), p, uploadID, strings.TrimSpace(r.Header.Get("Idempotency-Key")), header.Filename, finalRel, s.cfg.StorageBackend, prepared)
 	if err != nil {
-		_ = os.RemoveAll(filepath.Dir(finalAbs))
+		for _, key := range uploaded {
+			_ = s.blobs.Delete(r.Context(), key)
+		}
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	if created.ID != uploadID {
-		_ = os.RemoveAll(filepath.Dir(finalAbs))
+		for _, key := range uploaded {
+			_ = s.blobs.Delete(r.Context(), key)
+		}
 	}
 	httpx.JSON(w, http.StatusAccepted, created)
 }
@@ -119,15 +140,22 @@ func (s *Server) downloadKnowledgeAsset(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	filename, err := safeDataPath(s.cfg.DataDir, asset.StoredPath)
+	backend := s.blobs
+	if asset.StorageBackend == "local" {
+		backend = s.localBlobs
+	}
+	reader, info, err := backend.Open(r.Context(), asset.StoredPath)
 	if err != nil {
-		httpx.WriteError(w, s.logger, err)
+		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_FILE_MISSING", "知识文件缺失", 410))
 		return
 	}
+	defer reader.Close()
 	w.Header().Set("Content-Type", asset.MIME)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=300")
-	http.ServeFile(w, r, filename)
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size, 10))
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, reader)
 }
 func (s *Server) retryKnowledgeDocument(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("documentID"))
@@ -184,23 +212,8 @@ func (s *Server) deleteKnowledgeDocument(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_SCOPE_NOT_FOUND", "知识库资源不存在", 404))
 		return
 	}
-	stored, size, err := s.store.DeleteKnowledgeDocument(r.Context(), principalFrom(r.Context()), id)
+	_, _, err = s.store.DeleteKnowledgeDocument(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if stored != "" {
-		abs, pathErr := safeDataPath(s.cfg.DataDir, stored)
-		if pathErr != nil {
-			httpx.WriteError(w, s.logger, pathErr)
-			return
-		}
-		if removeErr := os.Remove(abs); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_DELETE_PENDING", "文件删除等待重试", 202))
-			return
-		}
-	}
-	if err := s.store.FinalizeKnowledgeDeletion(r.Context(), principalFrom(r.Context()), id, size); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
@@ -342,7 +355,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		retrievalWG.Add(1)
 		go func() {
 			defer retrievalWG.Done()
-			items, searchErr := s.store.SearchKnowledge(retrievalCtx, p, query, vectors[i], s.cfg.EmbeddingModel, req.CollectionIDs,
+			items, searchErr := s.searchKnowledge(retrievalCtx, p, query, vectors[i], req.CollectionIDs,
 				max(1, s.cfg.RAGVectorTopK/len(retrievalQueries)), max(1, s.cfg.RAGTitleTopK/len(retrievalQueries)), max(1, s.cfg.RAGKeywordTopK/len(retrievalQueries)), max(1, s.cfg.RAGFusionTopK/len(retrievalQueries)))
 			candidateMu.Lock()
 			defer candidateMu.Unlock()

@@ -16,10 +16,12 @@ import (
 
 	"cortex/backend/internal/ai"
 	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/blobstore"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/domain"
 	"cortex/backend/internal/httpx"
 	"cortex/backend/internal/rediscoord"
+	"cortex/backend/internal/searchindex"
 	"cortex/backend/internal/store"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -34,6 +36,9 @@ type Server struct {
 	redis                  *rediscoord.Client
 	authRedis              *rediscoord.Client
 	claimRedis             *rediscoord.Client
+	blobs                  blobstore.BlobStore
+	localBlobs             blobstore.BlobStore
+	search                 *searchindex.Elasticsearch
 	rateMu                 sync.Mutex
 	localRates             map[string]localRateWindow
 	aiEventFallbackSlots   chan struct{}
@@ -60,6 +65,15 @@ var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	s := &Server{cfg: cfg, store: db, logger: logger, version: version, localRates: make(map[string]localRateWindow), aiEventFallbackSlots: make(chan struct{}, 2), aiEventClaimSlots: make(chan struct{}, max(1, cfg.AIEventClaimConcurrency))}
+	if cfg.StorageBackend == "minio" {
+		s.blobs, _ = blobstore.NewS3(cfg.MinIOEndpoint, cfg.MinIOBucket, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOSecure)
+	} else {
+		s.blobs, _ = blobstore.NewLocal(cfg.DataDir)
+	}
+	if cfg.RAGRetrievalBackend == "elasticsearch" {
+		s.search = searchindex.New(cfg.ElasticsearchURLs, cfg.ElasticsearchUsername, cfg.ElasticsearchPassword, cfg.ElasticsearchIndexAlias)
+	}
+	s.localBlobs, _ = blobstore.NewLocal(cfg.DataDir)
 	s.redis, _ = rediscoord.New(cfg.RedisURL)
 	s.authRedis, _ = rediscoord.New(cfg.RedisURL)
 	s.claimRedis, _ = rediscoord.New(cfg.RedisURL)
@@ -230,6 +244,10 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	if err := s.store.Ping(ctx); err != nil {
+		httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+		return
+	}
+	if s.blobs == nil || s.blobs.Ready(ctx) != nil {
 		httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}

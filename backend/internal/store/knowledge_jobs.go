@@ -12,11 +12,11 @@ import (
 )
 
 type KnowledgeIndexJob struct {
-	ID                                     int64
-	TenantID, DocumentID                   uuid.UUID
-	TargetVersion                          int
-	LeaseOwner                             uuid.UUID
-	Title, SourceType, StoredPath, Content string
+	ID                                                     int64
+	TenantID, DocumentID                                   uuid.UUID
+	TargetVersion                                          int
+	LeaseOwner                                             uuid.UUID
+	Title, SourceType, StoredPath, StorageBackend, Content string
 }
 
 var ErrKnowledgeIndexLeaseLost = errors.New("knowledge index lease lost")
@@ -73,7 +73,7 @@ func (s *Store) LoadKnowledgeJobDocument(ctx context.Context, j *KnowledgeIndexJ
 		if err := setTenant(ctx, tx, p); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `SELECT d.title,d.source_type,coalesce(d.stored_path,''),coalesce(n.content,'') FROM knowledge_documents d LEFT JOIN notes n ON n.tenant_id=d.tenant_id AND n.id=d.note_id WHERE d.tenant_id=$1 AND d.id=$2 AND d.deleted_at IS NULL AND d.knowledge_enabled`, j.TenantID, j.DocumentID).Scan(&j.Title, &j.SourceType, &j.StoredPath, &j.Content)
+		return tx.QueryRow(ctx, `SELECT d.title,d.source_type,coalesce(d.object_key,d.stored_path,''),d.storage_backend,coalesce(n.content,'') FROM knowledge_documents d LEFT JOIN notes n ON n.tenant_id=d.tenant_id AND n.id=d.note_id WHERE d.tenant_id=$1 AND d.id=$2 AND d.deleted_at IS NULL AND d.knowledge_enabled`, j.TenantID, j.DocumentID).Scan(&j.Title, &j.SourceType, &j.StoredPath, &j.StorageBackend, &j.Content)
 	})
 }
 func domainPrincipal(tenant uuid.UUID) domain.Principal {
@@ -119,6 +119,12 @@ func (s *Store) writeKnowledgeChunks(ctx context.Context, j KnowledgeIndexJob, p
 			}
 		}
 		if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET active_index_version=$3,status='ready',failure_code=NULL,failure_summary=NULL,last_index_failure_code=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.DocumentID, j.TargetVersion); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO search_projections(tenant_id,document_id,index_version,status) VALUES($1,$2,$3,'pending') ON CONFLICT(tenant_id,document_id,index_version) DO UPDATE SET status='pending',requested_at=now(),last_error_code=NULL`, j.TenantID, j.DocumentID, j.TargetVersion); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,topic,partition_key,schema_version) VALUES($1,'knowledge',$2::text,'search.projection.requested','cortex.search.projection.v1',$2::text,1)`, uuid.New(), j.DocumentID.String()); err != nil {
 			return err
 		}
 		// Keep the active version and its immediate predecessor. Version N-2 is
