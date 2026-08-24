@@ -106,7 +106,7 @@ PDF、Word、Excel 不属于当前知识库摄取范围；不得仅通过放开�
 
 Compose 下数据库、LiteLLM、Embedding 和 Reranker 服务不暴露宿主机端口。
 `/healthz` 只反映进程存活，`/readyz` 只验证数据库可用。新实例由 `backend/db/schema.sql`
-基线加版本化迁移初始化（当前共 56 张表）。
+基线加版本化迁移初始化（当前共 58 张表）。
 
 ```powershell
 Set-Location backend

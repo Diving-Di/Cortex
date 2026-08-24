@@ -574,18 +574,19 @@ func averagePrecision(items []ContextJudgment) float64 {
 }
 
 type Summary struct {
-	Dataset             string       `json:"dataset"`
-	Total               int          `json:"total"`
-	Succeeded           int          `json:"succeeded"`
-	Failed              int          `json:"failed"`
-	RetrievalEvaluated  int          `json:"retrieval_evaluated"`
-	GenerationEvaluated int          `json:"generation_evaluated"`
-	GatePassed          int          `json:"gate_passed"`
-	GateRejected        int          `json:"gate_rejected"`
-	Metrics             Metrics      `json:"metrics"`
-	RouteMetrics        RouteMetrics `json:"route_metrics"`
-	LatencyP50          Latencies    `json:"latency_p50"`
-	LatencyP95          Latencies    `json:"latency_p95"`
+	Dataset             string             `json:"dataset"`
+	Total               int                `json:"total"`
+	Succeeded           int                `json:"succeeded"`
+	Failed              int                `json:"failed"`
+	RetrievalEvaluated  int                `json:"retrieval_evaluated"`
+	GenerationEvaluated int                `json:"generation_evaluated"`
+	GatePassed          int                `json:"gate_passed"`
+	GateRejected        int                `json:"gate_rejected"`
+	Metrics             Metrics            `json:"metrics"`
+	RouteMetrics        RouteMetrics       `json:"route_metrics"`
+	LatencyP50          Latencies          `json:"latency_p50"`
+	LatencyP95          Latencies          `json:"latency_p95"`
+	Layers              map[string]Summary `json:"layers,omitempty"`
 }
 
 type Thresholds struct {
@@ -621,6 +622,10 @@ func ValidateSummary(summary Summary, thresholds Thresholds) error {
 }
 
 func Summarize(dataset string, results []Result) Summary {
+	return summarize(dataset, results, true)
+}
+
+func summarize(dataset string, results []Result, includeLayers bool) Summary {
 	s := Summary{Dataset: dataset, Total: len(results)}
 	var retrieval, generation Metrics
 	var success []Result
@@ -676,6 +681,26 @@ func Summarize(dataset string, results []Result) Summary {
 		s.LatencyP50 = percentile(success, .5)
 		s.LatencyP95 = percentile(success, .95)
 	}
+	if includeLayers {
+		byTag := map[string][]Result{}
+		for _, result := range results {
+			seen := map[string]bool{}
+			for _, tag := range result.Tags {
+				tag = strings.TrimSpace(tag)
+				if tag == "" || seen[tag] {
+					continue
+				}
+				seen[tag] = true
+				byTag[tag] = append(byTag[tag], result)
+			}
+		}
+		if len(byTag) > 0 {
+			s.Layers = make(map[string]Summary, len(byTag))
+			for tag, tagged := range byTag {
+				s.Layers[tag] = summarize(tag, tagged, false)
+			}
+		}
+	}
 	return s
 }
 func percentile(results []Result, q float64) Latencies {
@@ -727,6 +752,21 @@ func report(s Summary, results []Result) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# RAG 离线评测报告\n\n数据集：`%s`  \n样本：%d，成功：%d，失败：%d\n\n", s.Dataset, s.Total, s.Succeeded, s.Failed)
 	fmt.Fprintf(&b, "在线同口径证据门控：通过 %d，拒绝 %d  \n\n", s.GatePassed, s.GateRejected)
+	if len(s.Layers) > 0 {
+		b.WriteString("## 分层指标\n\n")
+		b.WriteString("| 标签 | 样本 | 门控拒绝 | Hit@10 | Context Recall | Context Precision | Faithfulness | Answer Relevancy | P95 ms |\n")
+		b.WriteString("|---|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+		tags := make([]string, 0, len(s.Layers))
+		for tag := range s.Layers {
+			tags = append(tags, tag)
+		}
+		sort.Strings(tags)
+		for _, tag := range tags {
+			layer := s.Layers[tag]
+			fmt.Fprintf(&b, "| %s | %d | %d | %.4f | %.4f | %.4f | %.4f | %.4f | %d |\n", tag, layer.Total, layer.GateRejected, layer.Metrics.HitAt10, layer.Metrics.ContextRecall, layer.Metrics.ContextPrecision, layer.Metrics.Faithfulness, layer.Metrics.AnswerRelevancy, layer.LatencyP95.TotalMS)
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString("## 核心指标\n\n")
 	b.WriteString("| 指标 | 分数 |\n|---|---:|\n")
 	for _, v := range []struct {

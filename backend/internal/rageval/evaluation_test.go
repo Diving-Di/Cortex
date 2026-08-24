@@ -111,6 +111,20 @@ func TestSummarizeCountsSuccessfulEmptyRetrievalAsMiss(t *testing.T) {
 	}
 }
 
+func TestSummarizeBuildsTagLayersWithoutRecursiveLayers(t *testing.T) {
+	summary := Summarize("test.jsonl", []Result{
+		{Status: "success", Tags: []string{"fact", "easy", "fact"}, Metrics: Metrics{HitAt10: 1}},
+		{Status: "success", Tags: []string{"fact", "hard"}},
+	})
+	fact, ok := summary.Layers["fact"]
+	if !ok || fact.Total != 2 || fact.Metrics.HitAt10 != 0.5 || fact.Layers != nil {
+		t.Fatalf("unexpected fact layer: %#v", fact)
+	}
+	if summary.Layers["easy"].Total != 1 || summary.Layers["hard"].Total != 1 {
+		t.Fatalf("unexpected tag layers: %#v", summary.Layers)
+	}
+}
+
 func TestRouteMetricsCountsSuccessfulEmptyRetrievalAsMiss(t *testing.T) {
 	rm := ComputeRouteMetrics([]Result{
 		{Status: "success", SourcePaths: []string{"gold.md"}, BeforeRerank: []CandidateTrace{{Title: "gold", RouteProvenance: routeTitle}}},

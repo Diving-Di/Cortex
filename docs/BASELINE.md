@@ -82,7 +82,7 @@ docker compose up -d --build
 - 所有 Go 源码必须通过 `gofmt`；允许使用 Go 惯例中的 Tab 缩进。
 - `db`、`llm-gateway` 和 `backend` 必须为 healthy。
 - 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
-- 新 PostgreSQL 空库必须完成全部版本化迁移（当前 56 张表）、RLS、注册和登录验收。
+- 新 PostgreSQL 空库必须完成全部版本化迁移（当前 58 张表）、RLS、注册和登录验收。
 - 模板广场还需验证 Outbox 类型隔离、排行 active pointer 原子切换、daily/HLL 8 天 TTL、匿名 UV
   读取和 Redis 故障回表降级。本地容量结果不能作为线上 QPS 或 p95/p99。
 - 个人知识库上传、索引阶段/进度、混合问答、一次性澄清恢复、幂等回放、跨租户隔离和 3 GiB 配额验收通过。
