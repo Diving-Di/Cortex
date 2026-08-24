@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"cortex/backend/internal/ai"
+	"cortex/backend/internal/knowledge"
 	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
@@ -29,18 +30,21 @@ type Case struct {
 }
 
 type Config struct {
-	Username       string `json:"username"`
-	Dataset        string `json:"dataset"`
-	SearchLimit    int    `json:"search_limit"`
-	ContextTopK    int    `json:"context_top_k"`
-	VectorTopK     int    `json:"vector_top_k"`
-	TitleTopK      int    `json:"title_top_k"`
-	KeywordTopK    int    `json:"keyword_top_k"`
-	RetrievalOnly  bool   `json:"retrieval_only"`
-	EmbeddingModel string `json:"embedding_model"`
-	RerankModel    string `json:"rerank_model"`
-	Model          string `json:"model"`
-	JudgeModel     string `json:"judge_model"`
+	Username             string   `json:"username"`
+	Dataset              string   `json:"dataset"`
+	SearchLimit          int      `json:"search_limit"`
+	ContextTopK          int      `json:"context_top_k"`
+	VectorTopK           int      `json:"vector_top_k"`
+	TitleTopK            int      `json:"title_top_k"`
+	KeywordTopK          int      `json:"keyword_top_k"`
+	RetrievalOnly        bool     `json:"retrieval_only"`
+	EmbeddingModel       string   `json:"embedding_model"`
+	RerankModel          string   `json:"rerank_model"`
+	Model                string   `json:"model"`
+	JudgeModel           string   `json:"judge_model"`
+	RerankMinScore       *float64 `json:"rerank_min_score,omitempty"`
+	RerankMinMargin      *float64 `json:"rerank_min_margin,omitempty"`
+	MinQualifiedEvidence int      `json:"min_qualified_evidence"`
 }
 
 type CandidateTrace struct {
@@ -98,19 +102,20 @@ const (
 )
 
 type Result struct {
-	ID              string           `json:"id"`
-	Query           string           `json:"query"`
-	ReferenceAnswer string           `json:"reference_answer"`
-	SourcePaths     []string         `json:"source_paths"`
-	Tags            []string         `json:"tags"`
-	BeforeRerank    []CandidateTrace `json:"before_rerank"`
-	AfterRerank     []CandidateTrace `json:"after_rerank"`
-	Answer          string           `json:"answer"`
-	Metrics         Metrics          `json:"metrics"`
-	Judge           *Assessment      `json:"judge,omitempty"`
-	Latencies       Latencies        `json:"latencies"`
-	Status          string           `json:"status"`
-	Error           string           `json:"error,omitempty"`
+	ID              string                        `json:"id"`
+	Query           string                        `json:"query"`
+	ReferenceAnswer string                        `json:"reference_answer"`
+	SourcePaths     []string                      `json:"source_paths"`
+	Tags            []string                      `json:"tags"`
+	BeforeRerank    []CandidateTrace              `json:"before_rerank"`
+	AfterRerank     []CandidateTrace              `json:"after_rerank"`
+	Answer          string                        `json:"answer"`
+	Metrics         Metrics                       `json:"metrics"`
+	Judge           *Assessment                   `json:"judge,omitempty"`
+	Latencies       Latencies                     `json:"latencies"`
+	EvidenceGate    *knowledge.EvidenceGateResult `json:"evidence_gate,omitempty"`
+	Status          string                        `json:"status"`
+	Error           string                        `json:"error,omitempty"`
 }
 
 type Retriever interface {
@@ -207,11 +212,28 @@ func (r Runner) RunCase(ctx context.Context, c Case) (out Result) {
 	}
 	out.AfterRerank = traces(after)
 	out.Metrics = retrievalMetrics(c.SourcePaths, before, after)
+	scores := make([]float64, len(after))
+	for i := range after {
+		scores[i] = after[i].Score
+		if after[i].RerankScore != nil {
+			scores[i] = *after[i].RerankScore
+		}
+	}
+	gate := knowledge.EvaluateEvidenceGate(scores, r.Config.RerankMinScore, r.Config.RerankMinMargin, r.Config.MinQualifiedEvidence)
+	out.EvidenceGate = &gate
 	if r.RetrievalOnly {
 		out.Status = "success"
 		return
 	}
-	contexts := store.SelectKnowledgeContexts(c.Query, after, r.Config.ContextTopK)
+	if !gate.Passed {
+		out.Status = "success"
+		return
+	}
+	qualified := make([]store.KnowledgeCandidate, 0, len(gate.QualifiedIndexes))
+	for _, index := range gate.QualifiedIndexes {
+		qualified = append(qualified, after[index])
+	}
+	contexts := store.SelectKnowledgeContexts(c.Query, qualified, r.Config.ContextTopK)
 	evidence := make([]ai.KnowledgeEvidence, 0, len(contexts))
 	judgeContexts := make([]JudgeContext, 0, len(contexts))
 	for i, item := range contexts {
@@ -558,6 +580,8 @@ type Summary struct {
 	Failed              int          `json:"failed"`
 	RetrievalEvaluated  int          `json:"retrieval_evaluated"`
 	GenerationEvaluated int          `json:"generation_evaluated"`
+	GatePassed          int          `json:"gate_passed"`
+	GateRejected        int          `json:"gate_rejected"`
 	Metrics             Metrics      `json:"metrics"`
 	RouteMetrics        RouteMetrics `json:"route_metrics"`
 	LatencyP50          Latencies    `json:"latency_p50"`
@@ -601,6 +625,13 @@ func Summarize(dataset string, results []Result) Summary {
 	var retrieval, generation Metrics
 	var success []Result
 	for _, r := range results {
+		if r.EvidenceGate != nil {
+			if r.EvidenceGate.Passed {
+				s.GatePassed++
+			} else {
+				s.GateRejected++
+			}
+		}
 		if r.Status == "success" {
 			s.RetrievalEvaluated++
 			retrieval.HitAt1 += r.Metrics.HitAt1
@@ -695,6 +726,7 @@ func writeJSON(path string, v any) error {
 func report(s Summary, results []Result) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# RAG 离线评测报告\n\n数据集：`%s`  \n样本：%d，成功：%d，失败：%d\n\n", s.Dataset, s.Total, s.Succeeded, s.Failed)
+	fmt.Fprintf(&b, "在线同口径证据门控：通过 %d，拒绝 %d  \n\n", s.GatePassed, s.GateRejected)
 	b.WriteString("## 核心指标\n\n")
 	b.WriteString("| 指标 | 分数 |\n|---|---:|\n")
 	for _, v := range []struct {

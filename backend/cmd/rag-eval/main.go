@@ -172,7 +172,7 @@ func main() {
 	if vectorTopK+titleTopK+keywordTopK == 0 {
 		fatal("at least one retrieval route must be enabled")
 	}
-	runnerCfg := rageval.Config{Username: evaluationUsername, Dataset: filepath.Base(dataset), SearchLimit: searchLimit, ContextTopK: contextTopK, VectorTopK: vectorTopK, TitleTopK: titleTopK, KeywordTopK: keywordTopK, RetrievalOnly: retrievalOnly, EmbeddingModel: cfg.EmbeddingModel, RerankModel: cfg.RerankModel, Model: cfg.AIModel, JudgeModel: cfg.AIModel}
+	runnerCfg := rageval.Config{Username: evaluationUsername, Dataset: filepath.Base(dataset), SearchLimit: searchLimit, ContextTopK: contextTopK, VectorTopK: vectorTopK, TitleTopK: titleTopK, KeywordTopK: keywordTopK, RetrievalOnly: retrievalOnly, EmbeddingModel: cfg.EmbeddingModel, RerankModel: cfg.RerankModel, Model: cfg.AIModel, JudgeModel: cfg.AIModel, RerankMinScore: cfg.RAGRerankMinScore, RerankMinMargin: cfg.RAGRerankMinMargin, MinQualifiedEvidence: cfg.RAGMinQualifiedEvidence}
 	runner := rageval.Runner{Retriever: knowledgeRetriever{store: db, principal: principal, model: cfg.EmbeddingModel,
 		vectorTopK: vectorTopK, titleTopK: titleTopK, keywordTopK: keywordTopK,
 		embedding: ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, HTTPClient: embeddingHTTPClient}, reranker: ai.LocalRerankClient{BaseURL: cfg.RerankBaseURL, Model: cfg.RerankModel, MaxDocuments: searchLimit, HTTPClient: httpClient}}, Generator: workflow, Judge: rageval.LLMJudge{Client: client, Model: cfg.AIModel}, Config: runnerCfg, RetrievalOnly: calibrateOnly}

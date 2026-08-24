@@ -398,15 +398,23 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		candidates[i].Score = scores[i]
 	}
 	sortKnowledgeCandidates(candidates)
-	candidates = filterRerankEvidence(candidates, s.cfg.RAGRerankMinScore)
+	gateScores := make([]float64, len(candidates))
+	for i := range candidates {
+		gateScores[i] = candidates[i].Score
+	}
+	gate := knowledge.EvaluateEvidenceGate(gateScores, s.cfg.RAGRerankMinScore, s.cfg.RAGRerankMinMargin, s.cfg.RAGMinQualifiedEvidence)
+	qualified := make([]store.KnowledgeCandidate, 0, len(gate.QualifiedIndexes))
+	for _, index := range gate.QualifiedIndexes {
+		qualified = append(qualified, candidates[index])
+	}
+	candidates = qualified
 	progress = append(progress, newRetrievalProgress("rerank", time.Since(rerankStarted), func(v *retrievalProgress) {
 		v.CandidateCount = len(documents)
 		v.QualifiedCount = len(candidates)
 	}))
-	marginConflict := rerankMarginTooSmall(candidates, s.cfg.RAGRerankMinMargin)
-	if len(candidates) < s.cfg.RAGMinQualifiedEvidence || marginConflict {
+	if !gate.Passed {
 		knowledgeNoEvidence.Add(1)
-		decision := decideWeakKnowledgeEvidence(req.Question, marginConflict)
+		decision := decideWeakKnowledgeEvidence(req.Question, gate.MarginConflict)
 		if decision != knowledgeDecisionAbsent && req.ResumeClarificationID == "" {
 			pending, stateErr := s.store.CreateKnowledgeClarification(r.Context(), p, req.ConversationID, req.RequestID, req.Question, req.CollectionIDs, string(decision), clarificationPrompt(decision), 15*time.Minute)
 			if stateErr != nil {
@@ -600,21 +608,6 @@ func sortKnowledgeCandidates(items []store.KnowledgeCandidate) {
 			items[j], items[j-1] = items[j-1], items[j]
 		}
 	}
-}
-func filterRerankEvidence(items []store.KnowledgeCandidate, threshold *float64) []store.KnowledgeCandidate {
-	if threshold == nil {
-		return items
-	}
-	qualified := items[:0]
-	for _, item := range items {
-		if item.Score >= *threshold {
-			qualified = append(qualified, item)
-		}
-	}
-	return qualified
-}
-func rerankMarginTooSmall(items []store.KnowledgeCandidate, threshold *float64) bool {
-	return threshold != nil && len(items) > 1 && items[0].Score-items[1].Score < *threshold
 }
 func (s *Server) writeKnowledgeSSE(w http.ResponseWriter, r *http.Request, events <-chan ai.StreamEvent, sources []map[string]any, progress []retrievalProgress, save func(context.Context, string, string, string, string, int) (int32, int32, error)) {
 	flusher, ok := w.(http.Flusher)

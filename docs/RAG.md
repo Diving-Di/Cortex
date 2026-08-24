@@ -190,7 +190,8 @@ reranker 返回的 index 必须完整、唯一且在候选范围内；缺失、�
 在线 handler 按精排分数降序后执行证据门控：过滤低于 `RAG_RERANK_MIN_SCORE` 的候选，要求
 剩余数量不少于 `RAG_MIN_QUALIFIED_EVIDENCE`；配置了 `RAG_RERANK_MIN_MARGIN` 时，还要求
 Top-1 与 Top-2 的分差不小于该值。任一条件不满足均返回 `KNOWLEDGE_NO_EVIDENCE`，不会调用生成。
-离线 `rag-eval` 当前记录 rerank 分数并支持阈值校准，但普通全链路评测不会执行这三个在线门控。
+离线 `rag-eval` 记录 rerank 分数并支持阈值校准；普通全链路评测与在线问答复用同一个证据门控函数，
+按相同的最低分、最少证据数和可选 Margin 过滤，门控拒绝的样本不会调用生成与裁判，并在结果和汇总中记录。
 
 门控失败会先做可恢复性判定：明确指代缺失为 `ambiguous`，不同高分范围且 margin 不足为
 `scope_conflict`，其余为 `absent`。前两类在 `knowledge_clarifications` 中保存 15 分钟的一次性状态，

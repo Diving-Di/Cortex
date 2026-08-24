@@ -158,6 +158,33 @@ func TestRunnerUsesKnowledgePipeline(t *testing.T) {
 	}
 }
 
+type panicGenerator struct{}
+
+func (panicGenerator) AnswerKnowledge(context.Context, ai.KnowledgeInput) (<-chan ai.StreamEvent, error) {
+	panic("generator must not run when the online evidence gate rejects")
+}
+
+func TestRunnerUsesOnlineEvidenceGateBeforeGeneration(t *testing.T) {
+	minScore := 0.5
+	minMargin := 0.2
+	r := Runner{
+		Retriever: fakeRetriever{},
+		Generator: panicGenerator{},
+		Judge:     fakeJudge{},
+		Config: Config{
+			SearchLimit:          2,
+			ContextTopK:          2,
+			RerankMinScore:       &minScore,
+			RerankMinMargin:      &minMargin,
+			MinQualifiedEvidence: 2,
+		},
+	}
+	got := r.RunCase(context.Background(), Case{ID: "gate", Query: "问题", ReferenceAnswer: "依据", SourcePaths: []string{"gold.md"}})
+	if got.Status != "success" || got.EvidenceGate == nil || got.EvidenceGate.Passed || got.Judge != nil || got.Answer != "" {
+		t.Fatalf("offline runner diverged from online evidence gate: %#v", got)
+	}
+}
+
 func TestGoldTitleFromNonRecipePaths(t *testing.T) {
 	path := "backend/testdata/rag/non_recipe_notes/Go并发模式学习笔记.md"
 	if got := goldTitle(path); got != "Go并发模式学习笔记" {
