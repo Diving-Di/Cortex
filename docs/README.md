@@ -27,8 +27,10 @@
 ## 历史证据
 
 - `operations/` 保存带日期的容量、故障、恢复与验收记录。结论只适用于文档注明的 commit、配置和环境；涉及检索 backend 或基础设施变更时必须重新验收。
+- 当前本地目标环境证据以 `operations/INFRASTRUCTURE_ACCEPTANCE_20260825.md` 和
+  `operations/RAG_AND_K6_RERUN_20260825.md` 为准；`RAG_AND_PRODUCTION_ACCEPTANCE_20260824.md`
+  仅作为成本、监控缺口和质量变化的历史对照。
 - `rag-baselines/` 保存 RAG 历史冻结基线，用于回归对照，不表示当前 Compose 默认检索路径已经达到相同指标。
-- 两张 `CORTEX_*_PROJECT_DESCRIPTION_2026-08.png` 是 2026-08 项目介绍快照，不作为接口或架构权威来源。
 
 ## 规划文档的使用边界
 
@@ -36,7 +38,9 @@
 
 - Compose 已默认启用 MinIO、Kafka 兼容的 Redpanda 和 Elasticsearch，但目标环境生产门禁尚需独立完成。
 - Elasticsearch 当前实现同时执行 BM25 与 KNN；PostgreSQL/pgvector + 中文 2-gram 是独立配置回退 backend。
-- 仓库规范要求 `backend/cmd/server/main.go` 为唯一后端入口；现有外部基础设施 `cmd/*` worker 是待收敛偏差，不是可继续扩展的先例。
+- `backend/cmd/server/main.go` 已是唯一部署后端入口；Outbox relay、知识索引、搜索投影和对象 GC
+  均由 `backend/internal/workers` 在 server 进程内托管。`cmd/migrate`、`cmd/blob-migrate` 和评测命令
+  仅用于显式运维或离线验证。
 - PDF、Word、Excel 摄取与断点续传仍属于规划能力，不能写入当前 API 或页面能力清单。
 
 ## 修改文档时的核对顺序

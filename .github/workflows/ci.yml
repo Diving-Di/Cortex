@@ -68,6 +68,11 @@ jobs:
       OPENAI_API_KEY: sk-ci-openai-key
       KIMI_API_KEY: sk-ci-kimi-key
       DEEPSEEK_API_KEY: sk-ci-deepseek-key
+      MINIO_ROOT_USER: ci-minio-root
+      MINIO_ROOT_PASSWORD: ci-minio-root-password
+      MINIO_ACCESS_KEY: ci-minio-app
+      MINIO_SECRET_KEY: ci-minio-app-password
+      ELASTICSEARCH_PASSWORD: ci-elasticsearch-password
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet

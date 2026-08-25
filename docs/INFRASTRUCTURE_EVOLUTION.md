@@ -284,9 +284,13 @@ Prometheus/Grafana 必须接入真实采集和 Alertmanager 通知，覆盖 API/
 
 ### 9.2 联合备份恢复
 
-恢复顺序为 PostgreSQL（含 pgvector 基线）→ MinIO 对象 → Kafka 配置/Topic → Elasticsearch 模板与可重建 BM25 + KNN 投影。Kafka offset 和 ES 索引不作为业务权威备份。隔离恢复必须验证 58 张表、RLS/FORCE RLS、登录、附件下载、对象双向清单、解析/OCR、pgvector 降级问答、ES 全量投影重建、主路径恢复切回和任务幂等恢复，并记录目标与实测 RPO/RTO。
+恢复顺序为 PostgreSQL（含 pgvector 基线）→ MinIO 对象 → Kafka 配置/Topic → Elasticsearch 模板与可重建 BM25 + KNN 投影。Kafka offset 和 ES 索引不作为业务权威备份。隔离恢复必须验证迁移版本 40、63 张 public 表、RLS/FORCE RLS、登录、附件下载、对象双向清单、pgvector 降级问答、ES 全量投影重建、主路径恢复切回和任务幂等恢复，并记录目标与实测 RPO/RTO。PDF、Word、图片 OCR 尚未进入当前知识库摄取范围，不应列入现阶段恢复验收。
 
-## 10. 分阶段实施计划
+## 10. 已实施阶段记录与配置基线
+
+以下 Phase 0～5 保留原始设计顺序，用于解释迁移 37～40 和当前 Compose 主路径的形成，不用于判断完成
+状态。Phase 0～4 的本地第一版已经落地，Phase 5 仅完成本地验收；尚未完成的生产三节点、TLS、真实流量、
+告警通知和扩展格式摄取统一记录在 `IMPLEMENTATION_GAPS.md`，避免在多份文档中重复维护状态。
 
 ### 10.1 数据库与配置演进
 
@@ -381,6 +385,9 @@ RAG_RETRIEVAL_BACKEND=elasticsearch
 
 只有代码、迁移、测试、API/运维文档、真实脱敏评测、目标环境容量成本、真实告警通知和隔离恢复全部通过，相关能力才能从“规划/部分实现”更新为“已实现”。未通过项继续保留在 `docs/IMPLEMENTATION_GAPS.md`，并附证据和复验日期。
 
-## 13. 最终建议
+## 13. 当前结论
 
-批准按“公共抽象 → MinIO Multipart/Redis Bitmap → Kafka 异步解析与向量化 → Elasticsearch BM25 + KNN → 生产验收”的顺序收敛。Elasticsearch 是生产主检索，PostgreSQL/pgvector 保留为统一基线和故障兜底，中文 2-gram 完全退出 RAG；知识摄取支持 Markdown、PDF、DOC/DOCX 和图片 OCR。PostgreSQL继续保存业务权威、RLS、Outbox、任务状态、pgvector 基线向量和普通笔记搜索。每阶段使用独立迁移、观察窗口和回滚点，不允许一个发布同时切换文件、事件和检索三条主路径。
+当前 Compose 已完成公共抽象、MinIO、Kafka/Redpanda、Elasticsearch BM25 + KNN 和 server 内部 worker
+收敛。PostgreSQL 继续保存业务权威、RLS、Outbox、任务状态、pgvector 基线向量和普通笔记搜索；
+Elasticsearch 是默认 RAG 检索 backend，pgvector 保留为可观测降级路径。当前知识摄取仍只开放 Markdown
+与 Markdown ZIP；PDF、DOC/DOCX 和图片 OCR 必须完成隔离解析与安全验收后才能进入当前能力清单。

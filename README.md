@@ -304,5 +304,6 @@ docker compose config --quiet
 - [模板广场页](docs/page/TEMPLATES_PAGE_ARCHITECTURE.md)：私有模板、公开快照、榜单与使用流程
 - [AI 限量活动页](docs/page/AI_EVENTS_PAGE_ARCHITECTURE.md)：活动倒计时、资格、点数与领取
 - [小红书研究页](docs/page/RESEARCH_PAGE_ARCHITECTURE.md)：研究采集、整理、保存、授权和验收说明
-- [2026-08-24 RAG 与本地目标环境验收](docs/operations/RAG_AND_PRODUCTION_ACCEPTANCE_20260824.md)：分层质量、容量、成本、监控边界和备份恢复证据
+- [2026-08-25 基础设施验收](docs/operations/INFRASTRUCTURE_ACCEPTANCE_20260825.md)：当前 Compose 主路径、故障注入、备份恢复和可观测性证据
+- [2026-08-25 RAG 与负载复验](docs/operations/RAG_AND_K6_RERUN_20260825.md)：当前 RAG 质量和 AI 活动负载结果
 - [RAG 与基础设施演进技术方案](docs/INFRASTRUCTURE_EVOLUTION.md)：MinIO/Redis 大文件上传、Kafka 多格式文档处理、Elasticsearch 检索及生产验收方案

@@ -373,26 +373,27 @@ Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候
 
 ## 9. 评测结果与当前基线
 
-### 9.0 当前有效基线（2026-08-11）
+### 9.0 当前有效复验（2026-08-25）
 
-当前回归门禁应以 164 条合并集的 Unicode 中文 Bigram FTS 基线为准，完整配置、数据集哈希、
-分层结果和七组检索消融见
-`docs/rag-baselines/20260811-125254-chinese-bigram-fts.md`：
+当前回归对照以迁移版本 40、Compose 默认 Elasticsearch BM25 + KNN 主路径上的 164 条合并集复验为准，
+完整环境、分层结果和原始产物位置见
+`docs/operations/RAG_AND_K6_RERUN_20260825.md`：
 
 | 指标 | 当前基线 |
 |---|---:|
-| Hit@1 | 0.993902 |
-| Hit@3 / Hit@5 / Hit@10 | 1.000000 |
-| MRR（rerank 前 / 后） | 0.943462 / 0.996951 |
-| Context Recall | 0.857885 |
-| Context Precision | 0.864668 |
-| Faithfulness | 0.966236 |
-| Answer Relevancy | 0.939085 |
-| Retrieval p50 / p95 | 182 ms / 336 ms |
-| Total p50 / p95 | 6,533 ms / 9,347 ms |
+| 用例成功 / 失败 | 164 / 0 |
+| Hit@1 / Hit@10 | 0.9939 / 1.0000 |
+| MRR（rerank 前 / 后） | 0.9557 / 0.9970 |
+| Context Recall | 0.8356 |
+| Context Precision | 0.9656 |
+| Faithfulness | 0.9549 |
+| Answer Relevancy | 0.9251 |
+| Total p50 / p95 | 4,978 ms / 10,224 ms |
 
-第 9.1～9.5 节保留 2026-08-05/06 的历史演进，用于解释 Parent-Child、RRF 和上下文策略为何
-形成；其中旧 Fulltext=0、`context_top_k=5` 和 0.4756 标题命中率都不是当前实现基线。
+2026-08-11 Unicode 中文 Bigram FTS 结果保留在
+`docs/rag-baselines/20260811-125254-chinese-bigram-fts.md`，它现在是 PostgreSQL 回退路径和检索策略演进的
+历史基线，不代表 Compose 默认 Elasticsearch 主路径。第 9.1～9.6 节同样只解释 Parent-Child、RRF、
+中文检索与上下文策略的形成；其中旧 Fulltext=0、`context_top_k=5` 和 0.4756 标题命中率都不是当前实现指标。
 
 ### 9.1 历史演进环境（2026-08-05 / 2026-08-06）
 

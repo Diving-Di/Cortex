@@ -7,7 +7,7 @@
 ## P0：发布前必须关闭
 
 - 在目标部署环境运行完整非 AI、AI、研究、模板和活动验收；本地通过不能代替目标环境结果。
-- 用新 PostgreSQL 空库验证 58 张表、全部迁移、FORCE RLS、低权限 `cortex_app`、ready、注册和登录。
+- 用新 PostgreSQL 空库验证迁移版本 40、63 张 public 表、全部迁移、FORCE RLS、低权限 `cortex_app`、ready、注册和登录。
 - 为迁移 `000035_knowledge_index_progress` 与 `000036_knowledge_clarifications` 补目标数据库验收：
   多 worker 竞争、租约过期接管、进度不倒退，以及澄清正常/重复/过期/跨租户恢复。
 - 确认联合备份与隔离恢复报告仍适用于当前 schema 和数据卷布局；过期时重新演练。

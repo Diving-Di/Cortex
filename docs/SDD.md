@@ -115,7 +115,7 @@ PDF、Word、Excel 不属于当前知识库摄取范围；不得仅通过放开�
 
 Compose 下数据库、Redis、MinIO、Kafka/Redpanda、Elasticsearch、LiteLLM、Embedding 和 Reranker
 服务不暴露宿主机公共端口。`/healthz` 只反映 API 进程存活，`/readyz` 验证 PostgreSQL 与当前对象存储可用。新实例由 `backend/db/schema.sql`
-基线加版本化迁移初始化（当前共 58 张表）。
+基线加版本化迁移初始化（当前迁移版本 40，共 63 张 public 表）。
 
 ```powershell
 Set-Location backend
