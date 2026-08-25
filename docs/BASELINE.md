@@ -1,7 +1,7 @@
 # Cortex 工程基线
 
 > 状态：当前有效
-> 更新日期：2026-08-19
+> 更新日期：2026-08-25
 
 ## 产品范围
 
@@ -17,9 +17,6 @@
 桌面组件、团队协作、计费和数据库/Markdown 双向同步不属于当前范围。
 PDF、Word、Excel 摄取仍不属于当前知识库摄取范围。
 
-> 2026-08-05：HowToCook 固定语料与菜谱接口（`/api/v1/recipes/*`）已移除，语料一次性迁移到用户
-> `Diving` 的运行时私有知识库；前端 `/recipes`、`/assistant` 已重定向到 `/knowledge`。
-
 ## 技术基线
 
 | 层级 | 当前实践 |
@@ -29,12 +26,15 @@ PDF、Word、Excel 摄取仍不属于当前知识库摄取范围。
 | 数据访问 | pgx/v5、显式 SQL、显式事务 |
 | 数据库 | PostgreSQL 16、RLS |
 | AI | LiteLLM Proxy、OpenAI 兼容 Chat Completions、SSE |
-| 知识检索 | 个人知识库 GTE 中文 Embedding（512 维）、BGE CrossEncoder Reranker、pgvector 混合召回 |
+| 知识检索 | GTE 中文 Embedding（512 维）、BGE CrossEncoder Reranker；PostgreSQL/pgvector + 中文 2-gram 为本地回退，Compose 默认使用 Elasticsearch BM25 + KNN 投影 |
 | 部署 | Docker Compose、多阶段静态 Go 镜像 |
+| 文件与事件 | Compose 默认使用私有 MinIO 与 Kafka 兼容的 Redpanda；PostgreSQL 保存对象定位、Outbox、任务和消费事实 |
 | 活动协调 | Redis 7、Lua 原子预扣；PostgreSQL 保存最终事实 |
 | 模板投影 | Outbox 类型隔离、租约续期/完成 fencing、排行版本键双缓冲、Redis 64 连接复用池 |
 
-后端唯一入口为 `backend/cmd/server/main.go`。仓库不保留 Python 后端或 Alembic。
+规范要求 `backend/cmd/server/main.go` 为唯一后端入口，仓库不保留 Python 后端或 Alembic。当前外部基础设施
+worker 仍由同一镜像内的 `cmd/outbox-relay`、`cmd/knowledge-consumer`、`cmd/projection-consumer` 和
+`cmd/file-gc-consumer` 启动，这是尚待迁回 server 受管 runner 的已知架构偏差，不得据此继续增加部署入口。
 
 ## 数据规则
 
@@ -80,7 +80,8 @@ docker compose up -d --build
 ```
 
 - 所有 Go 源码必须通过 `gofmt`；允许使用 Go 惯例中的 Tab 缩进。
-- `db`、`llm-gateway` 和 `backend` 必须为 healthy。
+- `db`、`redis`、`llm-gateway`、`embedding-service`、`reranker-service`、`minio`、`kafka`、
+  `elasticsearch` 和 `backend` 必须为 healthy；无 HTTP 健康检查的消费者须以进程、积压和任务状态验收。
 - 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
 - 新 PostgreSQL 空库必须完成全部版本化迁移（当前 58 张表）、RLS、注册和登录验收。
 - 模板广场还需验证 Outbox 类型隔离、排行 active pointer 原子切换、daily/HLL 8 天 TTL、匿名 UV

@@ -1,9 +1,9 @@
 # Cortex RAG 具体链路与策略
 
-> 状态：当前实现（2026-08-12，按在线 handler、Workflow 与评测 Runner 校对）
+> 状态：当前实现（2026-08-25，按在线 handler、检索 backend 与评测 Runner 校对）
 > 适用范围：个人知识库问答（`POST /api/v1/knowledge/chat/stream`）与离线评测
-> 最新全链路基线：2026-08-11（164 条全量：90 菜谱 + 74 非菜谱，中文 Bigram FTS）
-> 明确不包含：HyDE、Step-back Prompting、在线用户评价、外部向量数据库、跨租户共享 Prompt/响应缓存
+> 最新已冻结质量基线：2026-08-11（164 条全量：90 菜谱 + 74 非菜谱，PostgreSQL/pgvector + 中文 Bigram FTS）
+> 明确不包含：HyDE、Step-back Prompting、在线用户评价、Elasticsearch 之外的外部向量数据库、跨租户共享 Prompt/响应缓存
 
 > 历史沿革：本项目的 RAG 最初服务于旧项目名时代的内置 HowToCook 菜谱问答
 > （`backend/internal/recipe`）。2026-08-05 菜谱功能整体移除（数据表由迁移
@@ -11,14 +11,18 @@
 > 私有知识库；当前主线是 Cortex 个人知识库 v2/v3 检索，复用同一套 GTE Embedding
 > 与 BGE CrossEncoder 精排。本文以当前实现为准，历史链路只在与当前对照时简要提及。
 
+> 检索后端边界：`RAG_RETRIEVAL_BACKEND=elasticsearch` 时，在线主路径使用 Elasticsearch
+> 的 BM25 + KNN 可重建投影；`postgres` 时使用本文第 5 节详述的 pgvector + 中文 2-gram 三路召回。
+> Compose 默认选择 Elasticsearch，但现有冻结基线仍来自 PostgreSQL 路径，二者不得混称为同一质量证据。
+
 ## 1. 目标与边界
 
 Cortex 的 RAG 从当前租户启用的个人知识文档（上传的 `.md`/`.zip` 与开启知识索引的个人笔记）
 中检索证据，并通过 LiteLLM 生成带来源约束的回答。设计重点是：
 
 1. 用 child chunk 做细粒度召回，用 parent chunk 为生成保留完整章节；
-2. 组合全局向量、正文全文、标题文档内向量三路召回，降低单一路径漏召；
-3. 在 child 层使用 RRF 融合不同量纲的排序，再按 parent 聚合，最后用 BGE CrossEncoder 精排；
+2. 按配置选择 Elasticsearch BM25 + KNN，或 PostgreSQL 的全局向量、正文全文、标题文档内向量三路召回；
+3. 聚合 child 候选到 parent，最后用 BGE CrossEncoder 精排；PostgreSQL backend 内部使用 RRF 融合三路排名；
 4. 索引重建期间保留旧版本，重建失败不中断线上检索；
 5. 线上知识问答与离线评测复用 `Store.SearchKnowledge`、相同 rerank 输入和
    `SelectKnowledgeContexts`；在线额外执行对话 Query 改写、证据阈值门控与生成后核验，
@@ -117,6 +121,11 @@ handler 最多读取最近 5 轮、总计不超过 8000 个 Unicode 字符，调
 这条会话改写链路，这是第 8.3 节列出的评测缺口。
 
 ## 5. 混合召回策略
+
+本节 5.1～5.5 记录 `RAG_RETRIEVAL_BACKEND=postgres` 的实现与已冻结基线。Compose 默认的
+`elasticsearch` backend 将 query embedding 与原 query 一次提交给 ES，执行 BM25 `multi_match` +
+512 维 cosine KNN，并按 tenant routing、`knowledge_enabled`、`status` 与可选 collection 过滤。
+ES 返回的候选仍须回 PostgreSQL 校验当前租户、活动 `index_version` 与未删除状态，之后才进入精排和证据门控。
 
 `Store.SearchKnowledge` 在同一个 `pgx.Tx` 内设置 transaction-local RLS 上下文，并以
 `tenant_id`、`collection_ids`（可选）、`knowledge_enabled`、`status='ready'`、

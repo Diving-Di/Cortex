@@ -1,0 +1,48 @@
+# Cortex 文档索引
+
+> 更新日期：2026-08-25  
+> 维护原则：代码、数据库迁移与部署配置是实现事实；`AGENTS.md` 是不可削弱的工程约束；历史报告保留当时结论，不自动代表当前版本或生产环境。
+
+## 当前基线与契约
+
+| 文档 | 用途 |
+|---|---|
+| [工程基线](BASELINE.md) | 当前产品、技术、数据与验证基线；发现冲突时优先核对实现与仓库规范 |
+| [软件设计说明书](SDD.md) | 当前系统边界、数据流、安全与主要组件 |
+| [API 概览](api.md) | 当前 `/api/v1` HTTP/SSE 契约 |
+| [RAG 链路](RAG.md) | 当前双检索 backend、证据门控与已冻结质量基线 |
+| [LLM 网关](LLM_GATEWAY.md) | LiteLLM 接入、安全、缓存与可靠性规范 |
+| [发布检查清单](RELEASE_CHECKLIST.md) | 发布门禁的唯一汇总入口 |
+| [未完成事项](IMPLEMENTATION_GAPS.md) | 已确认的架构偏差、生产风险与不可承诺事项 |
+
+## 架构演进与运维
+
+| 文档/目录 | 用途 |
+|---|---|
+| [基础设施演进](INFRASTRUCTURE_EVOLUTION.md) | MinIO、Kafka/Redpanda、Elasticsearch 的当前落地状态与后续生产收敛 |
+| [外部基础设施运维](EXTERNAL_INFRA_OPERATIONS.md) | 分阶段切换、故障与恢复要求 |
+| [运行手册](runbooks/) | 常见基础设施与 RAG 故障处置 |
+| [页面架构](page/README.md) | 已实现前端页面的专项说明与覆盖索引 |
+
+## 历史证据
+
+- `operations/` 保存带日期的容量、故障、恢复与验收记录。结论只适用于文档注明的 commit、配置和环境；涉及检索 backend 或基础设施变更时必须重新验收。
+- `rag-baselines/` 保存 RAG 历史冻结基线，用于回归对照，不表示当前 Compose 默认检索路径已经达到相同指标。
+- 两张 `CORTEX_*_PROJECT_DESCRIPTION_2026-08.png` 是 2026-08 项目介绍快照，不作为接口或架构权威来源。
+
+## 规划文档的使用边界
+
+规划内容必须标明“目标/待实现”，不得覆盖当前实现描述。当前已知的重要分界包括：
+
+- Compose 已默认启用 MinIO、Kafka 兼容的 Redpanda 和 Elasticsearch，但目标环境生产门禁尚需独立完成。
+- Elasticsearch 当前实现同时执行 BM25 与 KNN；PostgreSQL/pgvector + 中文 2-gram 是独立配置回退 backend。
+- 仓库规范要求 `backend/cmd/server/main.go` 为唯一后端入口；现有外部基础设施 `cmd/*` worker 是待收敛偏差，不是可继续扩展的先例。
+- PDF、Word、Excel 摄取与断点续传仍属于规划能力，不能写入当前 API 或页面能力清单。
+
+## 修改文档时的核对顺序
+
+1. 先检查工作树，保留用户已有改动与历史证据。
+2. 用 `backend/internal/server/server.go` 核对路由，用 `backend/internal/config` 与 Compose 核对运行配置。
+3. 用 `backend/db/schema.sql` 和 `backend/internal/migrations/sql` 核对数据结构与迁移状态。
+4. 当前实现变化时同步更新 `BASELINE.md`、`SDD.md`、`api.md` 和相关页面文档。
+5. 仅当内容能被实现、迁移或验收证据明确证伪时删除；否则保留并补充适用时间、环境或规划状态。

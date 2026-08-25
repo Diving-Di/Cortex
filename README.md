@@ -305,4 +305,4 @@ docker compose config --quiet
 - [AI 限量活动页](docs/page/AI_EVENTS_PAGE_ARCHITECTURE.md)：活动倒计时、资格、点数与领取
 - [小红书研究页](docs/page/RESEARCH_PAGE_ARCHITECTURE.md)：研究采集、整理、保存、授权和验收说明
 - [2026-08-24 RAG 与本地目标环境验收](docs/operations/RAG_AND_PRODUCTION_ACCEPTANCE_20260824.md)：分层质量、容量、成本、监控边界和备份恢复证据
-- [MinIO、Kafka 与 Elasticsearch 引入方案](docs/INFRASTRUCTURE_EVOLUTION.md)：组件决策、触发阈值、数据边界、灰度迁移和回滚方案
+- [RAG 与基础设施演进技术方案](docs/INFRASTRUCTURE_EVOLUTION.md)：MinIO/Redis 大文件上传、Kafka 多格式文档处理、Elasticsearch 检索及生产验收方案

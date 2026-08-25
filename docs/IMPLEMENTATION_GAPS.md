@@ -1,6 +1,6 @@
 # 未完成事项与生产风险
 
-> 更新日期：2026-08-19
+> 更新日期：2026-08-25
 > 本文只记录真实缺口和不能对外承诺的事项。已实现能力见 `README.md`、`docs/BASELINE.md`、
 > `docs/SDD.md` 和 `docs/RAG.md`；发布门禁统一见 `docs/RELEASE_CHECKLIST.md`。
 
@@ -11,13 +11,18 @@
 - 为迁移 `000035_knowledge_index_progress` 与 `000036_knowledge_clarifications` 补目标数据库验收：
   多 worker 竞争、租约过期接管、进度不倒退，以及澄清正常/重复/过期/跨租户恢复。
 - 确认联合备份与隔离恢复报告仍适用于当前 schema 和数据卷布局；过期时重新演练。
+- 将 `cmd/outbox-relay`、`cmd/knowledge-consumer`、`cmd/projection-consumer`、`cmd/file-gc-consumer`
+  等部署 worker 迁入 `cmd/server` 管理的内部 runner，恢复唯一后端入口约束；迁移前不得新增同类入口。
+- 在目标环境完成 MinIO、Kafka/Redpanda 与 Elasticsearch 的分阶段切换、回滚和联合恢复验收；
+  Compose 默认启用不等于生产门禁已经通过。
 
 ## P1：上线前需要真实容量或质量证据
 
 - AI 活动本地正确性已通过，但单实例冷 Token 认证和数据库热点仍是容量瓶颈；生产目标规格、多 backend、
   真实入口与到达率模型尚未完成复测。详细证据见 `operations/AI_EVENT_LOAD_TEST_20260816.md`。
-- 知识检索已完成 100/1,000/10,000 合成文档测试，但 HTTP、Embedding、Reranker、LiteLLM 并发饱和点和
-  AI 成本尚未完整测量；10,000 文档候选扫描是已知边界。见 `operations/CAPACITY_20260813.md`。
+- 知识检索已完成 PostgreSQL 路径的 100/1,000/10,000 合成文档测试，但当前 Elasticsearch 路径及
+  HTTP、Embedding、Reranker、LiteLLM 的联合并发饱和点和 AI 成本尚未完整测量；历史的 10,000
+  文档候选扫描结论不能直接代表当前 ES 投影性能。见 `operations/CAPACITY_20260813.md`。
 - `RAG_PLANNER_ENABLED` 必须保持默认关闭，直到真实冻结的 comparison/trend/cross_period 数据集完成
   单查询对照，并记录 Hit@K、MRR、Context Recall/Precision、引用通过率、拒答准确率、P95、调用次数和成本。
 - Prometheus/Grafana 资产已经提供，但实际采集、告警路由、值班负责人和生产阈值仍由部署环境完成。

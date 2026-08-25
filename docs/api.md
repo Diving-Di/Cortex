@@ -29,7 +29,7 @@ data: [DONE]
 | 方法 | 路径 | 认证 | 说明 |
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | 否 | 进程存活检查 |
-| `GET` | `/readyz` | 否 | 数据库就绪检查 |
+| `GET` | `/readyz` | 否 | PostgreSQL 与当前对象存储就绪检查；不依赖 AI、Kafka 或 Elasticsearch |
 | `GET` | `/metrics` | 否 | Prometheus 文本指标，不包含正文或身份信息 |
 | `POST` | `/api/v1/auth/register` | 否 | 注册账号并创建个人空间 |
 | `POST` | `/api/v1/auth/login` | 否 | 浏览器登录；设置 HttpOnly 会话 Cookie，只返回用户名 |

@@ -80,6 +80,10 @@
 
 ## 检索与问答链路
 
+检索实现由 `RAG_RETRIEVAL_BACKEND` 选择：Compose 默认使用 Elasticsearch BM25 + KNN 投影；
+`postgres` 回退使用下述 pgvector + 中文全文通道。两种后端的候选都必须回 PostgreSQL 做租户、
+活动索引版本与有效状态校验，再进入 rerank、证据门控和来源保存。
+
 `POST /api/v1/knowledge/chat/stream`：
 
 1. 有会话历史时先生成独立检索 Query；普通问题走单查询快速路径。默认关闭的实验计划器只为

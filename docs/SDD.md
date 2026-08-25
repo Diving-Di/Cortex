@@ -20,9 +20,11 @@ Cortex 是个人记录与回顾工作台，提供笔记、日报/周报/月报�
 ## 2. 技术架构
 
 - 前端：React 18、TypeScript、Webpack 5、Ant Design。
-- 后端：Go、Gin、pgx/v5，唯一入口为 `backend/cmd/server/main.go`。
-- 数据库：PostgreSQL 16、RLS、pgvector。
+- 后端：Go、Gin、pgx/v5；规范入口为 `backend/cmd/server/main.go`，当前额外 worker 入口的偏差见本节末尾。
+- 数据库：PostgreSQL 16、RLS、pgvector；同时保存对象定位、Transactional Outbox、任务状态和引用事实。
 - AI：后端仅通过 LiteLLM 的 OpenAI 兼容接口访问逻辑模型。
+- Compose 当前默认使用 MinIO 保存业务文件、Redpanda 提供 Kafka 接口分发 Outbox 事件、
+  Elasticsearch 保存可重建的 BM25 + KNN 检索投影。三者均不是租户权限或业务完成状态的权威来源。
 
 PostgreSQL 是个人笔记正文的唯一权威来源。Markdown 只用于笔记交换、导出以及个人知识库
 上传语料，不与数据库做双向同步。
@@ -35,7 +37,8 @@ PostgreSQL 是个人笔记正文的唯一权威来源。Markdown 只用于笔记
 - 跨租户资源访问统一表现为 404。
 - 密码使用 PBKDF2-SHA256；登录 Token 只保存 SHA-256 摘要。
 - 笔记更新使用乐观锁，正文更新和 AI 覆盖前创建 revision，删除默认软删除。
-- 附件和知识文件只保存 `CORTEX_DATA_DIR` 下的安全相对路径，不作为公开静态目录暴露；`DIARY_DATA_DIR` 仅为兼容别名。
+- 附件、知识文件和研究资产只保存服务端生成的安全对象定位，不作为公开静态目录暴露。Compose 默认
+  使用 MinIO；`CORTEX_DATA_DIR` 的本地实现用于迁移或明确回退，`DIARY_DATA_DIR` 仅为兼容别名。
 
 ## 4. 个人知识库
 
@@ -44,21 +47,27 @@ flowchart LR
     UPLOAD["上传 .md / .zip"] --> PREPARE["安全校验与落盘"]
     PREPARE --> DB[("knowledge_* 表<br/>RLS 隔离")]
     NOTES["个人笔记知识开关"] --> DB
-    DB --> INDEX["Knowledge Indexer"]
+    DB --> OUTBOX["Transactional Outbox"]
+    OUTBOX --> KAFKA["Kafka / Redpanda"]
+    KAFKA --> INDEX["Knowledge Consumer"]
     EMBED["固定 Embedding 服务"] --> INDEX
     INDEX --> DB
+    INDEX --> ES["Elasticsearch 可重建投影"]
     API["/api/v1/knowledge/*"] --> DB
     UI["/knowledge"] --> API
     API --> HITL["一次性澄清恢复"]
     HITL --> DB
 ```
 
-- 上传经 `internal/knowledge` 校验类型、配额与 ZIP 路径安全后，保存到
-  `CORTEX_DATA_DIR/knowledge/{tenant_id}/...` 下的安全相对路径。
-- 后台 `RunKnowledgeIndexer` 对文档做父子切块，并使用 Compose 内部
+- 上传经 `internal/knowledge` 校验类型、配额与 ZIP 路径安全后，由 `BlobStore` 写入服务端生成的对象 key；
+  Compose 默认后端为 MinIO，本地路径仅是迁移/回退实现。
+- Kafka 模式下由 `knowledge-consumer` 消费 Transactional Outbox 事件；PostgreSQL 回退模式下由
+  `RunKnowledgeIndexer` 轮询任务。两条路径都对文档做父子切块，并使用 Compose 内部
   `embedding-service`（`iic/nlp_gte_sentence-embedding_chinese-small`，512 维）生成向量。
-- 问答只检索当前租户 `knowledge_documents`（含开启知识问答的个人笔记），向量 + 全文混合召回，
-  经 `reranker-service`（`BAAI/bge-reranker-v2-m3`）精排后取前 `RAG_CONTEXT_PARENT_TOP_K` 个
+- 问答只检索当前租户 `knowledge_documents`（含开启知识问答的个人笔记）。Compose 默认通过
+  Elasticsearch 的 BM25 + KNN 投影召回，PostgreSQL/pgvector + 中文 2-gram 保留为配置化回退；候选必须
+  回 PostgreSQL 按当前租户、活动索引版本和有效状态二次校验，再经 `reranker-service`
+  （`BAAI/bge-reranker-v2-m3`）精排后取前 `RAG_CONTEXT_PARENT_TOP_K` 个
   parent；来源写入 `knowledge_message_sources`。无当前租户证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
 - 公开 SSE 使用 `schema_version=1` 的 `retrieval_progress` DTO 展示改写、Embedding、召回、精排与
   证据门控统计，不暴露 prompt、正文块、身份、内部地址或上游响应。
@@ -104,8 +113,8 @@ PDF、Word、Excel 不属于当前知识库摄取范围；不得仅通过放开�
 
 ## 8. 部署与验证
 
-Compose 下数据库、LiteLLM、Embedding 和 Reranker 服务不暴露宿主机端口。
-`/healthz` 只反映进程存活，`/readyz` 只验证数据库可用。新实例由 `backend/db/schema.sql`
+Compose 下数据库、Redis、MinIO、Kafka/Redpanda、Elasticsearch、LiteLLM、Embedding 和 Reranker
+服务不暴露宿主机公共端口。`/healthz` 只反映 API 进程存活，`/readyz` 验证 PostgreSQL 与当前对象存储可用。新实例由 `backend/db/schema.sql`
 基线加版本化迁移初始化（当前共 58 张表）。
 
 ```powershell
@@ -128,6 +137,9 @@ docker compose config --quiet
 ```
 
 知识库验收覆盖上传、索引、混合问答、跨租户隔离与 3 GiB 配额。
+
+规范要求 `backend/cmd/server/main.go` 为唯一后端入口；当前 Compose 仍启动同一镜像中的多个 `cmd/*`
+worker 二进制。该实现属于待收敛架构偏差，后续应迁入 server 管理的可配置 runner，不得继续扩散入口。
 
 ## 9. 模板广场与限量 AI 活动
 

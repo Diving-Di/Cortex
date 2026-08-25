@@ -1,6 +1,6 @@
 # Cortex 发布检查清单
 
-> 更新日期：2026-08-19
+> 更新日期：2026-08-25
 > 本文是发布门禁的唯一汇总入口。功能设计见 `README.md`、`docs/SDD.md`、`docs/RAG.md` 和
 > `docs/api.md`；历史容量、故障与恢复证据保存在 `docs/operations/`。
 
@@ -25,6 +25,8 @@ go build ./cmd/migrate
 ```
 
 - [ ] `gofmt -l .` 无输出，vet、测试和两个构建均通过。
+- [ ] 使用外部基础设施的发布还构建 `outbox-relay`、`knowledge-consumer`、`projection-consumer`、
+  `file-gc-consumer` 和 `blob-migrate`；这些额外入口属于待迁回 server runner 的已知偏差。
 
 前端与 Compose：
 
@@ -47,7 +49,8 @@ docker compose config --quiet
 - [ ] 租户业务表启用并强制 RLS；`cortex_app` 使用低权限连接，跨租户资源访问表现为 404。
 - [ ] 注册、登录、Token 过期/撤销、软删除租户拒绝认证通过验收。
 - [ ] 乐观锁、revision、软删除和来源有效性检查没有被绕过。
-- [ ] 附件与知识文件仅使用 `CORTEX_DATA_DIR` 下安全相对路径；路径穿越、超额和恶意 ZIP 被拒绝。
+- [ ] 附件、知识文件与研究资产只使用服务端生成的安全对象定位；MinIO 对象 key、本地回退路径、
+  路径穿越、超额和恶意 ZIP 均通过验收。
 - [ ] 数据库迁移具有回滚或明确的不可逆说明；执行不可逆操作前已有可恢复备份。
 
 ## 4. 核心功能验收
@@ -77,8 +80,9 @@ docker compose config --quiet
 
 ## 6. 运行状态、灾备与容量
 
-- [ ] `/healthz`、`/readyz` 正常，Compose 的 `db`、`redis`、`llm-gateway`、`backend` healthy。
-- [ ] 磁盘、连接池、队列积压、租约丢失、索引失败、AI 断流和备份告警没有未处置项。
+- [ ] `/healthz`、`/readyz` 正常；Compose 的 `db`、`redis`、`llm-gateway`、`embedding-service`、
+  `reranker-service`、`minio`、`kafka`、`elasticsearch` 和 `backend` healthy。
+- [ ] 磁盘、对象容量、连接池、Outbox/Kafka 积压、消费租约、ES 投影延迟、索引失败、AI 断流和备份告警没有未处置项。
 - [ ] 联合备份 manifest/checksum 已生成；最近一次隔离恢复演练覆盖 PostgreSQL 和当前引用的数据卷文件，
   DB/文件双向一致。
 - [ ] 容量证据对应当前 commit、配置和目标环境，包含失败率、p50/p95/p99 与原始输出。
