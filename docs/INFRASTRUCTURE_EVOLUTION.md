@@ -65,10 +65,9 @@ backend/internal/
 └── server/          # HTTP/SSE 契约，不直接调用 MinIO/Kafka/ES SDK
 ```
 
-规范要求 `backend/cmd/server/main.go` 保持唯一后端入口。当前仓库仍存在并由 Compose 启动
-`cmd/outbox-relay`、`cmd/knowledge-consumer`、`cmd/projection-consumer` 与 `cmd/file-gc-consumer`；这是
-已确认的待收敛偏差。目标是将它们迁入 `backend/internal/workers` 的受管 runner，由 server 按配置启动；
-在完成迁移前不得把目标结构描述成当前实现，也不得新增部署用 Go 入口。
+`backend/cmd/server/main.go` 是唯一部署后端入口。Outbox relay、知识索引、搜索投影与文件 GC 已迁入
+`backend/internal/workers` 的受管 runner，由 server 按配置启动并共享取消与优雅退出边界；Compose 不再
+构建或部署额外 worker 二进制。`cmd/migrate`、`cmd/blob-migrate` 和评测命令是显式运维工具，不是服务入口。
 
 ## 4. MinIO 引入方案
 
@@ -370,7 +369,7 @@ RAG_RETRIEVAL_BACKEND=elasticsearch
 - [ ] 冻结集、真实脱敏 bad case、跨租户、故障注入、容量和恢复验收全部通过。
 - [ ] Markdown、PDF、DOC/DOCX、扫描 PDF 和图片 OCR 的解析、引用定位、资源限制与失败恢复均已验收。
 - [ ] MinIO Multipart 与 Redis Bitmap 的断点续传、幂等、配额和孤儿清理均已验收。
-- [ ] 唯一后端入口约束已恢复，不再部署额外 `cmd/*` 二进制。
+- [x] 唯一后端入口约束已恢复，不再部署额外 worker `cmd/*` 二进制。
 
 ## 12. 明确不做与完成定义
 

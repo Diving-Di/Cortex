@@ -11,7 +11,9 @@ $manifestPath = Join-Path $backup "manifest.json"
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "manifest.json is missing" }
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
 if ($manifest.format_version -ne 1) { throw "unsupported backup format" }
-foreach ($asset in @($manifest.database, $manifest.app_data)) {
+$assets = @($manifest.database, $manifest.app_data)
+if ($manifest.minio_data) { $assets += $manifest.minio_data }
+foreach ($asset in $assets) {
     $path = Join-Path $backup $asset.file
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "backup asset is missing" }
     if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $asset.sha256) { throw "backup checksum mismatch" }
@@ -91,7 +93,7 @@ try {
     $pathsFile = Join-Path ([IO.Path]::GetTempPath()) "$prefix-paths.txt"
     try {
         docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
-            -c "SELECT stored_path FROM attachments UNION SELECT stored_path FROM knowledge_documents WHERE stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets UNION SELECT storage_path FROM research_assets" | Set-Content -LiteralPath $pathsFile -Encoding utf8NoBOM
+            -c "SELECT stored_path FROM attachments WHERE storage_backend='local' UNION SELECT stored_path FROM knowledge_documents WHERE storage_backend='local' AND stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets WHERE storage_backend='local' UNION SELECT storage_path FROM research_assets" | Set-Content -LiteralPath $pathsFile -Encoding utf8NoBOM
         $counts = docker run --rm --mount "type=volume,source=$appVolume,target=/data,readonly" `
             --mount "type=bind,source=$pathsFile,target=/paths.txt,readonly" alpine:3.23 `
             sh -c 'sed "s/\r$//" /paths.txt | sed "/^$/d" | sort -u >/tmp/refs; find /data/attachments /data/knowledge /data/research -type f 2>/dev/null | sed "s#^/data/##" | sort -u >/tmp/files; missing=$(comm -23 /tmp/refs /tmp/files | wc -l); orphan=$(comm -13 /tmp/refs /tmp/files | wc -l); echo "$missing|$orphan"'

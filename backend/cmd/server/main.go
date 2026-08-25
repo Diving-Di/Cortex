@@ -15,6 +15,7 @@ import (
 	"cortex/backend/internal/rediscoord"
 	"cortex/backend/internal/server"
 	"cortex/backend/internal/store"
+	"cortex/backend/internal/workers"
 )
 
 var version = "dev"
@@ -50,9 +51,7 @@ func main() {
 	}
 
 	handler := server.New(cfg, db, logger, version)
-	if cfg.EventBus != "kafka" {
-		server.RunKnowledgeIndexer(ctx, cfg, db, blobs, localBlobs, logger)
-	}
+	workers.Run(ctx, cfg, db, blobs, localBlobs, logger)
 	go server.RunScheduler(ctx, cfg, db, logger)
 	server.RunResearchWorkers(ctx, cfg, db, logger)
 	server.RunXHSAuthorizationWorkers(ctx, cfg, db, logger)

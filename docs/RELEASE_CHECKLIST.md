@@ -25,8 +25,8 @@ go build ./cmd/migrate
 ```
 
 - [ ] `gofmt -l .` 无输出，vet、测试和两个构建均通过。
-- [ ] 使用外部基础设施的发布还构建 `outbox-relay`、`knowledge-consumer`、`projection-consumer`、
-  `file-gc-consumer` 和 `blob-migrate`；这些额外入口属于待迁回 server runner 的已知偏差。
+- [ ] 使用外部基础设施的发布额外构建并演练 `blob-migrate`；relay、知识索引、搜索投影与文件 GC
+  已由 `cmd/server` 内的受管 runner 承载，不再构建额外部署入口。
 
 前端与 Compose：
 

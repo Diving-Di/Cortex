@@ -92,7 +92,10 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 	return records, err
 }
 func (c *Consumer) Commit(ctx context.Context) error {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, c.instance+"/offsets", bytes.NewReader([]byte("{}")))
+	// Kafka REST commits the consumer's current offsets when the request has no
+	// explicit offset list. Sending an empty JSON object is rejected by
+	// Redpanda because it is not a valid OffsetCommitSeekList.
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, c.instance+"/offsets", nil)
 	req.Header.Set("Content-Type", "application/vnd.kafka.v2+json")
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -101,6 +104,19 @@ func (c *Consumer) Commit(ctx context.Context) error {
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("commit kafka: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Consumer) Close(ctx context.Context) error {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodDelete, c.instance, nil)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("close kafka consumer: %d", resp.StatusCode)
 	}
 	return nil
 }

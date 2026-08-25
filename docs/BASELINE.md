@@ -32,9 +32,9 @@ PDF、Word、Excel 摄取仍不属于当前知识库摄取范围。
 | 活动协调 | Redis 7、Lua 原子预扣；PostgreSQL 保存最终事实 |
 | 模板投影 | Outbox 类型隔离、租约续期/完成 fencing、排行版本键双缓冲、Redis 64 连接复用池 |
 
-规范要求 `backend/cmd/server/main.go` 为唯一后端入口，仓库不保留 Python 后端或 Alembic。当前外部基础设施
-worker 仍由同一镜像内的 `cmd/outbox-relay`、`cmd/knowledge-consumer`、`cmd/projection-consumer` 和
-`cmd/file-gc-consumer` 启动，这是尚待迁回 server 受管 runner 的已知架构偏差，不得据此继续增加部署入口。
+`backend/cmd/server/main.go` 是唯一部署后端入口，仓库不保留 Python 后端或 Alembic。外部基础设施 worker
+由 `backend/internal/workers` 的受管 runner 启动，与 API 共享进程取消和优雅退出边界；迁移与评测命令仅作
+显式运维工具，不作为部署服务入口。
 
 ## 数据规则
 

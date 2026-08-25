@@ -20,7 +20,7 @@ Cortex 是个人记录与回顾工作台，提供笔记、日报/周报/月报�
 ## 2. 技术架构
 
 - 前端：React 18、TypeScript、Webpack 5、Ant Design。
-- 后端：Go、Gin、pgx/v5；规范入口为 `backend/cmd/server/main.go`，当前额外 worker 入口的偏差见本节末尾。
+- 后端：Go、Gin、pgx/v5；唯一部署入口为 `backend/cmd/server/main.go`，基础设施 worker 由内部 runner 托管。
 - 数据库：PostgreSQL 16、RLS、pgvector；同时保存对象定位、Transactional Outbox、任务状态和引用事实。
 - AI：后端仅通过 LiteLLM 的 OpenAI 兼容接口访问逻辑模型。
 - Compose 当前默认使用 MinIO 保存业务文件、Redpanda 提供 Kafka 接口分发 Outbox 事件、
@@ -61,8 +61,8 @@ flowchart LR
 
 - 上传经 `internal/knowledge` 校验类型、配额与 ZIP 路径安全后，由 `BlobStore` 写入服务端生成的对象 key；
   Compose 默认后端为 MinIO，本地路径仅是迁移/回退实现。
-- Kafka 模式下由 `knowledge-consumer` 消费 Transactional Outbox 事件；PostgreSQL 回退模式下由
-  `RunKnowledgeIndexer` 轮询任务。两条路径都对文档做父子切块，并使用 Compose 内部
+- Kafka 模式下由 server 受管的 Outbox relay 和知识索引 runner 处理事件与权威任务状态；PostgreSQL
+  回退模式下由同一 runner 轮询任务。两条路径都对文档做父子切块，并使用 Compose 内部
   `embedding-service`（`iic/nlp_gte_sentence-embedding_chinese-small`，512 维）生成向量。
 - 问答只检索当前租户 `knowledge_documents`（含开启知识问答的个人笔记）。Compose 默认通过
   Elasticsearch 的 BM25 + KNN 投影召回，PostgreSQL/pgvector + 中文 2-gram 保留为配置化回退；候选必须

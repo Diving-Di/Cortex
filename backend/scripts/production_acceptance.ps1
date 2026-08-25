@@ -45,7 +45,7 @@ try {
 
     $metrics = Invoke-WebRequest "http://127.0.0.1:8000/metrics"
     foreach ($name in @(
-        "cortex_knowledge_index_queue",
+        "cortex_knowledge_index_jobs{status=`"queued`"}",
         "cortex_research_jobs_created_total",
         "cortex_research_collector_available",
         "cortex_research_ocr_available"

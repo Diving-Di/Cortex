@@ -19,4 +19,5 @@
 - Elasticsearch 不可用：RAG 返回 `KNOWLEDGE_RETRIEVAL_UNAVAILABLE`；普通笔记搜索继续走 PostgreSQL。由活动 `index_version` 全量重建投影并原子切换别名。
 - 联合恢复：先 PostgreSQL，再 MinIO，最后重建 Kafka 配置与 Elasticsearch 投影。Kafka offset 和 ES 数据均不作为业务完成事实。
 
-验收至少执行 `go vet ./...`、`go test ./...`、`go build ./cmd/server ./cmd/outbox-relay ./cmd/projection-consumer ./cmd/file-gc-consumer`、`docker compose config --quiet`，并完成跨租户、重复/乱序、broker 中断、对象丢失和 ES 断网故障注入。
+验收至少执行 `go vet ./...`、`go test ./...`、`go build ./cmd/server`、`go build ./cmd/blob-migrate`、
+`docker compose config --quiet`，并完成跨租户、重复/乱序、broker 中断、对象丢失和 ES 断网故障注入。
