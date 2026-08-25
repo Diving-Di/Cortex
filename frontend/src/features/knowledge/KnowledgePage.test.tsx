@@ -28,7 +28,7 @@ function renderPage() {
   );
 }
 
-function response(indexJobStatus: 'running' | 'failed', failure?: string) {
+function response(indexJobStatus: 'running' | 'failed' | 'success', failure?: string) {
   return {
     items: [
       {
@@ -71,5 +71,18 @@ describe('KnowledgePage index serving state', () => {
       await screen.findByText('旧版本可用，最近更新失败：KNOWLEDGE_EMBEDDING_UNAVAILABLE'),
     ).toBeInTheDocument();
     expect(screen.getByText('可用')).toBeInTheDocument();
+  });
+});
+
+describe('KnowledgePage upload formats', () => {
+  beforeEach(() => mockedListKnowledge.mockReset());
+  afterEach(cleanup);
+
+  it('advertises binary document and image ingestion', async () => {
+    mockedListKnowledge.mockResolvedValue(response('success'));
+    renderPage();
+    expect(await screen.findByText('支持 Markdown、PDF、Word 和图片')).toBeInTheDocument();
+    const input = document.querySelector('input[type="file"]');
+    expect(input).toHaveAttribute('accept', '.md,.zip,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp');
   });
 });

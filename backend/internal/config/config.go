@@ -87,6 +87,8 @@ type Config struct {
 	KnowledgeMaxFiles            int
 	KnowledgeMaxDepth            int
 	KnowledgeMaxCompressionRatio int
+	DocumentParserURL            string
+	DocumentParserTimeout        time.Duration
 	RedisURL                     string
 	AIEventBuildBatchSize        int
 	AIEventBuildLease            time.Duration
@@ -264,6 +266,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	documentParserTimeoutSeconds, err := positiveInt("DOCUMENT_PARSER_TIMEOUT_SECONDS", 120)
+	if err != nil {
+		return Config{}, err
+	}
 	aiEventProjectionBuildBatchSize, err := positiveInt("AI_EVENT_PROJECTION_BUILD_BATCH_SIZE", 250)
 	if err != nil {
 		return Config{}, err
@@ -386,6 +392,8 @@ func Load() (Config, error) {
 		KnowledgeMaxFiles:            knowledgeMaxFiles,
 		KnowledgeMaxDepth:            knowledgeMaxDepth,
 		KnowledgeMaxCompressionRatio: knowledgeMaxCompressionRatio,
+		DocumentParserURL:            strings.TrimRight(strings.TrimSpace(os.Getenv("DOCUMENT_PARSER_URL")), "/"),
+		DocumentParserTimeout:        time.Duration(documentParserTimeoutSeconds) * time.Second,
 		RedisURL:                     valueOrDefault("REDIS_URL", "redis://redis:6379/0"),
 		AIEventBuildBatchSize:        aiEventProjectionBuildBatchSize,
 		AIEventBuildLease:            time.Duration(aiEventProjectionBuildLeaseSeconds) * time.Second,

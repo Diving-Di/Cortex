@@ -150,8 +150,8 @@ export default function KnowledgePage() {
       <Alert
         showIcon
         type="info"
-        message="仅支持 Markdown 或 Markdown ZIP"
-        description="ZIP 仅解析 Markdown、PNG 和 JPG，其他类型条目会被跳过。所有资料只对当前账号可见，每个账号上限 3 GiB。"
+        message="支持 Markdown、PDF、Word 和图片"
+        description="支持 MD/ZIP、PDF、DOC/DOCX、PNG/JPG/WebP；图片通过中英文 OCR 摄取。ZIP 仍只解析 Markdown、PNG 和 JPG。所有资料只对当前账号可见。"
       />
       <Card
         title="知识问答"
@@ -319,7 +319,7 @@ export default function KnowledgePage() {
       </Card>
       <Card title="上传资料">
         <Upload.Dragger
-          accept=".md,.zip"
+          accept=".md,.zip,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
           multiple={false}
           showUploadList={false}
           disabled={upload.isPending}

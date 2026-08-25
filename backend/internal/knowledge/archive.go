@@ -45,10 +45,14 @@ type Error struct{ Code string }
 func (e *Error) Error() string { return e.Code }
 
 var imageExt = map[string]bool{".png": true, ".jpg": true}
+var binaryDocumentExt = map[string]bool{
+	".pdf": true, ".doc": true, ".docx": true,
+	".png": true, ".jpg": true, ".jpeg": true, ".webp": true,
+}
 
 func Prepare(uploadPath, originalName, targetRoot string, limits Limits) (Prepared, error) {
 	ext := strings.ToLower(filepath.Ext(originalName))
-	if ext != ".md" && ext != ".zip" {
+	if ext != ".md" && ext != ".zip" && !binaryDocumentExt[ext] {
 		return Prepared{}, &Error{Code: "KNOWLEDGE_FILE_TYPE_UNSUPPORTED"}
 	}
 	info, err := os.Stat(uploadPath)
@@ -68,7 +72,64 @@ func Prepare(uploadPath, originalName, targetRoot string, limits Limits) (Prepar
 		}
 		return writeMarkdown(data, safeBase(originalName), targetRoot, limits)
 	}
+	if binaryDocumentExt[ext] {
+		data, err := os.ReadFile(uploadPath)
+		if err != nil {
+			return Prepared{}, err
+		}
+		return writeBinaryDocument(data, safeBase(originalName), targetRoot, ext, limits)
+	}
 	return prepareZIP(uploadPath, targetRoot, limits)
+}
+
+func writeBinaryDocument(data []byte, rel, root, ext string, limits Limits) (Prepared, error) {
+	if int64(len(data)) > limits.MaxFileBytes {
+		return Prepared{}, &Error{Code: "KNOWLEDGE_QUOTA_EXCEEDED"}
+	}
+	valid := false
+	switch ext {
+	case ".pdf":
+		valid = len(data) >= 5 && string(data[:5]) == "%PDF-"
+	case ".doc":
+		valid = len(data) >= 8 && bytes.Equal(data[:8], []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1})
+	case ".docx":
+		valid = validDOCX(data)
+	case ".png", ".jpg", ".jpeg", ".webp":
+		actual := http.DetectContentType(data)
+		valid = (ext == ".png" && actual == "image/png") ||
+			((ext == ".jpg" || ext == ".jpeg") && actual == "image/jpeg") ||
+			(ext == ".webp" && len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP")
+		if valid && ext != ".webp" {
+			_, _, validErr := image.DecodeConfig(bytes.NewReader(data))
+			valid = validErr == nil
+		}
+	}
+	if !valid {
+		return Prepared{}, &Error{Code: "KNOWLEDGE_FILE_TYPE_MISMATCH"}
+	}
+	if err := writeFile(root, rel, data); err != nil {
+		return Prepared{}, err
+	}
+	sum := sha256.Sum256(data)
+	title := strings.TrimSuffix(path.Base(rel), path.Ext(rel))
+	return Prepared{Documents: []Document{{RelativePath: rel, Title: title, Encoding: "binary", Hash: hex.EncodeToString(sum[:]), Size: int64(len(data))}}, ExpandedBytes: int64(len(data))}, nil
+}
+
+func validDOCX(data []byte) bool {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return false
+	}
+	contentTypes, document := false, false
+	for _, file := range reader.File {
+		switch file.Name {
+		case "[Content_Types].xml":
+			contentTypes = true
+		case "word/document.xml":
+			document = true
+		}
+	}
+	return contentTypes && document
 }
 
 func prepareZIP(filename, root string, limits Limits) (Prepared, error) {
@@ -239,8 +300,9 @@ func writeFile(root, rel string, data []byte) error {
 }
 func safeBase(name string) string {
 	value := filepath.Base(name)
-	if strings.ToLower(filepath.Ext(value)) != ".md" {
-		return "document.md"
+	ext := strings.ToLower(filepath.Ext(value))
+	if ext != ".md" && !binaryDocumentExt[ext] {
+		return "document.bin"
 	}
 	return value
 }

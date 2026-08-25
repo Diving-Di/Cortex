@@ -77,6 +77,51 @@ func TestPrepareMarkdownNormalizesEncodingAndNewlines(t *testing.T) {
 		t.Fatalf("not normalized: %q", data)
 	}
 }
+
+func TestPrepareBinaryDocuments(t *testing.T) {
+	docx := writeTestZIP(t, map[string][]byte{"[Content_Types].xml": []byte("<Types/>"), "word/document.xml": []byte("<document/>")})
+	docxData, err := os.ReadFile(docx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		data []byte
+	}{
+		{"report.pdf", []byte("%PDF-1.7\n")},
+		{"legacy.doc", append([]byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}, make([]byte, 16)...)},
+		{"report.docx", docxData},
+		{"scan.png", testImage(t, "png")},
+		{"photo.jpeg", testImage(t, "jpg")},
+		{"scan.webp", append([]byte("RIFF\x04\x00\x00\x00WEBP"), []byte("VP8 ")...)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := filepath.Join(t.TempDir(), "upload")
+			if err := os.WriteFile(input, tc.data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := Prepare(input, tc.name, filepath.Join(t.TempDir(), "source"), testLimits())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Documents) != 1 || got.Documents[0].Encoding != "binary" {
+				t.Fatalf("documents=%+v", got.Documents)
+			}
+		})
+	}
+}
+
+func TestPrepareBinaryRejectsExtensionMagicMismatch(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "upload")
+	if err := os.WriteFile(input, []byte("not a PDF"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Prepare(input, "report.pdf", filepath.Join(t.TempDir(), "source"), testLimits())
+	if !IsCode(err, "KNOWLEDGE_FILE_TYPE_MISMATCH") {
+		t.Fatalf("error=%v", err)
+	}
+}
 func TestPrepareZIPRejectsTraversal(t *testing.T) {
 	_, err := Prepare(writeTestZIP(t, map[string][]byte{"../secret.md": []byte("# no")}), "input.zip", filepath.Join(t.TempDir(), "source"), testLimits())
 	if err == nil {

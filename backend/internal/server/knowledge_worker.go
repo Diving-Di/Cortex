@@ -5,11 +5,14 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"cortex/backend/internal/ai"
 	"cortex/backend/internal/blobstore"
 	"cortex/backend/internal/config"
+	"cortex/backend/internal/documentparser"
 	"cortex/backend/internal/knowledge"
 	"cortex/backend/internal/store"
 	"github.com/google/uuid"
@@ -17,6 +20,7 @@ import (
 
 func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store, blobs, localBlobs blobstore.BlobStore, logger *slog.Logger) {
 	client := ai.LocalEmbeddingClient{BaseURL: cfg.EmbeddingBaseURL, APIKey: cfg.EmbeddingAPIKey, Model: cfg.EmbeddingModel, Dimensions: cfg.EmbeddingDimensions, SendDimensions: cfg.EmbeddingSendDimensions, MaxBatchSize: cfg.KnowledgeIndexBatchSize}
+	parser := documentparser.Client{BaseURL: cfg.DocumentParserURL, Timeout: cfg.DocumentParserTimeout, MaxBody: cfg.KnowledgeMaxFileBytes}
 	owner := uuid.New()
 	go func() {
 		ticker := time.NewTicker(time.Duration(cfg.KnowledgeIndexPollSeconds) * time.Second)
@@ -52,7 +56,27 @@ func RunKnowledgeIndexer(ctx context.Context, cfg config.Config, s *store.Store,
 							}
 							continue
 						}
-						content = string(data)
+						if int64(len(data)) > cfg.KnowledgeMaxFileBytes {
+							_ = s.FailKnowledgeJob(ctx, job, "KNOWLEDGE_QUOTA_EXCEEDED")
+							continue
+						}
+						ext := strings.ToLower(filepath.Ext(job.StoredPath))
+						if ext == ".md" {
+							content = string(data)
+						} else {
+							parsed, parseErr := parser.Parse(ctx, filepath.Base(job.StoredPath), data)
+							if parseErr != nil {
+								code := "KNOWLEDGE_PARSER_UNAVAILABLE"
+								var parserErr *documentparser.Error
+								if errors.As(parseErr, &parserErr) {
+									code = parserErr.Code
+								}
+								logger.Error("knowledge document parse failed", "document_id", job.DocumentID.String(), "code", code)
+								_ = s.FailKnowledgeJob(ctx, job, code)
+								continue
+							}
+							content = documentparser.Markdown(parsed)
+						}
 					}
 					_ = s.UpdateKnowledgeJobProgress(ctx, job, "parsing", 0, 0)
 					parents := knowledge.Chunk(job.Title, job.SourceType, content)

@@ -108,12 +108,12 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 
 ## 个人知识库
 
-知识问答只检索当前租户主动上传的 Markdown、Markdown ZIP 和明确开启知识问答的个人笔记。
+知识问答只检索当前租户主动上传的 Markdown/ZIP、PDF、DOC/DOCX、PNG/JPG/WebP 和明确开启知识问答的个人笔记。
 历史内置语料已一次性迁移到用户 `Diving` 的运行时私有知识库，不再作为系统级全局语料或应用种子分发。
 
 | 方法与路径 | 说明 |
 | --- | --- |
-| `POST /api/v1/knowledge/uploads` | 上传一个 `.md` 或 `.zip`，安全落盘后返回 202 |
+| `POST /api/v1/knowledge/uploads` | 上传 `.md`、`.zip`、`.pdf`、`.doc`、`.docx`、`.png`、`.jpg/.jpeg` 或 `.webp`，安全落盘后返回 202；扫描 PDF 和图片使用中英文 OCR |
 | `GET /api/v1/knowledge/uploads/{id}` | 查询上传和索引状态 |
 | `GET /api/v1/knowledge/documents` | 列出当前租户文档、最新索引任务状态与 3 GiB 配额 |
 | `DELETE /api/v1/knowledge/documents/{id}` | 使文档立即退出检索并删除 |

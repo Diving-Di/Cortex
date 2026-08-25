@@ -30,7 +30,7 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 
 ### 个人知识库
 
-- 上传单个 Markdown 或 Markdown ZIP，可创建知识集合并管理文档，每租户容量上限 3 GiB。
+- 上传 Markdown/ZIP、PDF、Word（DOC/DOCX）或图片（PNG/JPG/WebP），可创建知识集合并管理文档；扫描件与图片使用中英文 OCR，每租户容量上限 3 GiB。
 - 个人笔记可单独开启参与知识问答，回答只使用当前租户上传资料与已开启笔记作为依据。
 - 知识问答使用 512 维中文 GTE Embedding 与 BGE CrossEncoder 精排，回答保存当前租户来源引用。
 - `/knowledge` 提供知识问答、历史会话、可折叠来源、质量反馈，以及版本化的检索阶段与耗时展示。
@@ -40,7 +40,7 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 - 索引任务持久化展示加载、解析、Embedding、写入和完成/失败阶段以及块级进度，旧活动索引在重建时继续服务。
 - `/recipes` 与 `/assistant` 已重定向到 `/knowledge`；历史 HowToCook 语料已迁移到用户 `Diving` 的运行时私有知识库。
 
-知识库摄取当前仍只支持 Markdown 与 Markdown ZIP；PDF、Word、Excel 摄取不在本轮实现范围。
+PDF、Word 和图片由无业务凭据的隔离 `document-parser` 服务解析为统一文本块，再进入既有分块、向量化与租户隔离索引链路。Excel 摄取仍不在当前范围。
 
 ### 小红书研究
 
