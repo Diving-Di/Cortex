@@ -46,7 +46,8 @@ export default function TemplatesPage() {
     [category, setCategory] = useState(''),
     [detailId, setDetailId] = useState<string | null>(null),
     [editing, setEditing] = useState<any>(null),
-    viewed = useRef(new Set<string>());
+    viewed = useRef(new Set<string>()),
+    useIntent = useRef<{ target: string; key: string; inFlight: boolean } | null>(null);
   const pub = useInfiniteQuery({
     queryKey: ['templates', 'public', ranking, query, category],
     queryFn: ({ pageParam }) => listPublicTemplates(ranking, pageParam, query, category),
@@ -80,21 +81,53 @@ export default function TemplatesPage() {
   }, [pub.data?.pages]);
   const refresh = () => qc.invalidateQueries({ queryKey: ['templates'] });
   const action = useMutation({
-    mutationFn: async (v: { type: string; id?: number; publicId?: string }) => {
+    mutationFn: async (v: {
+      type: string;
+      id?: number;
+      publicId?: string;
+      idempotencyKey?: string;
+    }) => {
       if (v.type === 'publish') return publishTemplate(v.id!);
       if (v.type === 'withdraw') return withdrawTemplate(v.id!);
       if (v.type === 'delete') return deleteTemplate(v.id!);
       if (v.type === 'use-private') {
-        const x = await usePrivateTemplate(v.id!);
+        const x = await usePrivateTemplate(v.id!, v.idempotencyKey!);
         nav(`/notes/${x.note_id}`);
         return;
       }
-      const x = await useTemplate(v.publicId!);
+      const x = await useTemplate(v.publicId!, v.idempotencyKey!);
       nav(`/notes/${x.note_id}`);
     },
-    onSuccess: refresh,
+    onSuccess: (_, variables) => {
+      if (variables.type === 'use' || variables.type === 'use-private') useIntent.current = null;
+      refresh();
+    },
     onError: (e: any) => message.error(e?.response?.data?.message || '操作失败'),
+    onSettled: (_, __, variables) => {
+      const intent = useIntent.current;
+      if (
+        (variables.type === 'use' || variables.type === 'use-private') &&
+        intent &&
+        intent.key === variables.idempotencyKey
+      ) {
+        intent.inFlight = false;
+      }
+    },
   });
+  const createNoteFromTemplate = (value: { id?: number; publicId?: string }) => {
+    const target = value.publicId ? `public:${value.publicId}` : `private:${value.id}`;
+    if (useIntent.current?.inFlight) return;
+    if (useIntent.current?.target !== target) {
+      useIntent.current = { target, key: crypto.randomUUID(), inFlight: false };
+    }
+    const intent = useIntent.current;
+    intent.inFlight = true;
+    action.mutate({
+      type: value.publicId ? 'use' : 'use-private',
+      ...value,
+      idempotencyKey: intent.key,
+    });
+  };
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
@@ -159,7 +192,11 @@ export default function TemplatesPage() {
                             <Button onClick={() => setDetailId(x.public_id)}>查看详情</Button>
                             <Button
                               type="primary"
-                              onClick={() => action.mutate({ type: 'use', publicId: x.public_id })}
+                              disabled={action.isPending}
+                              loading={
+                                action.isPending && action.variables?.publicId === x.public_id
+                              }
+                              onClick={() => createNoteFromTemplate({ publicId: x.public_id })}
                             >
                               使用模板
                             </Button>
@@ -226,7 +263,11 @@ export default function TemplatesPage() {
                   renderItem={(x) => (
                     <List.Item
                       actions={[
-                        <Button onClick={() => action.mutate({ type: 'use-private', id: x.id })}>
+                        <Button
+                          disabled={action.isPending}
+                          loading={action.isPending && action.variables?.id === x.id}
+                          onClick={() => createNoteFromTemplate({ id: x.id })}
+                        >
                           使用
                         </Button>,
                         <Button onClick={() => setEditing(x)}>编辑</Button>,

@@ -268,6 +268,7 @@ PostgreSQL 使用启用 RLS 的库存槽位行和 `FOR UPDATE SKIP LOCKED` 并�
 | --- | --- | --- |
 | `GET` | `/api/v1/ai-points/balance` | 查询当月点数、冻结和可用余额 |
 | `GET` | `/api/v1/ai-events/current` | 查询当前活动、资格和近似剩余名额 |
+| `GET` | `/api/v1/ai-events/page` | 聚合查询当前活动、点数余额和近期匿名成功记录，供活动页初始化 |
 | `GET` | `/api/v1/ai-events/history` | 查询近期活动的完全匿名成功名单 |
 | `GET` | `/api/v1/ai-events/{event_id}` | 查询指定活动及当前用户资格 |
 | `POST` | `/api/v1/ai-events/{event_id}/claims` | 携带 UUID `Idempotency-Key` 领取免费点数并即时到账 |

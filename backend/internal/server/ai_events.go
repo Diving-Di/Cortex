@@ -44,6 +44,22 @@ func (s *Server) currentAIEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, 200, x)
 }
+func (s *Server) aiEventPage(w http.ResponseWriter, r *http.Request) {
+	if !s.allowUserRequest(r, "ai-event-page", 30, time.Minute) {
+		httpx.WriteError(w, s.logger, apierror.New("RATE_LIMITED", "请求过于频繁", 429))
+		return
+	}
+	if err := s.store.EnsureDailyAIEvent(r.Context(), time.Now()); err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	x, err := s.store.GetAIEventPage(r.Context(), principalFrom(r.Context()))
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, x)
+}
 func (s *Server) aiEventHistory(w http.ResponseWriter, r *http.Request) {
 	x, err := s.store.ListAIEventHistory(r.Context())
 	if err != nil {

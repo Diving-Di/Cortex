@@ -3,20 +3,22 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import AIEventsPage from './AIEventsPage';
-import { getCurrentAIEvent } from '../../api/aiEvents';
+import { getAIEventPage } from '../../api/aiEvents';
 
 const state = vi.hoisted(() => ({
   event: {} as any,
   balance: {} as any,
 }));
 vi.mock('../../api/aiEvents', () => ({
-  getCurrentAIEvent: vi.fn(() => Promise.resolve({ ...state.event })),
-  getAIPointBalance: vi.fn(() => Promise.resolve({ ...state.balance })),
+  getAIEventPage: vi.fn(() =>
+    Promise.resolve({
+      event: { ...state.event },
+      balance: { ...state.balance },
+      history: [{ display_name: '记录者·A1B2', claimed_at: '2026-08-01T12:00:00Z' }],
+    }),
+  ),
   claimAIEvent: vi.fn(),
   getMyAIEventClaim: vi.fn().mockResolvedValue(undefined),
-  getAIEventHistory: vi
-    .fn()
-    .mockResolvedValue([{ display_name: '记录者·A1B2', claimed_at: '2026-08-01T12:00:00Z' }]),
 }));
 
 beforeEach(() => {
@@ -44,7 +46,7 @@ beforeEach(() => {
     available: 1000,
     version: 1,
   });
-  vi.mocked(getCurrentAIEvent).mockClear();
+  vi.mocked(getAIEventPage).mockClear();
 });
 afterEach(cleanup);
 
@@ -77,10 +79,10 @@ test('shows sold-out without requiring an existing point balance', async () => {
 test('resynchronizes server time when the page becomes visible', async () => {
   renderPage();
   await screen.findByText('每日限量免费点数');
-  const initialCalls = vi.mocked(getCurrentAIEvent).mock.calls.length;
+  const initialCalls = vi.mocked(getAIEventPage).mock.calls.length;
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
   fireEvent(document, new Event('visibilitychange'));
   await waitFor(() =>
-    expect(vi.mocked(getCurrentAIEvent).mock.calls.length).toBeGreaterThan(initialCalls),
+    expect(vi.mocked(getAIEventPage).mock.calls.length).toBeGreaterThan(initialCalls),
   );
 });

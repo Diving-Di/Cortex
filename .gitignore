@@ -57,6 +57,7 @@ artifacts/rag-eval*/
 artifacts/capacity-*.json
 artifacts/ai-event-k6-*.json
 artifacts/ai-event-k6-*.txt
+artifacts/ai-event-k6-*.csv
 backend/testdata/rag/diving_notes/
 backend/testdata/rag/diving_existing_notes.jsonl
 

@@ -21,6 +21,7 @@ const unavailable = new Counter('claim_unavailable');
 const serverError = new Counter('claim_server_error');
 
 export const options = {
+  summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
   scenarios: {
     mixed_claims: {
       executor: 'shared-iterations',

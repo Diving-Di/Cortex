@@ -53,6 +53,11 @@ type AIEventHistoryItem struct {
 	DisplayName string    `json:"display_name"`
 	ClaimedAt   time.Time `json:"claimed_at"`
 }
+type AIEventPage struct {
+	Event   AIFlashEvent         `json:"event"`
+	Balance AIPointBalance       `json:"balance"`
+	History []AIEventHistoryItem `json:"history"`
+}
 type AIEventReservationState struct {
 	PublicID          uuid.UUID
 	OpensAt, ClosesAt time.Time
@@ -257,9 +262,9 @@ func (s *Store) GetAIPointBalance(ctx context.Context, p domain.Principal) (AIPo
 	return x, err
 }
 
-func aiEventStreakDays(ctx context.Context, tx pgx.Tx, p domain.Principal, eventDate time.Time, timezone string, opensAt time.Time, required int) (int, error) {
+func aiEventStreakDays(ctx context.Context, tx pgx.Tx, p domain.Principal, eventDate time.Time, timezone string, _ time.Time, required int) (int, error) {
 	var count int
-	err := tx.QueryRow(ctx, `WITH days AS (SELECT generate_series($2::date-($3::int-1),$2::date,'1 day')::date d), valid AS (SELECT DISTINCT COALESCE(note_date,(created_at AT TIME ZONE $4)::date) d FROM notes WHERE tenant_id=$1 AND deleted_at IS NULL AND type IN('normal','daily') AND char_length(btrim(content))>=50 AND COALESCE(note_date,(created_at AT TIME ZONE $4)::date) BETWEEN $2::date-($3::int-1) AND $2::date AND (COALESCE(note_date,(created_at AT TIME ZONE $4)::date)<>$2::date OR created_at < $5)) SELECT count(*) FROM days JOIN valid USING(d)`, p.TenantID, eventDate, required, timezone, opensAt).Scan(&count)
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM tenant_daily_writing_stats WHERE tenant_id=$1 AND timezone=$2 AND local_date BETWEEN $3::date-($4::int-1) AND $3::date AND eligible_note_count>0`, p.TenantID, timezone, eventDate, required).Scan(&count)
 	return count, err
 }
 func (s *Store) GetCurrentAIEvent(ctx context.Context, p domain.Principal) (AIFlashEvent, error) {
@@ -277,32 +282,67 @@ func (s *Store) getAIEvent(ctx context.Context, p domain.Principal, publicID *uu
 		if err := setTenant(ctx, tx, p); err != nil {
 			return err
 		}
-		var eventID int64
-		var claimedCount int
-		var reservationReady bool
-		err := tx.QueryRow(ctx, `SELECT id,public_id,event_date,timezone,opens_at,closes_at,total_slots,points_cost,required_streak_days,status,reservation_ready,claimed_slots,EXISTS(SELECT 1 FROM ai_flash_claims WHERE event_id=e.id AND tenant_id=$1) FROM ai_flash_events e WHERE ($2::uuid IS NOT NULL AND public_id=$2) OR ($2::uuid IS NULL AND event_date >= (now() AT TIME ZONE timezone)::date) ORDER BY event_date LIMIT 1`, p.TenantID, publicID).Scan(&eventID, &x.PublicID, &x.EventDate, &x.Timezone, &x.OpensAt, &x.ClosesAt, &x.TotalSlots, &x.PointsReward, &x.RequiredStreakDays, &x.Status, &reservationReady, &claimedCount, &x.Claimed)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return apierror.New("AI_EVENT_NOT_FOUND", "暂无活动", 404)
-		} else if err != nil {
-			return err
-		}
-		x.RemainingSlots = max(0, x.TotalSlots-claimedCount)
-		x.ServerTime = now
-		if !reservationReady {
-			x.Status = "paused"
-		} else if x.Status == "scheduled" {
-			if !now.Before(x.ClosesAt) {
-				x.Status = "closed"
-			} else if !now.Before(x.OpensAt) {
-				x.Status = "open"
-			}
-		}
-		x.ShowDashboardPrompt = !x.Claimed && !now.Before(x.OpensAt.Add(-30*time.Minute)) && now.Before(x.ClosesAt)
-		x.StreakDays, err = aiEventStreakDays(ctx, tx, p, x.EventDate, x.Timezone, x.OpensAt, x.RequiredStreakDays)
-		x.Eligible = err == nil && x.StreakDays >= x.RequiredStreakDays
+		var err error
+		x, err = getAIEventTx(ctx, tx, p, publicID, now)
 		return err
 	})
 	return x, err
+}
+
+func getAIEventTx(ctx context.Context, tx pgx.Tx, p domain.Principal, publicID *uuid.UUID, now time.Time) (AIFlashEvent, error) {
+	var x AIFlashEvent
+	var eventID int64
+	var claimedCount int
+	var reservationReady bool
+	columns := `SELECT id,public_id,event_date,timezone,opens_at,closes_at,total_slots,points_cost,required_streak_days,status,reservation_ready,claimed_slots,EXISTS(SELECT 1 FROM ai_flash_claims WHERE event_id=e.id AND tenant_id=$1) FROM ai_flash_events e `
+	var row pgx.Row
+	if publicID == nil {
+		row = tx.QueryRow(ctx, columns+`WHERE event_date >= (now() AT TIME ZONE timezone)::date ORDER BY event_date LIMIT 1`, p.TenantID)
+	} else {
+		row = tx.QueryRow(ctx, columns+`WHERE public_id=$2`, p.TenantID, *publicID)
+	}
+	err := row.Scan(&eventID, &x.PublicID, &x.EventDate, &x.Timezone, &x.OpensAt, &x.ClosesAt, &x.TotalSlots, &x.PointsReward, &x.RequiredStreakDays, &x.Status, &reservationReady, &claimedCount, &x.Claimed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return x, apierror.New("AI_EVENT_NOT_FOUND", "暂无活动", 404)
+	} else if err != nil {
+		return x, err
+	}
+	x.RemainingSlots = max(0, x.TotalSlots-claimedCount)
+	x.ServerTime = now
+	if !reservationReady {
+		x.Status = "paused"
+	} else if x.Status == "scheduled" {
+		if !now.Before(x.ClosesAt) {
+			x.Status = "closed"
+		} else if !now.Before(x.OpensAt) {
+			x.Status = "open"
+		}
+	}
+	x.ShowDashboardPrompt = !x.Claimed && !now.Before(x.OpensAt.Add(-30*time.Minute)) && now.Before(x.ClosesAt)
+	x.StreakDays, err = aiEventStreakDays(ctx, tx, p, x.EventDate, x.Timezone, x.OpensAt, x.RequiredStreakDays)
+	x.Eligible = err == nil && x.StreakDays >= x.RequiredStreakDays
+	return x, err
+}
+
+func (s *Store) GetAIEventPage(ctx context.Context, p domain.Principal) (AIEventPage, error) {
+	var page AIEventPage
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, p); err != nil {
+			return err
+		}
+		var err error
+		page.Event, err = getAIEventTx(ctx, tx, p, nil, time.Now())
+		if err != nil {
+			return err
+		}
+		page.Balance, err = ensurePointAccount(ctx, tx, p.TenantID, time.Now())
+		return err
+	})
+	if err != nil {
+		return page, err
+	}
+	page.History, err = s.ListAIEventHistory(ctx)
+	return page, err
 }
 
 func (s *Store) ClaimAIEvent(ctx context.Context, p domain.Principal, publicID, requestID uuid.UUID) (AIFlashClaim, error) {

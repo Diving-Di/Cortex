@@ -187,6 +187,7 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 			active.POST("/api/v1/templates/public/:publicID/views", gin.WrapF(s.viewTemplate))
 			active.GET("/api/v1/ai-points/balance", gin.WrapF(s.aiPointBalance))
 			active.GET("/api/v1/ai-events/current", gin.WrapF(s.currentAIEvent))
+			active.GET("/api/v1/ai-events/page", gin.WrapF(s.aiEventPage))
 			active.GET("/api/v1/ai-events/history", gin.WrapF(s.aiEventHistory))
 			active.GET("/api/v1/ai-events/:eventID", gin.WrapF(s.getAIEvent))
 			active.GET("/api/v1/ai-events/:eventID/claims/me", gin.WrapF(s.myAIEventClaim))

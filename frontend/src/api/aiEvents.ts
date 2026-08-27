@@ -36,6 +36,14 @@ export interface AIEventHistoryItem {
   display_name: string;
   claimed_at: string;
 }
+export interface AIEventPageData {
+  event: AIEvent;
+  balance: AIPointBalance;
+  history: AIEventHistoryItem[];
+}
+export async function getAIEventPage() {
+  return (await http.get<AIEventPageData>('/api/v1/ai-events/page')).data;
+}
 export async function getCurrentAIEvent() {
   return (await http.get<AIEvent>('/api/v1/ai-events/current')).data;
 }

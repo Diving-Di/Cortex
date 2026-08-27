@@ -71,21 +71,21 @@ export async function savePublicProfile(nickname: string) {
   return (await http.put<PublicProfile>('/api/v1/public-profile', { nickname, discoverable: true }))
     .data;
 }
-export async function useTemplate(id: string) {
+export async function useTemplate(id: string, idempotencyKey: string) {
   return (
     await http.post<{ note_id: number }>(
       `/api/v1/templates/public/${id}/use`,
       {},
-      { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      { headers: { 'Idempotency-Key': idempotencyKey } },
     )
   ).data;
 }
-export async function usePrivateTemplate(id: number) {
+export async function usePrivateTemplate(id: number, idempotencyKey: string) {
   return (
     await http.post<{ note_id: number }>(
       `/api/v1/templates/${id}/use`,
       {},
-      { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      { headers: { 'Idempotency-Key': idempotencyKey } },
     )
   ).data;
 }

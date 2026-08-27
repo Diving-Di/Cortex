@@ -66,8 +66,9 @@ func (s *Store) Login(ctx context.Context, username, password string, ttl time.D
 
 func (s *Store) ResolvePrincipal(ctx context.Context, rawToken string) (domain.Principal, error) {
 	var principal domain.Principal
+	var lastUsedAt *time.Time
 	err := s.authPool().QueryRow(ctx, `
-		SELECT tok.id,u.id,u.username,t.id,true,tok.auth_version,t.auth_version,tok.expires_at
+		SELECT tok.id,u.id,u.username,t.id,true,tok.auth_version,t.auth_version,tok.expires_at,tok.last_used_at
         FROM auth_tokens tok
         JOIN users u ON u.id=tok.user_id
         JOIN tenants t ON t.user_id=u.id
@@ -75,7 +76,7 @@ func (s *Store) ResolvePrincipal(ctx context.Context, rawToken string) (domain.P
 		  AND t.status='active' AND t.deleted_at IS NULL
         `,
 		auth.HashToken(rawToken),
-	).Scan(&principal.TokenID, &principal.UserID, &principal.Username, &principal.TenantID, &principal.TenantActive, &principal.TokenVersion, &principal.TenantVersion, &principal.TokenExpiresAt)
+	).Scan(&principal.TokenID, &principal.UserID, &principal.Username, &principal.TenantID, &principal.TenantActive, &principal.TokenVersion, &principal.TenantVersion, &principal.TokenExpiresAt, &lastUsedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Principal{}, apierror.New(
 			"AUTHENTICATION_REQUIRED", "Invalid or expired token.", 401,
@@ -84,8 +85,14 @@ func (s *Store) ResolvePrincipal(ctx context.Context, rawToken string) (domain.P
 	if err != nil {
 		return domain.Principal{}, err
 	}
-	s.touchAuthToken(principal.TokenID)
+	if authTouchDue(lastUsedAt, time.Now()) {
+		s.touchAuthToken(principal.TokenID)
+	}
 	return principal, nil
+}
+
+func authTouchDue(lastUsedAt *time.Time, now time.Time) bool {
+	return lastUsedAt == nil || lastUsedAt.Before(now.Add(-5*time.Minute))
 }
 
 func (s *Store) RevokeToken(ctx context.Context, tokenID int32) error {

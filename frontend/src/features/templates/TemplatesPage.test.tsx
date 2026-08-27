@@ -8,6 +8,7 @@ import {
   listMyTemplates,
   listPublicTemplates,
   recordTemplateView,
+  useTemplate,
 } from '../../api/templates';
 
 vi.mock('../../api/templates', () => ({
@@ -77,6 +78,41 @@ test('renders public templates with interactions', async () => {
   expect(await screen.findByText('详情内容')).toBeInTheDocument();
   expect(getPublicTemplate).toHaveBeenCalledWith('p1');
   await waitFor(() => expect(recordTemplateView).toHaveBeenCalledWith('p1'));
+});
+
+test('reuses the creation idempotency key after failure and disables creation while pending', async () => {
+  let rejectFirst!: (reason?: unknown) => void;
+  vi.mocked(useTemplate)
+    .mockReset()
+    .mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectFirst = reject;
+        }),
+    )
+    .mockResolvedValueOnce({ note_id: 42 });
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}
+    >
+      <MemoryRouter>
+        <TemplatesPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  const useButton = await screen.findByRole('button', { name: '使用模板' });
+  fireEvent.click(useButton);
+  await waitFor(() => expect(useButton).toBeDisabled());
+  const firstKey = vi.mocked(useTemplate).mock.calls[0][1];
+
+  rejectFirst(new Error('network error'));
+  await waitFor(() => expect(useButton).toBeEnabled());
+  fireEvent.click(useButton);
+
+  await waitFor(() => expect(useTemplate).toHaveBeenCalledTimes(2));
+  expect(useTemplate).toHaveBeenNthCalledWith(1, 'p1', firstKey);
+  expect(useTemplate).toHaveBeenNthCalledWith(2, 'p1', firstKey);
 });
 
 test('loads the next signed-cursor page', async () => {
