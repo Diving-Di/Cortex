@@ -102,7 +102,9 @@ export default function TemplatesPage() {
       if (variables.type === 'use' || variables.type === 'use-private') useIntent.current = null;
       refresh();
     },
-    onError: (e: any) => message.error(e?.response?.data?.message || '操作失败'),
+    onError: (e: any) => {
+      void message.error(e?.response?.data?.message || '操作失败');
+    },
     onSettled: (_, __, variables) => {
       const intent = useIntent.current;
       if (
