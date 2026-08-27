@@ -5,6 +5,7 @@ import "testing"
 func TestTopicFor(t *testing.T) {
 	tests := map[string]string{
 		"knowledge.document.uploaded": "cortex.knowledge.index.v1",
+		"knowledge.document.parsed":   "cortex.document.parsed.v1",
 		"search.projection.requested": "cortex.search.projection.v1",
 		"audit.export.requested":      "cortex.audit.export.v1",
 	}

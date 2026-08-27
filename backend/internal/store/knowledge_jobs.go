@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -20,6 +21,100 @@ type KnowledgeIndexJob struct {
 }
 
 var ErrKnowledgeIndexLeaseLost = errors.New("knowledge index lease lost")
+
+// ClaimKnowledgeJobForStage claims the document version carried by a Kafka
+// stage event. Kafka contains only identifiers; PostgreSQL remains the source
+// of truth for the target version, current stage, attempts, and fencing lease.
+func (s *Store) ClaimKnowledgeJobForStage(ctx context.Context, documentID, owner uuid.UUID, stage string, lease time.Duration) (KnowledgeIndexJob, error) {
+	var predicate, nextStage, attemptsExpression string
+	switch stage {
+	case "parsing":
+		predicate = `(status='queued' OR (status='running' AND stage IN ('loading','parsing') AND lease_until<now()))`
+		nextStage = "parsing"
+		attemptsExpression = "attempts+1"
+	case "embedding":
+		predicate = `status='running' AND (stage='parsed' OR (stage IN ('embedding','persisting') AND lease_until<now()))`
+		nextStage = "embedding"
+		attemptsExpression = "attempts"
+	default:
+		return KnowledgeIndexJob{}, errors.New("invalid knowledge pipeline stage")
+	}
+	tx, err := s.AdminPool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return KnowledgeIndexJob{}, err
+	}
+	defer tx.Rollback(ctx)
+	var j KnowledgeIndexJob
+	query := `WITH candidate AS (
+		SELECT id FROM knowledge_index_jobs WHERE document_id=$1 AND ` + predicate + `
+		ORDER BY target_index_version DESC LIMIT 1 FOR UPDATE SKIP LOCKED
+	) UPDATE knowledge_index_jobs j SET status='running',stage='` + nextStage + `',lease_owner=$2,
+		lease_until=now()+$3::interval,attempts=` + attemptsExpression + `,
+		updated_at=now() FROM candidate c WHERE j.id=c.id
+		RETURNING j.id,j.tenant_id,j.document_id,j.target_index_version,j.lease_owner`
+	err = tx.QueryRow(ctx, query, documentID, owner, lease.String()).Scan(&j.ID, &j.TenantID, &j.DocumentID, &j.TargetVersion, &j.LeaseOwner)
+	if err != nil {
+		return KnowledgeIndexJob{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return KnowledgeIndexJob{}, err
+	}
+	return j, nil
+}
+
+// SaveParsedKnowledge stores the deterministic chunking result and publishes
+// the next stage through the same PostgreSQL transaction.
+func (s *Store) SaveParsedKnowledge(ctx context.Context, j KnowledgeIndexJob, parents []knowledge.ParentChunk) error {
+	encoded, err := json.Marshal(parents)
+	if err != nil {
+		return err
+	}
+	children := 0
+	for _, parent := range parents {
+		children += len(parent.Children)
+	}
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, domainPrincipal(j.TenantID)); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE knowledge_index_jobs SET stage='parsed',processed_chunks=0,total_chunks=$5,lease_owner=NULL,lease_until=NULL,updated_at=now()
+			WHERE id=$1 AND tenant_id=$2 AND document_id=$3 AND target_index_version=$4 AND status='running' AND stage='parsing' AND lease_owner=$6 AND lease_until>now()`,
+			j.ID, j.TenantID, j.DocumentID, j.TargetVersion, children, j.LeaseOwner)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() != 1 {
+			return ErrKnowledgeIndexLeaseLost
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO knowledge_index_artifacts(tenant_id,job_id,document_id,target_index_version,chunks,child_count)
+			VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,job_id) DO UPDATE SET chunks=excluded.chunks,child_count=excluded.child_count,updated_at=now()`,
+			j.TenantID, j.ID, j.DocumentID, j.TargetVersion, encoded, children); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,topic,partition_key,schema_version)
+			VALUES($1,'knowledge',$2::text,'knowledge.document.parsed','cortex.document.parsed.v1',$2::text,1)`, uuid.New(), j.DocumentID.String())
+		return err
+	})
+}
+
+func (s *Store) LoadParsedKnowledge(ctx context.Context, j KnowledgeIndexJob) ([]knowledge.ParentChunk, error) {
+	var encoded []byte
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, domainPrincipal(j.TenantID)); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT chunks FROM knowledge_index_artifacts WHERE tenant_id=$1 AND job_id=$2 AND document_id=$3 AND target_index_version=$4`,
+			j.TenantID, j.ID, j.DocumentID, j.TargetVersion).Scan(&encoded)
+	})
+	if err != nil {
+		return nil, err
+	}
+	var parents []knowledge.ParentChunk
+	if err := json.Unmarshal(encoded, &parents); err != nil {
+		return nil, err
+	}
+	return parents, nil
+}
 
 func (s *Store) ClaimKnowledgeJobs(ctx context.Context, owner uuid.UUID, limit int, lease time.Duration) ([]KnowledgeIndexJob, error) {
 	tx, err := s.AdminPool.BeginTx(ctx, pgx.TxOptions{})
@@ -127,6 +222,9 @@ func (s *Store) writeKnowledgeChunks(ctx context.Context, j KnowledgeIndexJob, p
 		if _, err := tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,topic,partition_key,schema_version) VALUES($1,'knowledge',$2::text,'search.projection.requested','cortex.search.projection.v1',$2::text,1)`, uuid.New(), j.DocumentID.String()); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `DELETE FROM knowledge_index_artifacts WHERE tenant_id=$1 AND job_id=$2`, j.TenantID, j.ID); err != nil {
+			return err
+		}
 		// Keep the active version and its immediate predecessor. Version N-2 is
 		// removed only after N succeeds, leaving one full rebuild cycle for rollback.
 		// Historical message sources retain their title, snippet, and index_version.
@@ -152,6 +250,12 @@ func (s *Store) FailKnowledgeJob(ctx context.Context, j KnowledgeIndexJob, code 
 	}
 	if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status=CASE WHEN active_index_version>0 THEN 'ready' WHEN $4='failed' THEN 'failed' ELSE 'indexing' END,failure_code=CASE WHEN active_index_version=0 AND $4='failed' THEN $3 ELSE NULL END,failure_summary=CASE WHEN active_index_version=0 AND $4='failed' THEN '索引服务暂时不可用' ELSE NULL END,last_index_failure_code=CASE WHEN active_index_version>0 THEN $3 ELSE last_index_failure_code END,updated_at=now() WHERE tenant_id=$1 AND id=$2`, j.TenantID, j.DocumentID, code, jobStatus); err != nil {
 		return err
+	}
+	if jobStatus == "queued" {
+		if _, err := tx.Exec(ctx, `INSERT INTO outbox_events(id,aggregate_type,aggregate_id,event_type,topic,partition_key,schema_version,available_at)
+			VALUES($1,'knowledge',$2::text,'knowledge.index.requested','cortex.knowledge.index.v1',$2::text,1,now()+interval '10 seconds')`, uuid.New(), j.DocumentID.String()); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }

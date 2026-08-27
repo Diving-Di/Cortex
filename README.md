@@ -37,10 +37,10 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 - 弱证据会区分问题歧义、资料范围冲突和确实无依据；前两类允许在 15 分钟内补充一次后恢复原请求。
 - 无当前租户有效证据时返回 `KNOWLEDGE_NO_EVIDENCE`，不依赖模型常识生成。
 - 比较、趋势和跨周期问题可通过默认关闭的实验开关进行最多 4 个子查询的受控并行召回；简单问题保持单查询快速路径。
-- 索引任务持久化展示加载、解析、Embedding、写入和完成/失败阶段以及块级进度，旧活动索引在重建时继续服务。
+- 索引任务持久化展示加载、解析、Embedding、写入和完成/失败阶段以及块级进度；Kafka 模式下解析/OCR、Embedding 和 Elasticsearch 投影由三个独立消费者分阶段驱动，旧活动索引在重建时继续服务。
 - `/recipes` 与 `/assistant` 已重定向到 `/knowledge`；历史 HowToCook 语料已迁移到用户 `Diving` 的运行时私有知识库。
 
-PDF、Word 和图片由无业务凭据的隔离 `document-parser` 服务解析为统一文本块，再进入既有分块、向量化与租户隔离索引链路。Excel 摄取仍不在当前范围。
+PDF、Word 和图片由无业务凭据的隔离 `document-parser` 服务解析为统一文本块。解析结果通过 PostgreSQL 中间结果与 Transactional Outbox 进入独立 Embedding Kafka 阶段，完成后再触发 Elasticsearch 投影；消息仅携带事件和文档标识。Excel 摄取仍不在当前范围。
 
 ### 小红书研究
 

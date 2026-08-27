@@ -61,9 +61,12 @@ flowchart LR
 
 - 上传经 `internal/knowledge` 校验类型、配额与 ZIP 路径安全后，由 `BlobStore` 写入服务端生成的对象 key；
   Compose 默认后端为 MinIO，本地路径仅是迁移/回退实现。
-- Kafka 模式下由 server 受管的 Outbox relay 和知识索引 runner 处理事件与权威任务状态；PostgreSQL
-  回退模式下由同一 runner 轮询任务。两条路径都对文档做父子切块，并使用 Compose 内部
-  `embedding-service`（`iic/nlp_gte_sentence-embedding_chinese-small`，512 维）生成向量。
+- Kafka 模式下由 server 受管的 Outbox relay 串联三个独立阶段：`cortex.knowledge.index.v1`
+  驱动解析/OCR与父子切块，`cortex.document.parsed.v1` 驱动批量 Embedding 和 PostgreSQL 原子激活，
+  `cortex.search.projection.v1` 驱动 Elasticsearch 投影。阶段消息只携带事件与文档标识，解析中间结果、
+  任务进度、重试和 fencing 均由 PostgreSQL 持久化。PostgreSQL 回退模式仍由原 runner 轮询任务。
+  两条路径都使用 Compose 内部 `embedding-service`
+  （`iic/nlp_gte_sentence-embedding_chinese-small`，512 维）生成向量。
 - 问答只检索当前租户 `knowledge_documents`（含开启知识问答的个人笔记）。Compose 默认通过
   Elasticsearch 的 BM25 + KNN 投影召回，PostgreSQL/pgvector + 中文 2-gram 保留为配置化回退；候选必须
   回 PostgreSQL 按当前租户、活动索引版本和有效状态二次校验，再经 `reranker-service`

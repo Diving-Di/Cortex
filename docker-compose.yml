@@ -47,7 +47,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        (rpk topic create cortex.knowledge.index.v1 cortex.search.projection.v1 cortex.audit.export.v1
+        (rpk topic create cortex.knowledge.index.v1 cortex.document.parsed.v1 cortex.search.projection.v1 cortex.audit.export.v1
         --brokers kafka:9092 --partitions 6 --replicas 1 || true) &&
         rpk cluster config set auto_create_topics_enabled false --api-urls kafka:9644
     depends_on:

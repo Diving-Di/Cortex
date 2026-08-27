@@ -8,7 +8,7 @@
 
 ## 安全与故障边界
 
-二进制原文件仍经现有 BlobStore/MinIO 私有对象路径保存。异步索引 worker 把文件发送给仅在 Compose 内网暴露的 `document-parser`。该容器没有数据库、MinIO、Kafka、Elasticsearch、LiteLLM 或供应商密钥，使用非 root、只读根文件系统、空 capabilities、PID/内存/CPU 限制及有界 tmpfs。
+二进制原文件仍经现有 BlobStore/MinIO 私有对象路径保存。Kafka 解析消费者把文件发送给仅在 Compose 内网暴露的 `document-parser`，解析结果以任务版本为边界暂存 PostgreSQL，再通过 Outbox 触发独立 Embedding 消费者；Embedding 完成后触发 Elasticsearch 投影消费者。该解析容器没有数据库、MinIO、Kafka、Elasticsearch、LiteLLM 或供应商密钥，使用非 root、只读根文件系统、空 capabilities、PID/内存/CPU 限制及有界 tmpfs。
 
 上传层校验扩展名与 magic/MIME，并限制文件大小。解析层再次限制大小、PDF 页数、图片像素与 DOCX 解压规模，拒绝加密 PDF、DOCX 宏、损坏或类型不匹配文件。解析响应有界，错误只记录稳定 code，不记录正文或上游响应。
 
