@@ -63,33 +63,36 @@ var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string) http.Handler {
+	return NewWithDependencies(cfg, db, logger, version, Dependencies{})
+}
+
+// Dependencies contains process-scoped clients. Production wiring constructs
+// these once and shares them with the HTTP server and background workers.
+// Zero values are supported for focused handler tests.
+type Dependencies struct {
+	Blobs      blobstore.BlobStore
+	LocalBlobs blobstore.BlobStore
+	Redis      *rediscoord.Client
+	Search     *searchindex.Elasticsearch
+}
+
+func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger, version string, deps Dependencies) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	s := &Server{cfg: cfg, store: db, logger: logger, version: version, localRates: make(map[string]localRateWindow), aiEventFallbackSlots: make(chan struct{}, 2), aiEventClaimSlots: make(chan struct{}, max(1, cfg.AIEventClaimConcurrency))}
-	if cfg.StorageBackend == "minio" {
-		s.blobs, _ = blobstore.NewS3(cfg.MinIOEndpoint, cfg.MinIOBucket, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOSecure)
-	} else {
-		s.blobs, _ = blobstore.NewLocal(cfg.DataDir)
-	}
-	if cfg.RAGRetrievalBackend == "elasticsearch" {
-		s.search = searchindex.New(cfg.ElasticsearchURLs, cfg.ElasticsearchUsername, cfg.ElasticsearchPassword, cfg.ElasticsearchIndexAlias)
-	}
-	s.localBlobs, _ = blobstore.NewLocal(cfg.DataDir)
-	s.redis, _ = rediscoord.New(cfg.RedisURL)
-	s.authRedis, _ = rediscoord.New(cfg.RedisURL)
-	s.claimRedis, _ = rediscoord.New(cfg.RedisURL)
+	s.blobs = deps.Blobs
+	s.localBlobs = deps.LocalBlobs
+	s.search = deps.Search
+	s.redis = deps.Redis
+	s.authRedis = deps.Redis
+	s.claimRedis = deps.Redis
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(s.requestTracing())
 	router.Use(s.cors())
 	router.Use(copyGinParamsToRequest())
 
-	router.GET("/healthz", gin.WrapF(s.health))
-	router.GET("/readyz", gin.WrapF(s.ready))
-	router.GET("/metrics", gin.WrapF(s.metrics))
-	router.POST("/api/v1/auth/register", gin.WrapF(s.register))
-	router.POST("/api/v1/auth/login", gin.WrapF(s.login))
-	router.POST("/api/v1/auth/token", gin.WrapF(s.issueToken))
-	router.POST("/api/v1/ai-events/:eventID/claims", s.preAuthClaimIPLimit(), s.authenticate(), s.requireActiveTenant(), gin.WrapF(s.claimAIEvent))
+	s.registerSystemRoutes(router)
+	s.registerPublicAPIRoutes(router)
 
 	authenticated := router.Group("/")
 	authenticated.Use(s.authenticate())
@@ -244,15 +247,36 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	if err := s.store.Ping(ctx); err != nil {
-		httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
-		return
-	}
-	if s.blobs == nil || s.blobs.Ready(ctx) != nil {
+	if s.store == nil || s.store.Ping(ctx) != nil {
 		httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+
+func (s *Server) dependencyHealth(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"database": "unavailable", "storage": "disabled", "redis": "disabled", "search": "disabled", "ai": "disabled"}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if s.store != nil && s.store.Ping(ctx) == nil {
+		status["database"] = "available"
+	}
+	if s.blobs != nil {
+		status["storage"] = "unavailable"
+		if s.blobs.Ready(ctx) == nil {
+			status["storage"] = "available"
+		}
+	}
+	if s.redis != nil {
+		status["redis"] = "configured"
+	}
+	if s.search != nil {
+		status["search"] = "configured"
+	}
+	if s.cfg.AIAPIKey != "" && s.cfg.AIBaseURL != "" {
+		status["ai"] = "configured"
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"status": "ok", "dependencies": status})
 }
 
 func (s *Server) authenticate() gin.HandlerFunc {

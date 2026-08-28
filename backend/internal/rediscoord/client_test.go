@@ -2,8 +2,10 @@ package rediscoord
 
 import (
 	"bufio"
+	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAIEventKeysKeepClusterTagAndVersion(t *testing.T) {
@@ -16,6 +18,19 @@ func TestAIEventKeysKeepClusterTagAndVersion(t *testing.T) {
 		if !strings.Contains(key, "{event-1}") || !strings.HasSuffix(key, ":v123") {
 			t.Fatalf("invalid version key %q", key)
 		}
+	}
+}
+
+func TestUnavailableRedisFailsFastAfterFirstDial(t *testing.T) {
+	client, err := New("redis://127.0.0.1:1/0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _ = client.Get(context.Background(), "missing")
+	started := time.Now()
+	_, _, _ = client.Get(context.Background(), "missing")
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("Redis cooldown lookup took %s", elapsed)
 	}
 }
 

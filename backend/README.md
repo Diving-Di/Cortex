@@ -53,6 +53,8 @@ docker compose up --build
 
 运行时配置：
 
+`CORTEX_RUNTIME_ROLE` 可设为 `all`（默认）、`api` 或 `worker`。`api` 仅运行 HTTP 且不持有迁移账号；`worker` 运行 scheduler、outbox、知识索引、研究与投影任务且不监听 HTTP。
+
 ```text
 DATABASE_URL=postgresql://cortex_app:<password>@db:5432/cortex
 MIGRATION_DATABASE_URL=postgresql://cortex_migrator:<password>@db:5432/cortex

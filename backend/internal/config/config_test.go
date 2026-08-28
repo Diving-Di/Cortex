@@ -27,6 +27,17 @@ func TestLoadKnowledgeIndexDefaults(t *testing.T) {
 	if cfg.AuthPoolSize != 32 || cfg.AIEventClaimConcurrency != 16 || cfg.AIEventClaimQueueTimeout != 10_000_000_000 {
 		t.Fatalf("AI event capacity defaults = auth pool %d, concurrency %d, timeout %s", cfg.AuthPoolSize, cfg.AIEventClaimConcurrency, cfg.AIEventClaimQueueTimeout)
 	}
+	if cfg.RuntimeRole != "all" {
+		t.Fatalf("RuntimeRole = %q", cfg.RuntimeRole)
+	}
+}
+
+func TestLoadRejectsInvalidRuntimeRole(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgresql://cortex_app:test@localhost/cortex")
+	t.Setenv("CORTEX_RUNTIME_ROLE", "scheduler-api")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid runtime role error")
+	}
 }
 
 func TestLoadAIEventClaimIPLimit(t *testing.T) {

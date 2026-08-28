@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,6 +19,22 @@ type Client struct {
 	database                    int
 	pool                        chan net.Conn
 	slots                       chan struct{}
+	unavailableUntil            atomic.Int64
+}
+
+const redisDialTimeout = 250 * time.Millisecond
+
+func (c *Client) dial(ctx context.Context) (net.Conn, error) {
+	if until := c.unavailableUntil.Load(); until > time.Now().UnixNano() {
+		return nil, errors.New("Redis temporarily unavailable")
+	}
+	conn, err := (&net.Dialer{Timeout: redisDialTimeout}).DialContext(ctx, "tcp", c.address)
+	if err != nil {
+		c.unavailableUntil.Store(time.Now().Add(5 * time.Second).UnixNano())
+		return nil, err
+	}
+	c.unavailableUntil.Store(0)
+	return conn, nil
 }
 
 const VersionChanged = -6
@@ -88,7 +105,7 @@ func (c *Client) acquire(ctx context.Context) (net.Conn, error) {
 		}
 	}
 dial:
-	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", c.address)
+	conn, err := c.dial(ctx)
 	if err != nil {
 		<-c.slots
 		return nil, err
@@ -415,7 +432,7 @@ func (c *Client) TemplateUniqueVisitors(ctx context.Context, publicID, day strin
 }
 
 func (c *Client) stringCommand(ctx context.Context, args ...string) (string, bool, error) {
-	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", c.address)
+	conn, err := c.dial(ctx)
 	if err != nil {
 		return "", false, err
 	}
@@ -528,7 +545,7 @@ func (c *Client) RankingPage(ctx context.Context, key string, maxScore *float64,
 }
 
 func (c *Client) arrayCommand(ctx context.Context, args ...string) ([]string, error) {
-	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", c.address)
+	conn, err := c.dial(ctx)
 	if err != nil {
 		return nil, err
 	}

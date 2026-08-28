@@ -49,10 +49,7 @@ func setTenant(ctx context.Context, tx pgx.Tx, principal domain.Principal) error
 func (s *Store) ListNotes(ctx context.Context, principal domain.Principal, filter NoteFilter) ([]domain.Note, int64, error) {
 	var items []domain.Note
 	var total int64
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
+	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
 		args := []any{principal.TenantID}
 		where := []string{"n.tenant_id=$1", "n.deleted_at IS NULL"}
 		if filter.Type != "" {
@@ -101,10 +98,7 @@ func (s *Store) ListNotes(ctx context.Context, principal domain.Principal, filte
 
 func (s *Store) CreateNote(ctx context.Context, principal domain.Principal, input NoteInput) (domain.Note, error) {
 	var result domain.Note
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
+	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
 		var quota, count int64
 		if err := tx.QueryRow(ctx, `SELECT note_quota FROM tenants WHERE id=$1`, principal.TenantID).Scan(&quota); err != nil {
 			return err
@@ -138,10 +132,7 @@ func (s *Store) CreateNote(ctx context.Context, principal domain.Principal, inpu
 
 func (s *Store) GetNote(ctx context.Context, principal domain.Principal, noteID int32) (domain.Note, error) {
 	var result domain.Note
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
+	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
 		note, err := getNoteTx(ctx, tx, principal, noteID)
 		result = note
 		return err
@@ -151,10 +142,7 @@ func (s *Store) GetNote(ctx context.Context, principal domain.Principal, noteID 
 
 func (s *Store) UpdateNote(ctx context.Context, principal domain.Principal, noteID int32, patch NotePatch) (domain.Note, error) {
 	var result domain.Note
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
+	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
 		note, err := getNoteTx(ctx, tx, principal, noteID)
 		if err != nil {
 			return err
@@ -202,10 +190,7 @@ func (s *Store) UpdateNote(ctx context.Context, principal domain.Principal, note
 }
 
 func (s *Store) DeleteNote(ctx context.Context, principal domain.Principal, noteID int32) error {
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
+	return s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
 		if _, err := getNoteTx(ctx, tx, principal, noteID); err != nil {
 			return err
 		}
@@ -218,10 +203,7 @@ func (s *Store) DeleteNote(ctx context.Context, principal domain.Principal, note
 
 func (s *Store) ListRevisions(ctx context.Context, principal domain.Principal, noteID int32) ([]domain.Revision, error) {
 	var revisions []domain.Revision
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
+	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
 		if _, err := getNoteTx(ctx, tx, principal, noteID); err != nil {
 			return err
 		}
@@ -247,10 +229,7 @@ func (s *Store) ListRevisions(ctx context.Context, principal domain.Principal, n
 
 func (s *Store) RestoreRevision(ctx context.Context, principal domain.Principal, noteID, revisionID int32) (domain.Note, error) {
 	var result domain.Note
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
+	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
 		note, err := getNoteTx(ctx, tx, principal, noteID)
 		if err != nil {
 			return err

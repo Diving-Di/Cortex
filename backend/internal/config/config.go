@@ -11,6 +11,7 @@ import (
 )
 
 type Config struct {
+	RuntimeRole                  string
 	DatabaseURL                  string
 	MigrationDatabaseURL         string
 	ListenAddress                string
@@ -98,6 +99,10 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	runtimeRole := strings.ToLower(valueOrDefault("CORTEX_RUNTIME_ROLE", "all"))
+	if runtimeRole != "all" && runtimeRole != "api" && runtimeRole != "worker" {
+		return Config{}, fmt.Errorf("CORTEX_RUNTIME_ROLE must be all, api, or worker")
+	}
 	databaseURL := normalizeDatabaseURL(strings.TrimSpace(os.Getenv("DATABASE_URL")))
 	if databaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL must use PostgreSQL")
@@ -330,6 +335,7 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("RAG_PLANNER_MAX_SUBQUERIES must be between 1 and 4")
 	}
 	return Config{
+		RuntimeRole:          runtimeRole,
 		DatabaseURL:          databaseURL,
 		MigrationDatabaseURL: migrationDatabaseURL,
 		ListenAddress:        valueOrDefault("LISTEN_ADDRESS", "0.0.0.0:8000"),

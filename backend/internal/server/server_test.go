@@ -28,6 +28,21 @@ func TestRouterStartsAndServesHealth(t *testing.T) {
 	}
 }
 
+func TestReadyOnlyDependsOnDatabase(t *testing.T) {
+	handler := New(
+		config.Config{CORSOrigins: []string{"http://localhost:5173"}},
+		nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		"test",
+	)
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("ready status without database = %d", response.Code)
+	}
+}
+
 func TestLegacyRoutesAreNotRegistered(t *testing.T) {
 	handler := New(
 		config.Config{CORSOrigins: []string{"http://localhost:5173"}},

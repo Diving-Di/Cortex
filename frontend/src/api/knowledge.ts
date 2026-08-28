@@ -1,4 +1,5 @@
 import { http } from './http';
+import { consumeSSE, errorFromResponse } from './client';
 
 export type KnowledgeDocument = {
   id: string;
@@ -128,17 +129,6 @@ export async function setNoteKnowledge(noteID: number, enabled: boolean) {
   return (await http.patch(`/api/v1/notes/${noteID}/knowledge`, { enabled }, {})).data;
 }
 
-function parseSSEBlock(block: string): KnowledgeStreamEvent | undefined {
-  let type = 'message';
-  const data: string[] = [];
-  for (const line of block.split(/\r?\n/)) {
-    if (line.startsWith('event:')) type = line.slice(6).trim();
-    if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
-  }
-  if (!data.length || type === 'message') return undefined;
-  return { type, data: JSON.parse(data.join('\n')) } as KnowledgeStreamEvent;
-}
-
 export async function streamKnowledge(
   input: {
     question: string;
@@ -159,32 +149,13 @@ export async function streamKnowledge(
     signal,
   });
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new KnowledgeStreamError(
-      payload.message || payload.code || `HTTP ${response.status}`,
-      payload.code,
-      payload.details,
-    );
+    const error = await errorFromResponse(response);
+    throw new KnowledgeStreamError(error.message, error.code, error.details as never);
   }
-  if (!response.body) throw new Error('浏览器不支持流式响应');
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    buffer = blocks.pop() ?? '';
-    for (const block of blocks) {
-      const event = parseSSEBlock(block);
-      if (event) onEvent(event);
-    }
-    if (done) break;
-  }
-  if (buffer.trim()) {
-    const event = parseSSEBlock(buffer);
-    if (event) onEvent(event);
-  }
+  await consumeSSE(response, ({ event, data }) => {
+    if (event !== 'message')
+      onEvent({ type: event, data: JSON.parse(data) } as KnowledgeStreamEvent);
+  });
 }
 
 export async function listKnowledgeConversations() {

@@ -289,7 +289,7 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 	if s.redis != nil {
 		if encoded, ok, cacheErr := s.redis.Get(r.Context(), cacheKey); cacheErr == nil && ok {
 			if encoded == "__missing__" {
-				if _, versionErr := s.store.GetPublicTemplateVersion(r.Context(), id); versionErr != nil {
+				if _, versionErr := s.store.GetPublicTemplateVersion(r.Context(), principal, id); versionErr != nil {
 					httpx.WriteError(w, s.logger, versionErr)
 					return
 				}
@@ -297,7 +297,7 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 				_ = s.redis.Delete(r.Context(), cacheKey)
 			}
 			if json.Unmarshal([]byte(encoded), &x) == nil {
-				if currentVersion, versionErr := s.store.GetPublicTemplateVersion(r.Context(), id); versionErr == nil && currentVersion == x.Version {
+				if currentVersion, versionErr := s.store.GetPublicTemplateVersion(r.Context(), principal, id); versionErr == nil && currentVersion == x.Version {
 					cacheHit = true
 					templateCacheHits.Add(1)
 				} else if versionErr != nil {

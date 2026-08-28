@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"cortex/backend/internal/config"
+	"cortex/backend/internal/domain"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -53,6 +54,11 @@ func Open(ctx context.Context, cfg config.Config) (*Store, error) {
 		authPool.Close()
 		return nil, fmt.Errorf("ping auth database pool: %w", err)
 	}
+	s := &Store{Pool: pool, AuthPool: authPool, authTouches: make(chan int32, 4096), authTouchStop: make(chan struct{}), authTouchDone: make(chan struct{})}
+	if cfg.RuntimeRole == "api" {
+		go s.runAuthTouches()
+		return s, nil
+	}
 	adminConfig, err := pgxpool.ParseConfig(cfg.MigrationDatabaseURL)
 	if err != nil {
 		pool.Close()
@@ -72,7 +78,7 @@ func Open(ctx context.Context, cfg config.Config) (*Store, error) {
 		adminPool.Close()
 		return nil, fmt.Errorf("ping migration database: %w", err)
 	}
-	s := &Store{Pool: pool, AuthPool: authPool, AdminPool: adminPool, authTouches: make(chan int32, 4096), authTouchStop: make(chan struct{}), authTouchDone: make(chan struct{})}
+	s.AdminPool = adminPool
 	go s.runAuthTouches()
 	return s, nil
 }
@@ -85,7 +91,9 @@ func (s *Store) Close() {
 		if s.AuthPool != nil {
 			s.AuthPool.Close()
 		}
-		s.AdminPool.Close()
+		if s.AdminPool != nil {
+			s.AdminPool.Close()
+		}
 	})
 }
 
@@ -149,4 +157,15 @@ func (s *Store) WithTx(ctx context.Context, fn func(pgx.Tx) error) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// WithPrincipalTx is the mandatory transaction boundary for tenant business
+// data. RLS context is transaction-local and cannot leak through the pool.
+func (s *Store) WithPrincipalTx(ctx context.Context, principal domain.Principal, fn func(pgx.Tx) error) error {
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := setTenant(ctx, tx, principal); err != nil {
+			return err
+		}
+		return fn(tx)
+	})
 }

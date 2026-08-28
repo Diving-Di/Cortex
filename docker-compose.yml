@@ -190,6 +190,7 @@ services:
       - AI_MODEL=cortex-default
       - AI_SYSTEM_PROMPT=${AI_SYSTEM_PROMPT:-你是一个温暖、贴心的 AI 助手。}
       - APP_ENV=${APP_ENV:-development}
+      - CORTEX_RUNTIME_ROLE=${CORTEX_RUNTIME_ROLE:-all}
       - SCHEDULED_REPORTS_ENABLED=${SCHEDULED_REPORTS_ENABLED:-true}
       - SCHEDULED_REPORT_POLL_SECONDS=${SCHEDULED_REPORT_POLL_SECONDS:-60}
       - RESEARCH_ENABLED=${RESEARCH_ENABLED:-true}
@@ -218,26 +219,6 @@ services:
       - AI_EVENT_CLAIM_QUEUE_TIMEOUT_MS=${AI_EVENT_CLAIM_QUEUE_TIMEOUT_MS:-10000}
     depends_on:
       db:
-        condition: service_healthy
-      llm-gateway:
-        condition: service_healthy
-      embedding-service:
-        condition: service_healthy
-      reranker-service:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
-      kafka:
-        condition: service_healthy
-      kafka-init:
-        condition: service_completed_successfully
-      elasticsearch:
-        condition: service_healthy
-      document-parser:
         condition: service_healthy
 
   document-parser:

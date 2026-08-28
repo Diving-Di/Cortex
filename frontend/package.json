@@ -7,10 +7,12 @@
   },
   "scripts": {
     "dev": "webpack serve --mode development",
+    "prebuild": "node scripts/check-node-version.cjs",
     "build": "tsc --noEmit && webpack --mode production",
     "analyze": "npm run build -- --profile --json=stats.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "pretest": "node scripts/check-node-version.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "webpack serve --mode development"

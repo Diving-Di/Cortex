@@ -126,25 +126,29 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "cortex_auth_database_pool_acquire_duration_seconds_total %.6f\n", authPool.AcquireDuration().Seconds())
 		_, _ = fmt.Fprintf(w, "cortex_auth_database_pool_empty_acquire_total %d\n", authPool.EmptyAcquireCount())
 	}
-	if m, err := s.store.GetOperationsMetrics(r.Context()); err == nil {
-		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"queued\"} %d\n", m.KnowledgeQueued)
-		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"running\"} %d\n", m.KnowledgeRunning)
-		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"failed\"} %d\n", m.KnowledgeFailed)
-		_, _ = fmt.Fprintf(w, "cortex_knowledge_index_oldest_queued_seconds %.3f\n", m.KnowledgeOldestQueuedSeconds)
-		_, _ = fmt.Fprintf(w, "cortex_scheduled_report_tasks_due %d\n", m.ScheduledDue)
-		_, _ = fmt.Fprintf(w, "cortex_scheduled_report_runs{status=\"running\"} %d\n", m.ScheduledRunning)
-		_, _ = fmt.Fprintf(w, "cortex_scheduled_report_runs{status=\"failed\"} %d\n", m.ScheduledFailed)
-		_, _ = fmt.Fprintf(w, "cortex_scheduled_report_oldest_due_seconds %.3f\n", m.ScheduledOldestDueSeconds)
+	if s.store.AdminPool != nil {
+		if m, err := s.store.GetOperationsMetrics(r.Context()); err == nil {
+			_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"queued\"} %d\n", m.KnowledgeQueued)
+			_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"running\"} %d\n", m.KnowledgeRunning)
+			_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"failed\"} %d\n", m.KnowledgeFailed)
+			_, _ = fmt.Fprintf(w, "cortex_knowledge_index_oldest_queued_seconds %.3f\n", m.KnowledgeOldestQueuedSeconds)
+			_, _ = fmt.Fprintf(w, "cortex_scheduled_report_tasks_due %d\n", m.ScheduledDue)
+			_, _ = fmt.Fprintf(w, "cortex_scheduled_report_runs{status=\"running\"} %d\n", m.ScheduledRunning)
+			_, _ = fmt.Fprintf(w, "cortex_scheduled_report_runs{status=\"failed\"} %d\n", m.ScheduledFailed)
+			_, _ = fmt.Fprintf(w, "cortex_scheduled_report_oldest_due_seconds %.3f\n", m.ScheduledOldestDueSeconds)
+		}
 	}
-	if m, err := s.store.GetMarketplaceMetrics(r.Context()); err == nil {
-		_, _ = fmt.Fprintf(w, "cortex_template_outbox_pending %d\n", m.PendingOutbox)
-		_, _ = fmt.Fprintf(w, "cortex_template_outbox_lag_seconds %.3f\n", m.OutboxLagSeconds)
-		_, _ = fmt.Fprintf(w, "cortex_ai_event_claims{status=\"queued\"} %d\n", m.QueuedClaims)
-		_, _ = fmt.Fprintf(w, "cortex_ai_event_claims{status=\"running\"} %d\n", m.RunningClaims)
-		_, _ = fmt.Fprintf(w, "cortex_ai_event_claims{status=\"failed\"} %d\n", m.FailedClaims)
-		_, _ = fmt.Fprintf(w, "cortex_ai_point_accounts_drifted %d\n", m.PointAccountsDrifted)
-		_, _ = fmt.Fprintf(w, "cortex_ai_event_slot_records_drifted %d\n", m.EventSlotDrifted)
-		_, _ = fmt.Fprintf(w, "cortex_ai_event_succeeded_claims_invalid %d\n", m.SucceededClaimsInvalid)
+	if s.store.AdminPool != nil {
+		if m, err := s.store.GetMarketplaceMetrics(r.Context()); err == nil {
+			_, _ = fmt.Fprintf(w, "cortex_template_outbox_pending %d\n", m.PendingOutbox)
+			_, _ = fmt.Fprintf(w, "cortex_template_outbox_lag_seconds %.3f\n", m.OutboxLagSeconds)
+			_, _ = fmt.Fprintf(w, "cortex_ai_event_claims{status=\"queued\"} %d\n", m.QueuedClaims)
+			_, _ = fmt.Fprintf(w, "cortex_ai_event_claims{status=\"running\"} %d\n", m.RunningClaims)
+			_, _ = fmt.Fprintf(w, "cortex_ai_event_claims{status=\"failed\"} %d\n", m.FailedClaims)
+			_, _ = fmt.Fprintf(w, "cortex_ai_point_accounts_drifted %d\n", m.PointAccountsDrifted)
+			_, _ = fmt.Fprintf(w, "cortex_ai_event_slot_records_drifted %d\n", m.EventSlotDrifted)
+			_, _ = fmt.Fprintf(w, "cortex_ai_event_succeeded_claims_invalid %d\n", m.SucceededClaimsInvalid)
+		}
 	}
 }
 

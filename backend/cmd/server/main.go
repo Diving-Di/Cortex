@@ -13,6 +13,7 @@ import (
 	"cortex/backend/internal/blobstore"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/rediscoord"
+	"cortex/backend/internal/searchindex"
 	"cortex/backend/internal/server"
 	"cortex/backend/internal/store"
 	"cortex/backend/internal/workers"
@@ -26,7 +27,6 @@ func main() {
 		slog.Error("load configuration", "error", err)
 		os.Exit(1)
 	}
-	localBlobs, _ := blobstore.NewLocal(cfg.DataDir)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(logger)
 
@@ -36,6 +36,11 @@ func main() {
 	db, err := store.Open(ctx, cfg)
 	if err != nil {
 		logger.Error("open database", "error", err)
+		os.Exit(1)
+	}
+	localBlobs, err := blobstore.NewLocal(cfg.DataDir)
+	if err != nil {
+		logger.Error("open local object store", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
@@ -50,14 +55,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	handler := server.New(cfg, db, logger, version)
-	workers.Run(ctx, cfg, db, blobs, localBlobs, logger)
-	go server.RunScheduler(ctx, cfg, db, logger)
-	server.RunResearchWorkers(ctx, cfg, db, logger)
-	server.RunXHSAuthorizationWorkers(ctx, cfg, db, logger)
-	server.RunAIEventWorkers(ctx, cfg, db, logger)
-	redis, _ := rediscoord.New(cfg.RedisURL)
-	server.RunMarketplaceWorker(ctx, db, redis, logger)
+	redis, err := rediscoord.New(cfg.RedisURL)
+	if err != nil {
+		logger.Warn("redis unavailable; distributed coordination will degrade", "code", "REDIS_UNAVAILABLE")
+	}
+	var search *searchindex.Elasticsearch
+	if cfg.RAGRetrievalBackend == "elasticsearch" {
+		search = searchindex.New(cfg.ElasticsearchURLs, cfg.ElasticsearchUsername, cfg.ElasticsearchPassword, cfg.ElasticsearchIndexAlias)
+	}
+	if cfg.RuntimeRole != "api" {
+		workers.Run(ctx, cfg, db, blobs, localBlobs, logger)
+		go server.RunScheduler(ctx, cfg, db, logger)
+		server.RunResearchWorkers(ctx, cfg, db, logger)
+		server.RunXHSAuthorizationWorkers(ctx, cfg, db, logger)
+		server.RunAIEventWorkers(ctx, cfg, db, logger)
+		server.RunMarketplaceWorker(ctx, db, redis, logger)
+	}
+	if cfg.RuntimeRole == "worker" {
+		logger.Info("worker process started", "version", version)
+		<-ctx.Done()
+		return
+	}
+
+	handler := server.NewWithDependencies(cfg, db, logger, version, server.Dependencies{Blobs: blobs, LocalBlobs: localBlobs, Redis: redis, Search: search})
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddress,
 		Handler:           handler,

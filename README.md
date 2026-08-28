@@ -214,6 +214,8 @@ Webpack DevServer 会将 `/api` 和 `/media` 代理到 `http://127.0.0.1:8000`�
 - 主业务接口使用 `/api/v1`。浏览器使用 HttpOnly 会话 Cookie；脚本通过
   `/api/v1/auth/token` 获取凭证并使用 `Authorization: Token <token>`。
 - `/healthz` 只反映进程存活；`/readyz` 只验证数据库可用。
+- `/health/dependencies` 返回对象存储、Redis、搜索和 AI 的能力状态；这些可选依赖不参与就绪判定。
+- `CORTEX_RUNTIME_ROLE=all|api|worker` 控制进程职责。生产拆分部署时，`api` 不建立 migrator 管理连接，`worker` 不监听 HTTP；Compose 默认使用兼容的 `all`。
 - 更新笔记使用乐观冲突保护；正文更新和 AI 覆盖前先创建 revision，删除默认软删除。
 - 跨租户资源统一表现为 404；软删除空间不得通过登录或 Token 认证。
 - 周报日期归一到周一，月报日期归一到月初。

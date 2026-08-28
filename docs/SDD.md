@@ -117,7 +117,7 @@ PDF、Word、Excel 不属于当前知识库摄取范围；不得仅通过放开�
 ## 8. 部署与验证
 
 Compose 下数据库、Redis、MinIO、Kafka/Redpanda、Elasticsearch、LiteLLM、Embedding 和 Reranker
-服务不暴露宿主机公共端口。`/healthz` 只反映 API 进程存活，`/readyz` 验证 PostgreSQL 与当前对象存储可用。新实例由 `backend/db/schema.sql`
+服务不暴露宿主机公共端口。`/healthz` 只反映 API 进程存活，`/readyz` 只验证 PostgreSQL；`/health/dependencies` 独立报告对象存储、Redis、搜索和 AI 能力，避免可选依赖故障摘除核心笔记流量。`CORTEX_RUNTIME_ROLE` 支持 `all`、`api`、`worker`，其中 API 角色不建立 migrator 管理连接。新实例由 `backend/db/schema.sql`
 基线加版本化迁移初始化（当前迁移版本 40，共 63 张 public 表）。
 
 ```powershell
