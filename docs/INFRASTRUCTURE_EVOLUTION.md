@@ -284,11 +284,11 @@ Prometheus/Grafana 必须接入真实采集和 Alertmanager 通知，覆盖 API/
 
 ### 9.2 联合备份恢复
 
-恢复顺序为 PostgreSQL（含 pgvector 基线）→ MinIO 对象 → Kafka 配置/Topic → Elasticsearch 模板与可重建 BM25 + KNN 投影。Kafka offset 和 ES 索引不作为业务权威备份。隔离恢复必须验证迁移版本 40、63 张 public 表、RLS/FORCE RLS、登录、附件下载、对象双向清单、pgvector 降级问答、ES 全量投影重建、主路径恢复切回和任务幂等恢复，并记录目标与实测 RPO/RTO。PDF、Word、图片 OCR 尚未进入当前知识库摄取范围，不应列入现阶段恢复验收。
+恢复顺序为 PostgreSQL（含 pgvector 基线）→ MinIO 对象 → Kafka 配置/Topic → Elasticsearch 模板与可重建 BM25 + KNN 投影。Kafka offset 和 ES 索引不作为业务权威备份。隔离恢复必须验证迁移版本 41、63 张 public 表、RLS/FORCE RLS、登录、附件下载、对象双向清单、pgvector 降级问答、ES 全量投影重建、主路径恢复切回和任务幂等恢复，并记录目标与实测 RPO/RTO。Markdown、PDF、Word、扫描 PDF 与图片 OCR 都应纳入恢复验收；Excel 和演示文稿仍不在当前范围。
 
 ## 10. 已实施阶段记录与配置基线
 
-以下 Phase 0～5 保留原始设计顺序，用于解释迁移 37～40 和当前 Compose 主路径的形成，不用于判断完成
+以下 Phase 0～5 保留原始设计顺序，用于解释迁移 37～41 和当前 Compose 主路径的形成，不用于判断完成
 状态。Phase 0～4 的本地第一版已经落地，Phase 5 仅完成本地验收；尚未完成的生产三节点、TLS、真实流量、
 告警通知和扩展格式摄取统一记录在 `IMPLEMENTATION_GAPS.md`，避免在多份文档中重复维护状态。
 
@@ -302,6 +302,7 @@ Prometheus/Grafana 必须接入真实采集和 Alertmanager 通知，覆盖 API/
 | `000038_kafka_outbox` | 增加 Outbox schema version、publish 状态、consumer receipts、DLQ 审计 | Kafka 停止后可恢复 polling |
 | `000039_search_projection` | 增加 ES projection version/status/checksum/lag 和 reconciliation 状态 | 可停用 ES 并继续旧检索 |
 | `000040_external_infra_contract` | 三阶段验收后停止创建 2-gram RAG 投影，继续同步 pgvector 基线向量 | 观察窗口内只读保留 2-gram 索引 |
+| `000041_kafka_knowledge_pipeline` | 把解析、Embedding、搜索投影拆为 Kafka 阶段并持久化阶段载荷 | 可切回 PostgreSQL task runner；最终状态仍以数据库为准 |
 | 后续 contract migration | 回滚窗口结束后删除 2-gram `search_vector`、查询配置和废弃字段 | 保留 pgvector embedding；执行前必须有联合备份并完成不可逆评审 |
 
 新增配置按职责分配：
@@ -315,7 +316,7 @@ EVENT_BUS=kafka
 RAG_RETRIEVAL_BACKEND=elasticsearch
 ```
 
-真实凭据只通过部署 Secret 注入，不写入 Compose 文件、镜像、数据库业务字段、日志或验收报告。启动时对必需配置 fail-fast；`/healthz` 仍只表示进程存活，`/readyz` 在对应进程中检查其必需依赖，例如 API 检查 PostgreSQL 和 MinIO，消费者检查 PostgreSQL、Kafka、MinIO/ES。
+真实凭据只通过部署 Secret 注入，不写入 Compose 文件、镜像、数据库业务字段、日志或验收报告。启动时对必需配置 fail-fast；`/healthz` 仍只表示进程存活，API `/readyz` 只检查 PostgreSQL，其他可选依赖由 `/health/dependencies` 与 worker 指标独立报告。
 
 ### Phase 0：公共抽象与迁移框架
 
@@ -389,5 +390,5 @@ RAG_RETRIEVAL_BACKEND=elasticsearch
 
 当前 Compose 已完成公共抽象、MinIO、Kafka/Redpanda、Elasticsearch BM25 + KNN 和 server 内部 worker
 收敛。PostgreSQL 继续保存业务权威、RLS、Outbox、任务状态、pgvector 基线向量和普通笔记搜索；
-Elasticsearch 是默认 RAG 检索 backend，pgvector 保留为可观测降级路径。当前知识摄取仍只开放 Markdown
-与 Markdown ZIP；PDF、DOC/DOCX 和图片 OCR 必须完成隔离解析与安全验收后才能进入当前能力清单。
+Elasticsearch 是默认 RAG 检索 backend，pgvector 保留为可观测降级路径。当前知识摄取开放 Markdown/ZIP、
+PDF、DOC/DOCX 与 PNG/JPG/WebP，二进制格式由隔离解析/OCR 服务处理；Excel、演示文稿和断点续传仍未实现。

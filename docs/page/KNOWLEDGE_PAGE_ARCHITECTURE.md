@@ -1,21 +1,21 @@
 # 个人知识库页
 
-`/knowledge` 是个人知识库 v2 的入口，用于上传 Markdown / Markdown ZIP 资料、查看文档索引
+`/knowledge` 是个人知识库 v2 的入口，用于上传 Markdown/ZIP、PDF、DOC/DOCX 与图片资料、查看文档索引
 状态与容量配额、删除不再需要的知识文档，并提供知识问答、历史会话、检索过程、来源与反馈。
 问答使用 `POST /api/v1/knowledge/chat/stream`；`/recipes` 与 `/assistant` 已重定向到本页。
 
 ## 页面目标、范围与非目标
 
-- 目标：让用户把个人 Markdown 资料变成可检索、可问答的私有知识库；提供上传、状态跟踪、
+- 目标：让用户把个人文档变成可检索、可问答的私有知识库；提供上传、状态跟踪、
   容量管理和删除能力；页面与 API 只面向当前租户。
-- 范围：`.md` 单文件与包含 Markdown 的 `.zip`（仅处理 `.md`、`.png`、`.jpg`，其他类型条目跳过）；个人笔记
+- 范围：`.md`、Markdown `.zip`、`.pdf`、`.doc/.docx`、`.png/.jpg/.jpeg/.webp`；扫描 PDF 和图片走中英文 OCR；个人笔记
   可通过 `PATCH /api/v1/notes/{id}/knowledge` 加入问答；每租户容量上限 3 GiB。
-- 非目标：PDF/Word 解析、OCR、图片向量检索、团队共享、外部对象存储、压缩包在线预览、
+- 非目标：Excel/演示文稿解析、图片视觉向量检索、团队共享、压缩包在线预览、
   数据库与 Markdown 双向同步。
 
 ## 页面区域与交互
 
-- 上传区：拖放或选择单个 `.md` / `.zip`，上传前展示格式与配额说明；成功后返回 202 并异步
+- 上传区：拖放或选择受支持的单个文档/压缩包，上传前展示格式与配额说明；成功后返回 202 并异步
   建立索引。
 - 配额区：展示已用、剩余容量和进度条，容量判断以后端返回为准。
 - 文档列表：显示标题、来源类型（上传资料 / 个人笔记）、大小、索引状态与失败摘要，支持删除。
@@ -45,7 +45,7 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/api/v1/knowledge/uploads` | 上传 `.md` / `.zip`（multipart，支持幂等键），安全落盘后返回 202 |
+| `POST` | `/api/v1/knowledge/uploads` | 上传 Markdown/ZIP、PDF、Word 或图片（multipart，支持幂等键），安全落盘后返回 202 |
 | `GET` | `/api/v1/knowledge/uploads/{id}` | 查询上传与索引状态 |
 | `GET` | `/api/v1/knowledge/documents` | 列出当前租户文档与 3 GiB 配额 |
 | `DELETE` | `/api/v1/knowledge/documents/{id}` | 删除文档并使其退出检索 |
@@ -57,9 +57,9 @@
 
 ## 后端组件与持久化模型
 
-- 上传校验在 `backend/internal/knowledge`（archive/chunker）：校验类型、配额、ZIP 路径安全；ZIP 中仅解析 `.md`、`.png`、`.jpg`，其余类型条目跳过
-  （拒绝绝对路径、盘符、`..`、符号链接、超高压缩比等），文件保存到
-  `CORTEX_DATA_DIR/knowledge/{tenant_id}/{upload_id}/source` 安全相对路径。
+- 上传校验在 `backend/internal/knowledge`（archive/chunker）：校验类型、配额与 ZIP 路径安全
+  （拒绝绝对路径、盘符、`..`、符号链接、超高压缩比等）。业务文件通过 `BlobStore` 保存为服务端
+  生成的对象定位；Compose 默认写入私有 MinIO，本地 `CORTEX_DATA_DIR` 仅作为迁移/回退实现。
 - 数据库迁移 `000017_personal_knowledge_v2` 新增九张表并启用 RLS：
   `knowledge_quotas`、`knowledge_collections`、`knowledge_uploads`、`knowledge_documents`、
   `knowledge_assets`、`knowledge_parent_chunks`、`knowledge_child_chunks`、
@@ -68,7 +68,9 @@
   过期 lease，同阶段数值只能前进。
 - `000036_knowledge_clarifications` 新增 RLS 隔离的一次性恢复状态；状态绑定 tenant、user、
   conversation 和原 request ID，collection scope 只读取服务端保存值。
-- 后台 `RunKnowledgeIndexer`（`backend/internal/server/knowledge_worker.go`）按 Markdown 标题
+- Kafka 模式由 `backend/internal/workers/knowledge_pipeline.go` 执行解析、Embedding、搜索投影三个
+  独立阶段；`document-parser` 在隔离容器中处理 PDF/Word/OCR，阶段状态和解析中间结果持久化到
+  PostgreSQL。PostgreSQL event bus 回退仍由受管 index runner 处理任务。内容按标题
   切分 parent 与不超过 500 字的 child，经 Compose 内部 `embedding-service`
   （`iic/nlp_gte_sentence-embedding_chinese-small`，512 维）生成向量写入
   `knowledge_child_chunks`（pgvector + 全文 tsvector）。
@@ -111,7 +113,7 @@
 
 ## 测试与验收
 
-- 覆盖：`.md` / `.zip` 上传与配额（含并发预占）、跨租户 404 隔离、文档删除后退出检索、
+- 覆盖：Markdown/ZIP、PDF、Word、图片 OCR 上传与配额（含并发预占）、解析器资源/超时边界、跨租户 404 隔离、文档删除后退出检索、
   笔记知识开关、公开 progress DTO、混合问答来源与 incomplete、澄清正常/重复/过期/跨租户恢复、
   简单问题不规划、子查询/恢复次数上限、索引进度 fencing、`KNOWLEDGE_NO_EVIDENCE` 和模型降级。
 - 端到端：`non_ai_smoke.ps1`、`ai_acceptance.ps1`。

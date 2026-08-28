@@ -45,7 +45,7 @@ docker compose config --quiet
 
 ## 3. 数据库、租户与文件安全
 
-- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 40、63 张 public 表，迁移记录和 schema 基线一致。
+- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 41、63 张 public 表，迁移记录和 schema 基线一致。
 - [ ] 租户业务表启用并强制 RLS；`cortex_app` 使用低权限连接，跨租户资源访问表现为 404。
 - [ ] 注册、登录、Token 过期/撤销、软删除租户拒绝认证通过验收。
 - [ ] 乐观锁、revision、软删除和来源有效性检查没有被绕过。
@@ -76,7 +76,8 @@ docker compose config --quiet
 - [ ] `RAG_PLANNER_ENABLED` 默认关闭；如需开启，冻结的 comparison/trend/cross_period 数据集证明其相对
   单查询基线在质量、P95、调用次数和 token 成本上可接受，且子查询数不超过 4。
 - [ ] RAG regression fixture、引用核验和受控评测没有不可解释回退；真实 bad case 只在用户复核脱敏后晋升。
-- [ ] PDF、Word、Excel 摄取仍未开放，上传白名单没有被意外放宽。
+- [ ] Markdown/ZIP、PDF、DOC/DOCX、PNG/JPG/WebP 白名单与隔离解析/OCR、资源上限、失败回滚一致；
+  Excel 和演示文稿仍被拒绝。
 
 ## 6. 运行状态、灾备与容量
 

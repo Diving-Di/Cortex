@@ -375,7 +375,8 @@ Judge 仍通过 LiteLLM，不直连模型供应商。完整结果包含每条候
 
 ### 9.0 当前有效复验（2026-08-25）
 
-当前回归对照以迁移版本 40、Compose 默认 Elasticsearch BM25 + KNN 主路径上的 164 条合并集复验为准，
+当前质量数值仍以 2026-08-25 在迁移版本 40、Compose 默认 Elasticsearch BM25 + KNN 主路径上的
+164 条合并集复验为最近一次证据；当前 schema 已到迁移 41，因此发布前需按当前 commit 重新复验。
 完整环境、分层结果和原始产物位置见
 `docs/operations/RAG_AND_K6_RERUN_20260825.md`：
 

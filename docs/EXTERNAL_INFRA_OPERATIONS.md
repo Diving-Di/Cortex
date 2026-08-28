@@ -1,6 +1,6 @@
 # 外部基础设施运行与恢复
 
-> 当前状态（2026-08-25）：Compose 已默认启用 MinIO、Kafka 兼容的 Redpanda 与 Elasticsearch；
+> 当前状态（2026-08-28）：Compose 已默认启用 MinIO、Kafka 兼容的 Redpanda 与 Elasticsearch；
 > 本文的分阶段门禁用于目标环境发布，不表示仅凭本地 Compose 配置即已完成生产验收。
 
 生产发布顺序固定为 MinIO、Kafka、Elasticsearch，禁止在同一次发布中同时切换三条主路径。所有凭据通过 Secret 注入；Compose 中的单节点 Kafka 与 Elasticsearch 仅用于本地开发，生产必须使用三节点、TLS、最小权限账号、显式 Topic 和快照仓库。
@@ -8,9 +8,10 @@
 ## 上线门禁
 
 1. 先执行 `000037`，运行历史对象迁移与双向 checksum 对账；确认新对象只写 MinIO 后再启用 `STORAGE_BACKEND=minio`。
-2. 执行 `000038`，显式创建三个 `cortex.*.v1` Topic，再启动 relay 和消费者。停 Kafka 时业务事务应成功、Outbox 应积压，恢复后应清空。
+2. 执行 `000038`、`000040` 与 `000041`，显式创建知识索引、文档解析、Embedding、搜索投影等
+   `cortex.*.v1` Topic，再启动 relay 和分阶段消费者。停 Kafka 时业务事务应成功、Outbox 应积压，恢复后应清空。
 3. 执行 `000039`，回放全部活动版本并比较冻结集；完成影子查询后才设置 `RAG_RETRIEVAL_BACKEND=elasticsearch`。
-4. 观察一个完整发布周期后方可执行 contract 收敛。`/healthz` 只检查 API 进程；API `/readyz` 检查 PostgreSQL 与对象存储，不检查 Kafka、Elasticsearch 或 AI。
+4. 观察一个完整发布周期后方可执行 contract 收敛。`/healthz` 只检查 API 进程；API `/readyz` 只检查 PostgreSQL；对象存储、Redis、搜索和 AI 状态由 `/health/dependencies` 独立报告。
 
 ## 故障与恢复
 

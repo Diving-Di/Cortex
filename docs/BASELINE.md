@@ -1,7 +1,7 @@
 # Cortex 工程基线
 
 > 状态：当前有效
-> 更新日期：2026-08-25
+> 更新日期：2026-08-28
 
 ## 产品范围
 
@@ -15,7 +15,7 @@
   可恢复的一次性澄清和持久化索引阶段进度（每租户 3 GiB 配额）。
 
 桌面组件、团队协作、计费和数据库/Markdown 双向同步不属于当前范围。
-PDF、Word、Excel 摄取仍不属于当前知识库摄取范围。
+Excel、演示文稿、团队知识库和断点续传不属于当前知识库摄取范围。
 
 ## 技术基线
 
@@ -29,12 +29,14 @@ PDF、Word、Excel 摄取仍不属于当前知识库摄取范围。
 | 知识检索 | GTE 中文 Embedding（512 维）、BGE CrossEncoder Reranker；PostgreSQL/pgvector + 中文 2-gram 为本地回退，Compose 默认使用 Elasticsearch BM25 + KNN 投影 |
 | 部署 | Docker Compose、多阶段静态 Go 镜像 |
 | 文件与事件 | Compose 默认使用私有 MinIO 与 Kafka 兼容的 Redpanda；PostgreSQL 保存对象定位、Outbox、任务和消费事实 |
+| 文档解析 | Compose 内部隔离的 `document-parser` 处理 PDF、DOC/DOCX 与 PNG/JPG/WebP OCR；解析结果经 PostgreSQL 任务状态和 Kafka 阶段事件推进 |
 | 活动协调 | Redis 7、Lua 原子预扣；PostgreSQL 保存最终事实 |
 | 模板投影 | Outbox 类型隔离、租约续期/完成 fencing、排行版本键双缓冲、Redis 64 连接复用池 |
 
 `backend/cmd/server/main.go` 是唯一部署后端入口，仓库不保留 Python 后端或 Alembic。外部基础设施 worker
 由 `backend/internal/workers` 的受管 runner 启动，与 API 共享进程取消和优雅退出边界；迁移与评测命令仅作
-显式运维工具，不作为部署服务入口。
+  显式运维工具，不作为部署服务入口。`CORTEX_RUNTIME_ROLE=all|api|worker` 可把同一 server 镜像按角色部署；
+  `api` 角色不创建 migrator 管理连接，`worker` 角色不注册 HTTP 服务。
 
 ## 数据规则
 
@@ -83,7 +85,7 @@ docker compose up -d --build
 - `db`、`redis`、`llm-gateway`、`embedding-service`、`reranker-service`、`minio`、`kafka`、
   `elasticsearch` 和 `backend` 必须为 healthy；无 HTTP 健康检查的消费者须以进程、积压和任务状态验收。
 - 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
-- 新 PostgreSQL 空库必须完成全部版本化迁移（当前迁移版本 40、63 张 public 表）、RLS、注册和登录验收。
+- 新 PostgreSQL 空库必须完成全部版本化迁移（当前迁移版本 41、63 张 public 表）、RLS、注册和登录验收。
 - 模板广场还需验证 Outbox 类型隔离、排行 active pointer 原子切换、daily/HLL 8 天 TTL、匿名 UV
   读取和 Redis 故障回表降级。本地容量结果不能作为线上 QPS 或 p95/p99。
 - 个人知识库上传、索引阶段/进度、混合问答、一次性澄清恢复、幂等回放、跨租户隔离和 3 GiB 配额验收通过。

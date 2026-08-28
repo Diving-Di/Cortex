@@ -17,6 +17,10 @@
 - 缓解：不要手工把旧 owner 的结果标为成功；等待租约到期由新 worker 接管，或通过认证重试接口入队。
 - 恢复：确认 active index version 未被旧 owner 改写、旧版本仍能检索、新 job 最终 success。
 
+Kafka 模式还需分别检查解析、Embedding、搜索投影 consumer group 的 lag、DLQ、receipt 与阶段更新时间。
+不得通过手工跳过中间阶段把任务标为成功；broker 恢复后由 PostgreSQL 中的任务版本和 lease/fencing
+继续推进，Kafka offset 不作为业务完成事实。
+
 自动化 fault test `TestKnowledgeChunksRollbackBeforeActivationKeepsOldVersion` 在 chunks 写入后、激活前
 注入错误，验证新版本 chunks 回滚、旧 active version/status 不变，且 running job 可继续由租约机制处理。
 

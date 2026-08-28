@@ -1,13 +1,13 @@
 # 未完成事项与生产风险
 
-> 更新日期：2026-08-25
+> 更新日期：2026-08-28
 > 本文只记录真实缺口和不能对外承诺的事项。已实现能力见 `README.md`、`docs/BASELINE.md`、
 > `docs/SDD.md` 和 `docs/RAG.md`；发布门禁统一见 `docs/RELEASE_CHECKLIST.md`。
 
 ## P0：发布前必须关闭
 
 - 在目标部署环境运行完整非 AI、AI、研究、模板和活动验收；本地通过不能代替目标环境结果。
-- 用新 PostgreSQL 空库验证迁移版本 40、63 张 public 表、全部迁移、FORCE RLS、低权限 `cortex_app`、ready、注册和登录。
+- 用新 PostgreSQL 空库验证迁移版本 41、63 张 public 表、全部迁移、FORCE RLS、低权限 `cortex_app`、ready、注册和登录。
 - 为迁移 `000035_knowledge_index_progress` 与 `000036_knowledge_clarifications` 补目标数据库验收：
   多 worker 竞争、租约过期接管、进度不倒退，以及澄清正常/重复/过期/跨租户恢复。
 - 确认联合备份与隔离恢复报告仍适用于当前 schema 和数据卷布局；过期时重新演练。
@@ -32,7 +32,7 @@
 
 - Step-back、HyDE、三级分块和 Auto-merging 只允许在冻结集进行离线消融；没有可解释增益时保持现有
   child 召回、parent 聚合和查询改写，不替换线上数据模型。
-- PDF、Word、Excel 摄取尚未实现。若未来纳入，必须同时设计隔离解析 worker、文件/页数/解压比/超时
+- Excel 与演示文稿摄取尚未实现。若未来纳入，必须沿用隔离解析 worker、文件/页数/解压比/超时
   限制、表格与页码溯源、解析器/chunker 版本和配额回滚，不能只开放扩展名。
 - 团队知识库、云盘同步、计费、桌面组件以及数据库与 Markdown 双向同步不在当前产品范围。
 - Excel 与演示文稿的知识库摄取尚未实现。PDF、DOC/DOCX、PNG/JPG/WebP 已通过隔离解析/OCR 服务接入；页码当前作为生成的 Markdown 分节保留，结构化页码引用字段仍属于后续增强。
@@ -48,3 +48,7 @@
 
 - 2026-08-25：外部基础设施 worker 已迁入 `backend/internal/workers` 并由唯一的 `cmd/server` 托管；
   镜像与 Compose 已停止构建和部署四个额外 worker 二进制。生产环境门禁仍按上方 P0/P1 独立验收。
+- 2026-08-27：迁移 `000041_kafka_knowledge_pipeline` 已把知识摄取拆为解析、Embedding、搜索投影
+  三个 Kafka 阶段；阶段进度、租约、重试和最终状态继续以 PostgreSQL 为准。
+- 2026-08-28：HTTP handler 到 `application` 用例服务的边界已覆盖认证、租户、笔记、附件、AI、
+  报告、知识库、研究、模板、活动等现有领域，并由架构测试约束依赖方向。

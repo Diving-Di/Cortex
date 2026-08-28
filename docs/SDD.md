@@ -8,7 +8,7 @@ Cortex 是个人记录与回顾工作台，提供笔记、日报/周报/月报�
 
 知识库以个人知识库 v2 为当前主线：
 
-- 用户上传单个 `.md` 或 Markdown `.zip`，可创建知识集合、开启个人笔记入库，并进行
+- 用户上传 `.md`、Markdown `.zip`、PDF、DOC/DOCX 或 PNG/JPG/WebP，经过安全解析/OCR 后可创建知识集合、开启个人笔记入库，并进行
   带来源保存的混合问答；每租户容量上限 3 GiB。
 - 数据由迁移 `000017_personal_knowledge_v2` 的 `knowledge_*` 表承载，并启用 RLS。
 - `/knowledge` 是知识库入口；`/recipes` 与 `/assistant` 已重定向到 `/knowledge`。
@@ -49,7 +49,7 @@ PostgreSQL 是个人笔记正文的唯一权威来源。Markdown 只用于笔记
 
 ```mermaid
 flowchart LR
-    UPLOAD["上传 .md / .zip"] --> PREPARE["安全校验与落盘"]
+    UPLOAD["上传 Markdown / PDF / Word / 图片"] --> PREPARE["安全校验、私有落盘与隔离解析"]
     PREPARE --> DB[("knowledge_* 表<br/>RLS 隔离")]
     NOTES["个人笔记知识开关"] --> DB
     DB --> OUTBOX["Transactional Outbox"]
@@ -91,9 +91,12 @@ flowchart LR
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/api/v1/knowledge/uploads` | 上传 `.md` / `.zip`，安全落盘后返回 202 |
+| `POST` | `/api/v1/knowledge/uploads` | 上传 Markdown/ZIP、PDF、DOC/DOCX 或图片，安全落盘后返回 202 |
+| `GET` | `/api/v1/knowledge/uploads/{id}` | 查询上传与索引状态 |
 | `GET` | `/api/v1/knowledge/documents` | 列出当前租户文档与 3 GiB 配额 |
 | `DELETE` | `/api/v1/knowledge/documents/{id}` | 删除文档并使其退出检索 |
+| `GET` | `/api/v1/knowledge/documents/{id}/assets/{asset_id}` | 鉴权读取解析生成的文档资产 |
+| `POST` | `/api/v1/knowledge/documents/{id}/retry` | 重试失败的解析或索引任务 |
 | `GET` / `POST` | `/api/v1/knowledge/collections` | 查询或创建知识集合 |
 | `POST` | `/api/v1/knowledge/chat/stream` | 混合检索、精排并 SSE 回答 |
 | `PATCH` | `/api/v1/notes/{id}/knowledge` | 开启或关闭笔记知识索引 |
@@ -117,13 +120,14 @@ AI 未配置或不可用时，认证、笔记、搜索、附件、导出和知�
 问答返回稳定错误（`KNOWLEDGE_EMBEDDING_UNAVAILABLE` / `KNOWLEDGE_RERANK_UNAVAILABLE`）。
 后端只持有 LiteLLM 虚拟密钥；供应商真实 Key 不进入前端、业务数据库或日志。
 流式响应已经输出内容后不得从头重试。
-PDF、Word、Excel 不属于当前知识库摄取范围；不得仅通过放开文件扩展名接入。
+Excel 与演示文稿不属于当前知识库摄取范围；新增格式必须同时具备隔离解析、资源限制、来源定位、
+版本化任务和失败回滚，不能只放开扩展名。
 
 ## 8. 部署与验证
 
 Compose 下数据库、Redis、MinIO、Kafka/Redpanda、Elasticsearch、LiteLLM、Embedding 和 Reranker
 服务不暴露宿主机公共端口。`/healthz` 只反映 API 进程存活，`/readyz` 只验证 PostgreSQL；`/health/dependencies` 独立报告对象存储、Redis、搜索和 AI 能力，避免可选依赖故障摘除核心笔记流量。`CORTEX_RUNTIME_ROLE` 支持 `all`、`api`、`worker`，其中 API 角色不建立 migrator 管理连接。新实例由 `backend/db/schema.sql`
-基线加版本化迁移初始化（当前迁移版本 40，共 63 张 public 表）。
+基线加版本化迁移初始化（当前迁移版本 41，共 63 张 public 表）。
 
 ```powershell
 Set-Location backend
@@ -146,8 +150,9 @@ docker compose config --quiet
 
 知识库验收覆盖上传、索引、混合问答、跨租户隔离与 3 GiB 配额。
 
-规范要求 `backend/cmd/server/main.go` 为唯一后端入口；当前 Compose 仍启动同一镜像中的多个 `cmd/*`
-worker 二进制。该实现属于待收敛架构偏差，后续应迁入 server 管理的可配置 runner，不得继续扩散入口。
+`backend/cmd/server/main.go` 是唯一部署后端入口；Compose 使用同一 server 镜像的 `api` 与 `worker`
+运行角色，外部基础设施 worker 由 `backend/internal/workers` 受管运行。`cmd/migrate`、数据迁移和评测
+命令仅用于显式运维或离线验证，不是长期服务入口。
 
 ## 9. 模板广场与限量 AI 活动
 

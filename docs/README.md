@@ -1,6 +1,6 @@
 # Cortex 文档索引
 
-> 更新日期：2026-08-25  
+> 更新日期：2026-08-28
 > 维护原则：代码、数据库迁移与部署配置是实现事实；`AGENTS.md` 是不可削弱的工程约束；历史报告保留当时结论，不自动代表当前版本或生产环境。
 
 ## 当前基线与契约
@@ -41,7 +41,10 @@
 - `backend/cmd/server/main.go` 已是唯一部署后端入口；Outbox relay、知识索引、搜索投影和对象 GC
   均由 `backend/internal/workers` 在 server 进程内托管。`cmd/migrate`、`cmd/blob-migrate` 和评测命令
   仅用于显式运维或离线验证。
-- PDF、Word、Excel 摄取与断点续传仍属于规划能力，不能写入当前 API 或页面能力清单。
+- PDF、DOC/DOCX 与 PNG/JPG/WebP OCR 摄取已经接入隔离的 `document-parser`；Excel、演示文稿和
+  断点续传仍属于规划能力，不能写入当前 API 或页面能力清单。
+- 当前数据库迁移版本为 41；迁移 41 把知识摄取拆成解析、Embedding、搜索投影三个 Kafka 阶段，
+  不新增 public 表。历史报告中的迁移版本和表数只描述报告当时环境。
 
 ## 修改文档时的核对顺序
 

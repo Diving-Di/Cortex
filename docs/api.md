@@ -29,7 +29,8 @@ data: [DONE]
 | 方法 | 路径 | 认证 | 说明 |
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | 否 | 进程存活检查 |
-| `GET` | `/readyz` | 否 | PostgreSQL 与当前对象存储就绪检查；不依赖 AI、Kafka 或 Elasticsearch |
+| `GET` | `/readyz` | 否 | PostgreSQL 就绪检查；不依赖对象存储、Redis、AI、Kafka 或 Elasticsearch |
+| `GET` | `/health/dependencies` | 否 | 对象存储、Redis、搜索和 AI 等依赖的独立状态摘要；不作为核心 API 摘流依据 |
 | `GET` | `/metrics` | 否 | Prometheus 文本指标，不包含正文或身份信息 |
 | `POST` | `/api/v1/auth/register` | 否 | 注册账号并创建个人空间 |
 | `POST` | `/api/v1/auth/login` | 否 | 浏览器登录；设置 HttpOnly 会话 Cookie，只返回用户名 |
@@ -117,6 +118,10 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 | `GET /api/v1/knowledge/uploads/{id}` | 查询上传和索引状态 |
 | `GET /api/v1/knowledge/documents` | 列出当前租户文档、最新索引任务状态与 3 GiB 配额 |
 | `DELETE /api/v1/knowledge/documents/{id}` | 使文档立即退出检索并删除 |
+| `GET /api/v1/knowledge/documents/{id}/assets/{asset_id}` | 鉴权读取解析产生的文档图片资产 |
+| `POST /api/v1/knowledge/documents/{id}/retry` | 重试失败的解析或索引任务 |
+| `GET /api/v1/knowledge/collections` | 查询当前租户知识集合 |
+| `POST /api/v1/knowledge/collections` | 创建知识集合 |
 | `PATCH /api/v1/notes/{id}/knowledge` | 开启或关闭笔记知识索引 |
 | `POST /api/v1/knowledge/chat/stream` | 在服务端验证的范围内混合检索、精排并 SSE 回答 |
 | `POST /api/v1/knowledge/requests/{request_id}/feedback` | 对已保存的知识问答提交或更新质量反馈 |
@@ -282,8 +287,9 @@ PostgreSQL 使用启用 RLS 的库存槽位行和 `FOR UPDATE SKIP LOCKED` 并�
 每月 1,000 点。scheduler 预热 Redis 后才开放领取；未预热时领取 fail-closed。
 数据库字段 `reservation_ready` 记录本场预热状态；预热失败时活动详情返回 `paused`，恢复后由
 worker 分批构建版本化资格和点数投影、原子切换 active pointer 并自动置为就绪。Redis 不可用、Key
-缺失或版本切换时领取返回稳定 503（`AI_EVENT_UNAVAILABLE` / `AI_EVENT_BUSY`）；当前没有数据库资格
-回源。`remaining_slots_approx` 仅供展示，不能作为领取成功承诺。
+缺失或版本切换时，领取可进入带独立并发舱壁、短队列/事务超时和熔断器的 PostgreSQL fallback；
+fallback 预算耗尽返回稳定 503（`AI_EVENT_UNAVAILABLE` / `AI_EVENT_BUSY`）。`remaining_slots_approx`
+仅供展示，不能作为领取成功承诺。
 
 ## 内容导出
 
