@@ -5,13 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"cortex/backend/internal/apierror"
 	"cortex/backend/internal/domain"
 	"cortex/backend/internal/httpx"
-	"cortex/backend/internal/store"
 )
 
 type noteRequest struct {
@@ -34,7 +32,7 @@ func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	filter := store.NoteFilter{Page: page, PageSize: pageSize, Type: query.Get("type")}
+	filter := domain.NoteFilter{Page: page, PageSize: pageSize, Type: query.Get("type")}
 	if filter.Type != "" && !validNoteType(filter.Type) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
@@ -60,7 +58,7 @@ func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	items, total, err := s.store.ListNotes(r.Context(), principalFrom(r.Context()), filter)
+	items, total, err := s.notes.List(r.Context(), principalFrom(r.Context()), filter)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -87,11 +85,6 @@ func (s *Server) createNote(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	title := strings.TrimSpace(request.Title)
-	if title == "" {
-		httpx.WriteError(w, s.logger, apierror.New("TITLE_REQUIRED", "标题不能为空", 422))
-		return
-	}
 	noteDate, err := optionalDate(request.NoteDate)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -102,8 +95,8 @@ func (s *Server) createNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	noteDate = normalizePeriod(request.Type, noteDate)
-	note, err := s.store.CreateNote(r.Context(), principalFrom(r.Context()), store.NoteInput{
-		Type: request.Type, Title: title, Content: request.Content,
+	note, err := s.notes.Create(r.Context(), principalFrom(r.Context()), domain.NoteInput{
+		Type: request.Type, Title: request.Title, Content: request.Content,
 		NoteDate: noteDate, Summary: request.Summary,
 	})
 	if err != nil {
@@ -119,7 +112,7 @@ func (s *Server) getNote(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	note, err := s.store.GetNote(r.Context(), principalFrom(r.Context()), noteID)
+	note, err := s.notes.Get(r.Context(), principalFrom(r.Context()), noteID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -150,7 +143,7 @@ func (s *Server) updateNote(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, parseErr)
 		return
 	}
-	note, err := s.store.UpdateNote(r.Context(), principalFrom(r.Context()), noteID, patch)
+	note, err := s.notes.Update(r.Context(), principalFrom(r.Context()), noteID, patch)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -161,7 +154,7 @@ func (s *Server) updateNote(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
 	noteID, err := pathID(r, "noteID")
 	if err == nil {
-		err = s.store.DeleteNote(r.Context(), principalFrom(r.Context()), noteID)
+		err = s.notes.Delete(r.Context(), principalFrom(r.Context()), noteID)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -176,7 +169,7 @@ func (s *Server) listRevisions(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	revisions, err := s.store.ListRevisions(r.Context(), principalFrom(r.Context()), noteID)
+	revisions, err := s.notes.Revisions(r.Context(), principalFrom(r.Context()), noteID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -199,7 +192,7 @@ func (s *Server) restoreRevision(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	note, err := s.store.RestoreRevision(r.Context(), principalFrom(r.Context()), noteID, revisionID)
+	note, err := s.notes.Restore(r.Context(), principalFrom(r.Context()), noteID, revisionID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -207,8 +200,8 @@ func (s *Server) restoreRevision(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, note.Response())
 }
 
-func parsePatch(raw map[string]json.RawMessage) (store.NotePatch, error) {
-	var patch store.NotePatch
+func parsePatch(raw map[string]json.RawMessage) (domain.NotePatch, error) {
+	var patch domain.NotePatch
 	if value, ok := raw["title"]; ok {
 		var parsed string
 		if err := json.Unmarshal(value, &parsed); err != nil {

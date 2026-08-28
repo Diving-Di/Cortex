@@ -10,17 +10,8 @@ import (
 
 // ExportNote is the stable exchange representation used by Markdown export.
 // ExportNotes returns the tenant's active notes for Markdown exchange export.
-type ExportNote struct {
-	ID       int32
-	Type     string
-	Title    string
-	Content  string
-	NoteDate *string
-	Summary  *string
-}
-
-func (s *Store) ExportNotes(ctx context.Context, principal domain.Principal) ([]ExportNote, error) {
-	var result []ExportNote
+func (s *Store) ExportNotes(ctx context.Context, principal domain.Principal) ([]domain.ExportNote, error) {
+	var result []domain.ExportNote
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -32,7 +23,7 @@ func (s *Store) ExportNotes(ctx context.Context, principal domain.Principal) ([]
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var item ExportNote
+			var item domain.ExportNote
 			var noteDate *time.Time
 			if err := rows.Scan(
 				&item.ID, &item.Type, &item.Title, &item.Content, &noteDate, &item.Summary,

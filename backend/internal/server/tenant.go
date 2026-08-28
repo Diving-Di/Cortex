@@ -2,10 +2,7 @@ package server
 
 import (
 	"net/http"
-	"strings"
-	"time"
 
-	"cortex/backend/internal/apierror"
 	"cortex/backend/internal/httpx"
 )
 
@@ -14,7 +11,7 @@ type tenantUpdateRequest struct {
 }
 
 func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
-	value, err := s.store.GetTenant(r.Context(), principalFrom(r.Context()))
+	value, err := s.tenants.Get(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -28,12 +25,7 @@ func (s *Server) updateTenant(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	request.Name = strings.TrimSpace(request.Name)
-	if request.Name == "" {
-		httpx.WriteError(w, s.logger, apierror.New("TENANT_NAME_REQUIRED", "个人空间名称不能为空", 422))
-		return
-	}
-	value, err := s.store.UpdateTenant(r.Context(), principalFrom(r.Context()), request.Name)
+	value, err := s.tenants.Update(r.Context(), principalFrom(r.Context()), request.Name)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -42,20 +34,10 @@ func (s *Server) updateTenant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
-	p := principalFrom(r.Context())
-	ids, err := s.store.DeleteTenant(r.Context(), p)
+	err := s.tenants.Delete(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
-	}
-	if s.authRedis != nil {
-		_ = s.authRedis.Set(r.Context(), tenantAuthVersionKey(p.TenantID), "deleted", 24*time.Hour)
-		if p.AuthCacheKey != "" {
-			_ = s.authRedis.Delete(r.Context(), p.AuthCacheKey)
-		}
-		for _, id := range ids {
-			_ = s.redis.DeleteTemplateProjections(r.Context(), id.String())
-		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

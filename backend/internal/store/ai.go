@@ -2,33 +2,13 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"cortex/backend/internal/domain"
 	"github.com/jackc/pgx/v5"
 )
 
-type AIProvider struct {
-	ID           int32  `json:"id"`
-	DisplayName  string `json:"display_name"`
-	BaseURL      string `json:"base_url"`
-	DefaultModel string `json:"default_model"`
-	Capabilities string `json:"capabilities"`
-}
-
-type AIUsage struct {
-	RequestType    string
-	Model          string
-	InputTokens    int
-	OutputTokens   int
-	Duration       time.Duration
-	Status         string
-	ErrorCode      *string
-	ConversationID *int32
-}
-
-func (s *Store) UpsertAIProvider(ctx context.Context, principal domain.Principal, input AIProvider) (AIProvider, error) {
-	var result AIProvider
+func (s *Store) UpsertAIProvider(ctx context.Context, principal domain.Principal, input domain.AIProvider) (domain.AIProvider, error) {
+	var result domain.AIProvider
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -62,7 +42,7 @@ func (s *Store) UpsertAIProvider(ctx context.Context, principal domain.Principal
 	return result, err
 }
 
-func (s *Store) RecordAIUsage(ctx context.Context, principal domain.Principal, usage AIUsage) error {
+func (s *Store) RecordAIUsage(ctx context.Context, principal domain.Principal, usage domain.AIUsage) error {
 	return s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err

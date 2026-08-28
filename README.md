@@ -107,9 +107,12 @@ Browser
 │   ├── db/schema.sql            # 新实例初始化基线
 │   ├── internal/
 │   │   ├── ai/                  # 生成、Embedding 与 Rerank 客户端
+│   │   ├── application/         # 业务用例、编排及其所需端口
+│   │   ├── domain/              # 与传输和存储无关的领域模型
+│   │   ├── infrastructure/      # Redis 等外部能力的端口适配器
 │   │   ├── knowledge/           # 个人知识库上传、解析与切块
-│   │   ├── server/              # HTTP 契约和后台 worker
-│   │   └── store/               # SQL、事务与 RLS 数据访问
+│   │   ├── server/              # HTTP 契约和后台 worker 入口
+│   │   └── store/               # PostgreSQL 端口实现、事务与 RLS
 │   └── scripts/                 # 数据库初始化与验收脚本
 ├── frontend/src/
 │   ├── api/                     # API 请求封装

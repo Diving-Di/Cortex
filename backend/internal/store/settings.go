@@ -12,15 +12,8 @@ import (
 // UserPreferences holds user-level settings. Recipe-specific fields
 // (dietary restrictions and timezone) were removed together with the
 // recipe subsystem; only marketplace personalization remains.
-type UserPreferences struct {
-	TenantID                   string
-	UserID                     int32
-	Version                    int
-	MarketplacePersonalization bool
-}
-
-func (s *Store) GetUserPreferences(ctx context.Context, principal domain.Principal) (UserPreferences, error) {
-	p := UserPreferences{
+func (s *Store) GetUserPreferences(ctx context.Context, principal domain.Principal) (domain.UserPreferences, error) {
+	p := domain.UserPreferences{
 		TenantID:                   principal.TenantID.String(),
 		UserID:                     principal.UserID,
 		Version:                    0,
@@ -42,8 +35,8 @@ func (s *Store) GetUserPreferences(ctx context.Context, principal domain.Princip
 	return p, err
 }
 
-func (s *Store) UpdateUserPreferences(ctx context.Context, principal domain.Principal, personalization bool, version int) (UserPreferences, error) {
-	var p UserPreferences
+func (s *Store) UpdateUserPreferences(ctx context.Context, principal domain.Principal, personalization bool, version int) (domain.UserPreferences, error) {
+	var p domain.UserPreferences
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err

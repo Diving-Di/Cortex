@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"cortex/backend/internal/apierror"
+	aieventsapp "cortex/backend/internal/application/aievents"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/domain"
 	"cortex/backend/internal/httpx"
@@ -21,7 +22,7 @@ import (
 )
 
 func (s *Server) aiPointBalance(w http.ResponseWriter, r *http.Request) {
-	x, err := s.store.GetAIPointBalance(r.Context(), principalFrom(r.Context()))
+	x, err := s.aiEvents.Balance(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -33,11 +34,11 @@ func (s *Server) currentAIEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("RATE_LIMITED", "请求过于频繁", 429))
 		return
 	}
-	if err := s.store.EnsureDailyAIEvent(r.Context(), time.Now()); err != nil {
+	if err := s.aiEvents.Ensure(r.Context(), time.Now()); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	x, err := s.store.GetCurrentAIEvent(r.Context(), principalFrom(r.Context()))
+	x, err := s.aiEvents.Current(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -49,11 +50,11 @@ func (s *Server) aiEventPage(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("RATE_LIMITED", "请求过于频繁", 429))
 		return
 	}
-	if err := s.store.EnsureDailyAIEvent(r.Context(), time.Now()); err != nil {
+	if err := s.aiEvents.Ensure(r.Context(), time.Now()); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	x, err := s.store.GetAIEventPage(r.Context(), principalFrom(r.Context()))
+	x, err := s.aiEvents.Page(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -61,7 +62,7 @@ func (s *Server) aiEventPage(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, x)
 }
 func (s *Server) aiEventHistory(w http.ResponseWriter, r *http.Request) {
-	x, err := s.store.ListAIEventHistory(r.Context())
+	x, err := s.aiEvents.History(r.Context())
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -74,7 +75,7 @@ func (s *Server) getAIEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	x, err := s.store.GetAIEvent(r.Context(), principalFrom(r.Context()), id)
+	x, err := s.aiEvents.Event(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -173,7 +174,7 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if reserved == 2 {
 		aiEventClaimsDuplicate.Add(1)
-		x, e := s.store.GetMyAIEventClaim(r.Context(), principal, eventID)
+		x, e := s.aiEvents.MyClaim(r.Context(), principal, eventID)
 		if e != nil {
 			httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_ALREADY_CLAIMED", "本场活动已经领取", 409))
 			return
@@ -194,7 +195,7 @@ func (s *Server) claimAIEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("AI_EVENT_BUSY", "领取请求繁忙，请稍后重试", 503))
 		return
 	}
-	x, err := s.store.ClaimAIEventReserved(r.Context(), principal, eventID, requestID, version)
+	x, err := s.aiEvents.ClaimReserved(r.Context(), principal, eventID, requestID, version)
 	observeAIEventStage(&aiEventClaimDBNanos, &aiEventClaimDBCount, dbStarted)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -232,7 +233,7 @@ func (s *Server) claimAIEventFallback(w http.ResponseWriter, r *http.Request, pr
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 	defer cancel()
-	x, err := s.store.ClaimAIEventFallback(ctx, principal, eventID, requestID)
+	x, err := s.aiEvents.ClaimFallback(ctx, principal, eventID, requestID)
 	if err != nil {
 		var appErr *apierror.Error
 		business := errors.As(err, &appErr) && appErr.StatusCode == http.StatusConflict
@@ -266,7 +267,7 @@ func (s *Server) myAIEventClaim(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	x, err := s.store.GetMyAIEventClaim(r.Context(), principalFrom(r.Context()), eventID)
+	x, err := s.aiEvents.MyClaim(r.Context(), principalFrom(r.Context()), eventID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -279,7 +280,7 @@ func (s *Server) getAIEventClaim(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	x, err := s.store.GetAIEventClaim(r.Context(), principalFrom(r.Context()), id)
+	x, err := s.aiEvents.Claim(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -288,13 +289,14 @@ func (s *Server) getAIEventClaim(w http.ResponseWriter, r *http.Request) {
 }
 
 func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, logger *slog.Logger) {
+	events := aieventsapp.NewService(db)
 	coord, _ := rediscoord.New(cfg.RedisURL)
 	builder := &aiEventProjectionBuilder{redis: coord, batchSize: cfg.AIEventBuildBatchSize, lease: cfg.AIEventBuildLease}
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
-			if err := db.ReconcileAIEventClaimCounts(ctx); err != nil && ctx.Err() == nil {
+			if err := events.Reconcile(ctx); err != nil && ctx.Err() == nil {
 				logger.Error("reconcile AI event claimed slots", "error", err)
 			}
 			select {
@@ -309,13 +311,13 @@ func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, 
 		defer ticker.Stop()
 		var active *store.AIEventReservationState
 		for {
-			_ = db.EnsureDailyAIEvent(ctx, time.Now())
+			_ = events.Ensure(ctx, time.Now())
 			now := time.Now()
 			if active != nil && !now.Before(active.OpensAt) && now.Before(active.ClosesAt) && coord != nil {
 				stable := rediscoord.AIEventKeys(active.PublicID.String(), "")
 				if _, ok, err := coord.Get(ctx, stable.ActiveVersion); err == nil && ok {
 					aiEventProjectionBuildSkippedOpen.Add(1)
-					if err := db.SetAIEventReservationReady(ctx, active.PublicID, true); err != nil {
+					if err := events.SetReady(ctx, active.PublicID, true); err != nil {
 						logger.Error("update AI event reservation readiness", "error", err)
 					}
 					select {
@@ -326,7 +328,7 @@ func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, 
 					}
 				}
 			}
-			if state, err := db.GetAIEventReservationState(ctx); err == nil {
+			if state, err := events.Reservation(ctx); err == nil {
 				active = &state
 				ready := false
 				if coord != nil {
@@ -336,7 +338,7 @@ func RunAIEventWorkers(ctx context.Context, cfg config.Config, db *store.Store, 
 						ready = true
 					}
 				}
-				if err := db.SetAIEventReservationReady(ctx, state.PublicID, ready); err != nil {
+				if err := events.SetReady(ctx, state.PublicID, ready); err != nil {
 					logger.Error("update AI event reservation readiness", "error", err)
 				}
 			} else {

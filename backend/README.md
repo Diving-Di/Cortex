@@ -12,6 +12,17 @@ Cortex 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。Go module、
 - `/api/v1` 个人知识库上传、集合、文档与问答，以及 Prometheus 文本指标；
 - 并发安全的定时报表 scheduler。
 
+## 代码分层
+
+业务调用统一遵循 `server → application → domain/store ports → infrastructure`：
+
+- `internal/server` 负责 HTTP/SSE 契约、Principal 传递和进程探针；普通业务 handler 不得直接调用 Store。
+- `internal/application/<domain>` 定义窄 Repository 端口并编排认证、笔记、附件、知识库、研究、模板、活动和定时报告等用例。
+- `internal/domain` 保存跨传输与持久化边界的领域模型；`internal/store` 实现 PostgreSQL 事务、SQL 和 transaction-local RLS。
+- `internal/infrastructure` 保存 Redis 等外部端口适配器；对象存储、Kafka 和 Elasticsearch 仍通过各自抽象访问。
+
+`internal/application/architecture_test.go` 会阻止业务 handler 重新直连 Store，以及 application 反向依赖 HTTP server。`healthz`、`readyz` 和 Prometheus 数据库池指标属于进程基础设施探针，可直接读取连接状态，但不得承载租户业务逻辑。
+
 ## 本地验证
 
 ```powershell

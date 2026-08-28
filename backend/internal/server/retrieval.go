@@ -10,7 +10,7 @@ import (
 
 func (s *Server) searchKnowledge(ctx context.Context, p domain.Principal, query string, embedding []float32, collections []uuid.UUID, vectorLimit, titleLimit, keywordLimit, fusionLimit int) ([]store.KnowledgeCandidate, error) {
 	if s.cfg.RAGRetrievalBackend != "elasticsearch" {
-		return s.store.SearchKnowledge(ctx, p, query, embedding, s.cfg.EmbeddingModel, collections, vectorLimit, titleLimit, keywordLimit, fusionLimit)
+		return s.knowledgeService.Search(ctx, p, query, embedding, s.cfg.EmbeddingModel, collections, vectorLimit, titleLimit, keywordLimit, fusionLimit)
 	}
 	if s.search == nil {
 		return nil, apierror.New("KNOWLEDGE_RETRIEVAL_UNAVAILABLE", "知识检索暂不可用", 503)
@@ -23,7 +23,7 @@ func (s *Server) searchKnowledge(ctx context.Context, p domain.Principal, query 
 	for i, h := range hits {
 		ids[i] = store.CandidateIdentity{DocumentID: h.DocumentID, ParentID: h.ParentID, IndexVersion: h.IndexVersion}
 	}
-	valid, err := s.store.ValidateKnowledgeCandidateIdentities(ctx, p, ids)
+	valid, err := s.knowledgeService.ValidateCandidates(ctx, p, ids)
 	if err != nil {
 		return nil, err
 	}

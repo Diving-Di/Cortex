@@ -20,6 +20,8 @@ import (
 	"unicode/utf8"
 
 	"cortex/backend/internal/ai"
+	researchapp "cortex/backend/internal/application/research"
+	xhsapp "cortex/backend/internal/application/xhs"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/domain"
 	"cortex/backend/internal/research"
@@ -46,11 +48,26 @@ func RunResearchWorkers(ctx context.Context, cfg config.Config, database *store.
 	}
 	owner := "research-" + uuid.NewString()
 	for index := 0; index < max(1, cfg.ResearchWorkers); index++ {
-		go runResearchWorker(ctx, cfg, database, logger, owner)
+		go runResearchWorker(ctx, cfg, &researchWorkerServices{Service: researchapp.NewService(database), xhs: xhsapp.NewService(database)}, logger, owner)
 	}
 }
 
-func runResearchWorker(ctx context.Context, cfg config.Config, database *store.Store, logger *slog.Logger, owner string) {
+type researchWorkerServices struct {
+	*researchapp.Service
+	xhs *xhsapp.Service
+}
+
+func (s *researchWorkerServices) AcquireXHSAuthorizationLease(ctx context.Context, p domain.Principal, owner string, lease time.Duration) (bool, error) {
+	return s.xhs.AcquireXHSAuthorizationLease(ctx, p, owner, lease)
+}
+func (s *researchWorkerServices) ReleaseXHSAuthorizationLease(ctx context.Context, p domain.Principal, owner string) error {
+	return s.xhs.ReleaseXHSAuthorizationLease(ctx, p, owner)
+}
+func (s *researchWorkerServices) MarkXHSAuthorizationVerified(ctx context.Context, p domain.Principal, valid bool) error {
+	return s.xhs.MarkXHSAuthorizationVerified(ctx, p, valid)
+}
+
+func runResearchWorker(ctx context.Context, cfg config.Config, database *researchWorkerServices, logger *slog.Logger, owner string) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -69,7 +86,7 @@ func runResearchWorker(ctx context.Context, cfg config.Config, database *store.S
 	}
 }
 
-func processResearchJob(ctx context.Context, cfg config.Config, database *store.Store, logger *slog.Logger, job store.ResearchJob) {
+func processResearchJob(ctx context.Context, cfg config.Config, database *researchWorkerServices, logger *slog.Logger, job store.ResearchJob) {
 	principal := domain.Principal{UserID: job.UserID, TenantID: job.TenantID, TenantActive: true}
 	var payload researchPayload
 	if err := json.Unmarshal(job.QueryPayload, &payload); err != nil {
@@ -83,7 +100,7 @@ func processResearchJob(ctx context.Context, cfg config.Config, database *store.
 	}
 	var collector research.SourceCollector = httpCollector
 	if cfg.XHSAuthorizationEnabled && strings.TrimSpace(cfg.XHSSessionEncryptionKey) != "" {
-		_, session, sessionErr := loadXHSSession(ctx, cfg, database, principal)
+		_, session, sessionErr := loadXHSSession(ctx, cfg, database.xhs, principal)
 		if sessionErr == nil {
 			if session.FormatVersion < 2 {
 				_ = database.CompleteResearchJob(ctx, principal, job.ID, true, "XHS_REAUTH_REQUIRED")
@@ -359,7 +376,7 @@ func organizeResearch(ctx context.Context, cfg config.Config, principal domain.P
 }
 
 func saveResearchImage(
-	ctx context.Context, cfg config.Config, database *store.Store, principal domain.Principal,
+	ctx context.Context, cfg config.Config, database *researchWorkerServices, principal domain.Principal,
 	sourceID int64, position int, rawURL string,
 ) (string, error) {
 	parsed, err := url.Parse(rawURL)
@@ -503,7 +520,7 @@ func researchJitter(base time.Duration, jobID int64, position int) time.Duration
 }
 
 func deferRateLimitedResearch(
-	ctx context.Context, database *store.Store, principal domain.Principal, job store.ResearchJob, code string,
+	ctx context.Context, database *researchWorkerServices, principal domain.Principal, job store.ResearchJob, code string,
 ) {
 	if job.AttemptCount >= job.MaxAttempts {
 		_ = database.CompleteResearchJob(ctx, principal, job.ID, true, code)

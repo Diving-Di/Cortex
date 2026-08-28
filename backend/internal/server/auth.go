@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"cortex/backend/internal/apierror"
-	"cortex/backend/internal/auth"
+	authapp "cortex/backend/internal/application/auth"
 	"cortex/backend/internal/httpx"
 )
 
@@ -33,22 +33,11 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	request.Username = strings.TrimSpace(request.Username)
-	request.Email = strings.TrimSpace(request.Email)
-	if len(request.Username) < 6 {
-		httpx.JSON(w, http.StatusBadRequest, map[string]string{"detail": "用户名长度需至少 6 个字符"})
-		return
-	}
-	if len(request.Password) < 6 {
-		httpx.JSON(w, http.StatusBadRequest, map[string]string{"detail": "密码长度需至少 6 个字符"})
-		return
-	}
-	passwordHash, err := auth.HashPassword(request.Password)
-	if err != nil {
-		httpx.WriteError(w, s.logger, err)
-		return
-	}
-	if err := s.store.Register(r.Context(), request.Username, request.Email, passwordHash); err != nil {
+	if err := s.authService.Register(r.Context(), request.Username, request.Email, request.Password); err != nil {
+		if validationErr, ok := err.(*authapp.ValidationError); ok {
+			httpx.JSON(w, http.StatusBadRequest, map[string]string{"detail": validationErr.Message})
+			return
+		}
 		if appErr, ok := err.(*apierror.Error); ok && appErr.Code == "REGISTRATION_CONFLICT" {
 			httpx.JSON(w, http.StatusBadRequest, map[string]string{"detail": appErr.Message})
 			return
@@ -92,7 +81,7 @@ func (s *Server) authenticateCredentials(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, s.logger, err)
 		return "", "", false
 	}
-	token, username, err := s.store.Login(
+	token, username, err := s.authService.Login(
 		r.Context(), strings.TrimSpace(request.Username), request.Password, s.cfg.TokenTTL,
 	)
 	if err != nil {
@@ -123,7 +112,7 @@ func writeSessionResponse(w http.ResponseWriter, username string) {
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	p := principalFrom(r.Context())
-	if err := s.store.RevokeToken(r.Context(), p.TokenID); err != nil {
+	if err := s.authService.Revoke(r.Context(), p.TokenID); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}

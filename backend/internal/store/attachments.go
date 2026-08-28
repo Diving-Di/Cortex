@@ -3,48 +3,14 @@ package store
 import (
 	"context"
 	"errors"
-	"time"
 
 	"cortex/backend/internal/apierror"
 	"cortex/backend/internal/domain"
 	"github.com/jackc/pgx/v5"
 )
 
-type Attachment struct {
-	ID             int32     `json:"id"`
-	NoteID         int32     `json:"note_id"`
-	OriginalName   string    `json:"original_name"`
-	StoredPath     string    `json:"-"`
-	StorageBackend string    `json:"-"`
-	ObjectKey      string    `json:"-"`
-	ObjectVersion  string    `json:"-"`
-	ETag           string    `json:"-"`
-	MIMEType       string    `json:"mime_type"`
-	Size           int64     `json:"size"`
-	SHA256         string    `json:"sha256"`
-	CreatedAt      time.Time `json:"-"`
-}
-
-type AttachmentResponse struct {
-	ID           int32  `json:"id"`
-	NoteID       int32  `json:"note_id"`
-	OriginalName string `json:"original_name"`
-	MIMEType     string `json:"mime_type"`
-	Size         int64  `json:"size"`
-	SHA256       string `json:"sha256"`
-	CreatedAt    string `json:"created_at"`
-}
-
-func (a Attachment) Response() AttachmentResponse {
-	return AttachmentResponse{
-		ID: a.ID, NoteID: a.NoteID, OriginalName: a.OriginalName,
-		MIMEType: a.MIMEType, Size: a.Size, SHA256: a.SHA256,
-		CreatedAt: a.CreatedAt.Format(time.RFC3339Nano),
-	}
-}
-
-func (s *Store) AddAttachment(ctx context.Context, principal domain.Principal, item Attachment) (Attachment, error) {
-	var result Attachment
+func (s *Store) AddAttachment(ctx context.Context, principal domain.Principal, item domain.Attachment) (domain.Attachment, error) {
+	var result domain.Attachment
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -77,8 +43,8 @@ func (s *Store) AddAttachment(ctx context.Context, principal domain.Principal, i
 	return result, err
 }
 
-func (s *Store) GetAttachment(ctx context.Context, principal domain.Principal, attachmentID int32) (Attachment, error) {
-	var result Attachment
+func (s *Store) GetAttachment(ctx context.Context, principal domain.Principal, attachmentID int32) (domain.Attachment, error) {
+	var result domain.Attachment
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -90,8 +56,8 @@ func (s *Store) GetAttachment(ctx context.Context, principal domain.Principal, a
 	return result, err
 }
 
-func (s *Store) ListAttachments(ctx context.Context, principal domain.Principal, noteID int32) ([]Attachment, error) {
-	var result []Attachment
+func (s *Store) ListAttachments(ctx context.Context, principal domain.Principal, noteID int32) ([]domain.Attachment, error) {
+	var result []domain.Attachment
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -106,7 +72,7 @@ func (s *Store) ListAttachments(ctx context.Context, principal domain.Principal,
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var item Attachment
+			var item domain.Attachment
 			if err := rows.Scan(
 				&item.ID, &item.NoteID, &item.OriginalName, &item.StoredPath,
 				&item.StorageBackend, &item.ObjectKey, &item.ObjectVersion, &item.ETag,
@@ -139,8 +105,8 @@ func (s *Store) DeleteAttachment(ctx context.Context, principal domain.Principal
 	})
 }
 
-func getAttachmentTx(ctx context.Context, tx pgx.Tx, principal domain.Principal, attachmentID int32) (Attachment, error) {
-	var item Attachment
+func getAttachmentTx(ctx context.Context, tx pgx.Tx, principal domain.Principal, attachmentID int32) (domain.Attachment, error) {
+	var item domain.Attachment
 	err := tx.QueryRow(ctx, `SELECT id,note_id,original_name,stored_path,storage_backend,coalesce(object_key,''),coalesce(object_version,''),coalesce(etag,''),mime_type,size,sha256,created_at
 		FROM attachments WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`, principal.TenantID, attachmentID,
 	).Scan(

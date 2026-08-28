@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"cortex/backend/internal/apierror"
+	reportsapp "cortex/backend/internal/application/reports"
+	scheduledapp "cortex/backend/internal/application/scheduled"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/domain"
 	"cortex/backend/internal/httpx"
@@ -34,7 +36,8 @@ func RunScheduler(
 	if !cfg.ScheduledReportsEnabled {
 		return
 	}
-	worker := &Server{cfg: cfg, store: database, logger: logger, version: "scheduler"}
+	worker := &Server{cfg: cfg, store: database, logger: logger, version: "scheduler",
+		scheduled: scheduledapp.NewService(database), reports: reportsapp.NewService(database)}
 	owner := uuid.New()
 	ticker := time.NewTicker(cfg.ScheduledReportPoll)
 	defer ticker.Stop()
@@ -51,7 +54,7 @@ func RunScheduler(
 }
 
 func (s *Server) pollScheduledReports(ctx context.Context, owner uuid.UUID) error {
-	claimed, err := s.store.ClaimDueScheduledTasks(ctx, owner, 10, 5*time.Minute)
+	claimed, err := s.scheduled.Claim(ctx, owner, 10, 5*time.Minute)
 	if err != nil {
 		return err
 	}
@@ -65,7 +68,7 @@ func (s *Server) pollScheduledReports(ctx context.Context, owner uuid.UUID) erro
 }
 
 func (s *Server) listScheduledReports(w http.ResponseWriter, r *http.Request) {
-	result, err := s.store.ListScheduledTasks(r.Context(), principalFrom(r.Context()))
+	result, err := s.scheduled.List(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -94,7 +97,7 @@ func (s *Server) createScheduledReport(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	result, err := s.store.CreateScheduledTask(
+	result, err := s.scheduled.Create(
 		r.Context(), principalFrom(r.Context()), request.ReportType,
 		request.Hour, request.Minute, request.Timezone, next,
 	)
@@ -116,7 +119,7 @@ func (s *Server) setScheduledReportStatus(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	task, err := s.store.GetScheduledTask(r.Context(), principalFrom(r.Context()), taskID)
+	task, err := s.scheduled.Get(r.Context(), principalFrom(r.Context()), taskID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -126,7 +129,7 @@ func (s *Server) setScheduledReportStatus(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	result, err := s.store.SetScheduledTaskStatus(r.Context(), principalFrom(r.Context()), taskID, enabled, next)
+	result, err := s.scheduled.SetStatus(r.Context(), principalFrom(r.Context()), taskID, enabled, next)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -141,12 +144,12 @@ func (s *Server) retryScheduledReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := principalFrom(r.Context())
-	if _, err := s.store.GetScheduledTask(r.Context(), principal, taskID); err != nil {
+	if _, err := s.scheduled.Get(r.Context(), principal, taskID); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	owner := uuid.New()
-	if err := s.store.AcquireScheduledTaskLease(r.Context(), principal, taskID, owner, 5*time.Minute); err != nil {
+	if err := s.scheduled.Acquire(r.Context(), principal, taskID, owner, 5*time.Minute); err != nil {
 		httpx.WriteError(w, s.logger, apierror.New("SCHEDULED_REPORT_BUSY", "定时报告正在执行", 409))
 		return
 	}
@@ -160,7 +163,7 @@ func (s *Server) listScheduledReportRuns(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	result, err := s.store.ListScheduledRuns(r.Context(), principalFrom(r.Context()), taskID)
+	result, err := s.scheduled.Runs(r.Context(), principalFrom(r.Context()), taskID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -172,12 +175,12 @@ func (s *Server) listScheduledReportRuns(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) executeScheduledReport(ctx context.Context, principal domain.Principal, taskID int32, trigger string, owner uuid.UUID) {
-	task, err := s.store.GetScheduledTask(ctx, principal, taskID)
+	task, err := s.scheduled.Get(ctx, principal, taskID)
 	if err != nil {
 		s.logger.Error("load scheduled report", "error", err)
 		return
 	}
-	runID, err := s.store.StartScheduledRun(ctx, principal, taskID, trigger, owner)
+	runID, err := s.scheduled.Start(ctx, principal, taskID, trigger, owner)
 	if err != nil {
 		s.logger.Error("start scheduled report", "error", err)
 		return
@@ -192,7 +195,7 @@ func (s *Server) executeScheduledReport(ctx context.Context, principal domain.Pr
 			case <-leaseCtx.Done():
 				return
 			case <-ticker.C:
-				ok, renewErr := s.store.RenewScheduledTaskLease(leaseCtx, principal, taskID, owner, 5*time.Minute)
+				ok, renewErr := s.scheduled.Renew(leaseCtx, principal, taskID, owner, 5*time.Minute)
 				if renewErr != nil || !ok {
 					if renewErr == nil || errors.Is(renewErr, store.ErrScheduledLeaseLost) {
 						scheduledReportLeaseLost.Add(1)
@@ -207,7 +210,7 @@ func (s *Server) executeScheduledReport(ctx context.Context, principal domain.Pr
 	runErr := zoneErr
 	if runErr == nil {
 		anchor := time.Now().In(zone)
-		_, _, sources, sourceErr := s.store.ReportSources(ctx, principal, task.ReportType, anchor)
+		_, _, sources, sourceErr := s.reports.Sources(ctx, principal, task.ReportType, anchor)
 		runErr = sourceErr
 		if runErr == nil && len(sources) == 0 {
 			runErr = apierror.New("REPORT_NO_SOURCES", "所选周期没有来源笔记", 422)
@@ -235,7 +238,7 @@ func (s *Server) executeScheduledReport(ctx context.Context, principal domain.Pr
 				}
 			}
 			if runErr == nil {
-				result, confirmErr := s.store.ConfirmReport(
+				result, confirmErr := s.reports.Confirm(
 					ctx, principal, task.ReportType, anchor,
 					fmt.Sprintf("%s %s 报告", periodRangeForTitle(task.ReportType, anchor), task.ReportType),
 					content.String(), sourceIDs(sources), true, &owner, taskID,
@@ -255,7 +258,7 @@ func (s *Server) executeScheduledReport(ctx context.Context, principal domain.Pr
 	if runErr != nil {
 		scheduledReportRunsFailed.Add(1)
 	}
-	if finishErr := s.store.FinishScheduledRun(ctx, principal, task, runID, reportNoteID, runErr, next, owner); finishErr != nil {
+	if finishErr := s.scheduled.Finish(ctx, principal, task, runID, reportNoteID, runErr, next, owner); finishErr != nil {
 		if errors.Is(finishErr, store.ErrScheduledLeaseLost) {
 			scheduledReportLeaseLost.Add(1)
 		}

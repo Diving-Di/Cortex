@@ -8,17 +8,19 @@ import (
 	"strings"
 	"time"
 
+	marketplaceapp "cortex/backend/internal/application/marketplace"
 	"cortex/backend/internal/rediscoord"
 	"cortex/backend/internal/store"
 	"github.com/google/uuid"
 )
 
 func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoord.Client, logger *slog.Logger) {
+	service := marketplaceapp.NewService(db)
 	if redis == nil {
 		return
 	}
 	rebuiltAt := time.Now()
-	if rows, err := db.ListTemplateRankingProjections(ctx); err != nil {
+	if rows, err := service.Rankings(ctx); err != nil {
 		logger.Error("read template ranking projections", "error", err)
 	} else {
 		items := make([]rediscoord.RankingProjection, 0, len(rows))
@@ -27,7 +29,7 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 		}
 		if err := redis.RebuildTemplateRankings(ctx, items); err != nil {
 			logger.Error("rebuild template rankings", "error", err)
-		} else if err := db.MarkTemplateOutboxRebuilt(ctx, rebuiltAt); err != nil {
+		} else if err := service.MarkRebuilt(ctx, rebuiltAt); err != nil {
 			logger.Error("mark rebuilt template outbox", "error", err)
 		}
 	}
@@ -42,7 +44,7 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 				return
 			case <-ticker.C:
 			}
-			event, err := db.ClaimOutboxEvent(ctx, "template", owner, lease)
+			event, err := service.ClaimEvent(ctx, "template", owner, lease)
 			if err != nil {
 				logger.Error("claim marketplace outbox", "error", err)
 				continue
@@ -60,7 +62,7 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 					case <-leaseCtx.Done():
 						return
 					case <-ticker.C:
-						ok, renewErr := db.RenewOutboxEventLease(leaseCtx, id, owner, lease)
+						ok, renewErr := service.RenewEvent(leaseCtx, id, owner, lease)
 						if renewErr != nil || !ok {
 							templateOutboxLeaseLost.Add(1)
 							select {
@@ -82,7 +84,7 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 				}{Delta: 1}
 				_ = json.Unmarshal(event.Payload, &payload)
 				_ = redis.Delete(ctx, "cortex:tpl:detail:"+event.AggregateID)
-				projection, projectionErr := db.GetTemplateEventProjection(ctx, event.AggregateID)
+				projection, projectionErr := service.Projection(ctx, event.AggregateID)
 				if projectionErr != nil {
 					err = projectionErr
 				} else if !projection.Published {
@@ -97,7 +99,7 @@ func RunMarketplaceWorker(ctx context.Context, db *store.Store, redis *rediscoor
 				err = errors.New("outbox lease lost")
 			default:
 			}
-			if finishErr := db.FinishOutboxEvent(ctx, event.ID, owner, err); finishErr != nil {
+			if finishErr := service.FinishEvent(ctx, event.ID, owner, err); finishErr != nil {
 				if strings.Contains(finishErr.Error(), "lease lost") {
 					templateOutboxFinishFenced.Add(1)
 				}

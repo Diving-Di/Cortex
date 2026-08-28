@@ -66,7 +66,7 @@ type templateRequest struct {
 }
 
 func (s *Server) getPublicProfile(w http.ResponseWriter, r *http.Request) {
-	x, err := s.store.GetPublicProfile(r.Context(), principalFrom(r.Context()))
+	x, err := s.marketplace.Profile(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -79,7 +79,7 @@ func (s *Server) upsertPublicProfile(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	x, err := s.store.UpsertPublicProfile(r.Context(), principalFrom(r.Context()), q.Nickname, q.Discoverable, q.ExpectedVersion)
+	x, err := s.marketplace.SaveProfile(r.Context(), principalFrom(r.Context()), q.Nickname, q.Discoverable, q.ExpectedVersion)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -90,7 +90,7 @@ func templateInput(q templateRequest) store.TemplateInput {
 	return store.TemplateInput{Title: q.Title, Description: q.Description, ContentMarkdown: q.ContentMarkdown, Category: q.Category}
 }
 func (s *Server) listMyTemplates(w http.ResponseWriter, r *http.Request) {
-	x, err := s.store.ListWritingTemplates(r.Context(), principalFrom(r.Context()))
+	x, err := s.marketplace.Writing(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -103,7 +103,7 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	x, err := s.store.CreateWritingTemplate(r.Context(), principalFrom(r.Context()), templateInput(q))
+	x, err := s.marketplace.CreateWriting(r.Context(), principalFrom(r.Context()), templateInput(q))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -130,7 +130,7 @@ func (s *Server) getTemplate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	x, err := s.store.GetWritingTemplate(r.Context(), principalFrom(r.Context()), id)
+	x, err := s.marketplace.WritingByID(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -152,7 +152,7 @@ func (s *Server) updateTemplate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	x, err := s.store.UpdateWritingTemplate(r.Context(), principalFrom(r.Context()), id, templateInput(q), *q.ExpectedVersion)
+	x, err := s.marketplace.UpdateWriting(r.Context(), principalFrom(r.Context()), id, templateInput(q), *q.ExpectedVersion)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -162,7 +162,7 @@ func (s *Server) updateTemplate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteTemplate(w http.ResponseWriter, r *http.Request) {
 	id, err := templatePathID(r)
 	if err == nil {
-		err = s.store.DeleteWritingTemplate(r.Context(), principalFrom(r.Context()), id)
+		err = s.marketplace.DeleteWriting(r.Context(), principalFrom(r.Context()), id)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -180,7 +180,7 @@ func (s *Server) publishTemplate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	x, err := s.store.PublishWritingTemplate(r.Context(), principalFrom(r.Context()), id)
+	x, err := s.marketplace.Publish(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -190,7 +190,7 @@ func (s *Server) publishTemplate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) withdrawTemplate(w http.ResponseWriter, r *http.Request) {
 	id, err := templatePathID(r)
 	if err == nil {
-		err = s.store.WithdrawWritingTemplate(r.Context(), principalFrom(r.Context()), id)
+		err = s.marketplace.Withdraw(r.Context(), principalFrom(r.Context()), id)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -244,7 +244,7 @@ func (s *Server) listPublicTemplates(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 				}
-				if fetched, e := s.store.GetPublicTemplatesByIDs(r.Context(), principalFrom(r.Context()), ids); e == nil {
+				if fetched, e := s.marketplace.PublicByIDs(r.Context(), principalFrom(r.Context()), ids); e == nil {
 					byID := map[uuid.UUID]store.PublicTemplate{}
 					for _, item := range fetched {
 						byID[item.PublicID] = item
@@ -261,7 +261,7 @@ func (s *Server) listPublicTemplates(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !usedRedis {
-		x, scores, err = s.store.ListPublicTemplates(r.Context(), principalFrom(r.Context()), r.URL.Query().Get("query"), r.URL.Query().Get("category"), ranking, limit+1, afterScore, afterID)
+		x, scores, err = s.marketplace.Public(r.Context(), principalFrom(r.Context()), r.URL.Query().Get("query"), r.URL.Query().Get("category"), ranking, limit+1, afterScore, afterID)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -289,7 +289,7 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 	if s.redis != nil {
 		if encoded, ok, cacheErr := s.redis.Get(r.Context(), cacheKey); cacheErr == nil && ok {
 			if encoded == "__missing__" {
-				if _, versionErr := s.store.GetPublicTemplateVersion(r.Context(), principal, id); versionErr != nil {
+				if _, versionErr := s.marketplace.PublicVersion(r.Context(), principal, id); versionErr != nil {
 					httpx.WriteError(w, s.logger, versionErr)
 					return
 				}
@@ -297,7 +297,7 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 				_ = s.redis.Delete(r.Context(), cacheKey)
 			}
 			if json.Unmarshal([]byte(encoded), &x) == nil {
-				if currentVersion, versionErr := s.store.GetPublicTemplateVersion(r.Context(), principal, id); versionErr == nil && currentVersion == x.Version {
+				if currentVersion, versionErr := s.marketplace.PublicVersion(r.Context(), principal, id); versionErr == nil && currentVersion == x.Version {
 					cacheHit = true
 					templateCacheHits.Add(1)
 				} else if versionErr != nil {
@@ -313,7 +313,7 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !cacheHit && err == nil {
-		x, err = s.store.GetPublicTemplate(r.Context(), principal, id)
+		x, err = s.marketplace.PublicByID(r.Context(), principal, id)
 		if err == nil && s.redis != nil {
 			cached := x
 			cached.Liked = false
@@ -332,7 +332,7 @@ func (s *Server) getPublicTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if cacheHit {
-		x.Liked, x.Favorited, err = s.store.GetTemplateReactions(r.Context(), principal, id)
+		x.Liked, x.Favorited, err = s.marketplace.Reactions(r.Context(), principal, id)
 		if err != nil {
 			httpx.WriteError(w, s.logger, err)
 			return
@@ -377,7 +377,7 @@ func (s *Server) templateReaction(w http.ResponseWriter, r *http.Request, kind s
 	}
 	id, err := publicTemplatePathID(r)
 	if err == nil {
-		err = s.store.SetTemplateReaction(r.Context(), principalFrom(r.Context()), id, kind, enabled)
+		err = s.marketplace.SetReaction(r.Context(), principalFrom(r.Context()), id, kind, enabled)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -408,7 +408,7 @@ func (s *Server) useTemplate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	noteID, err := s.store.UsePublicTemplate(r.Context(), principalFrom(r.Context()), id, r.Header.Get("Idempotency-Key"))
+	noteID, err := s.marketplace.UsePublic(r.Context(), principalFrom(r.Context()), id, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -422,7 +422,7 @@ func (s *Server) usePrivateTemplate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	noteID, err := s.store.UseWritingTemplate(r.Context(), principalFrom(r.Context()), id, r.Header.Get("Idempotency-Key"))
+	noteID, err := s.marketplace.UseWriting(r.Context(), principalFrom(r.Context()), id, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -440,7 +440,7 @@ func (s *Server) viewTemplate(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		err = s.store.RecordTemplateView(r.Context(), principalFrom(r.Context()), id)
+		err = s.marketplace.View(r.Context(), principalFrom(r.Context()), id)
 	} else if err == nil {
 		w.WriteHeader(http.StatusNoContent)
 		return

@@ -99,7 +99,7 @@ func (s *Server) uploadKnowledge(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_STORAGE_UNAVAILABLE", "知识文件存储暂不可用", 503))
 		return
 	}
-	created, err := s.store.CreateKnowledgeUpload(r.Context(), p, uploadID, strings.TrimSpace(r.Header.Get("Idempotency-Key")), header.Filename, finalRel, s.cfg.StorageBackend, prepared)
+	created, err := s.knowledgeService.CreateUpload(r.Context(), p, uploadID, strings.TrimSpace(r.Header.Get("Idempotency-Key")), header.Filename, finalRel, s.cfg.StorageBackend, prepared)
 	if err != nil {
 		for _, key := range uploaded {
 			_ = s.blobs.Delete(r.Context(), key)
@@ -121,7 +121,7 @@ func (s *Server) getKnowledgeUpload(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_SCOPE_NOT_FOUND", "知识库资源不存在", 404))
 		return
 	}
-	value, err := s.store.GetKnowledgeUpload(r.Context(), principalFrom(r.Context()), id)
+	value, err := s.knowledgeService.Upload(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -135,7 +135,7 @@ func (s *Server) downloadKnowledgeAsset(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_SCOPE_NOT_FOUND", "知识库资源不存在", 404))
 		return
 	}
-	asset, err := s.store.GetKnowledgeAsset(r.Context(), principalFrom(r.Context()), documentID, assetID)
+	asset, err := s.knowledgeService.Asset(r.Context(), principalFrom(r.Context()), documentID, assetID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -163,14 +163,14 @@ func (s *Server) retryKnowledgeDocument(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_SCOPE_NOT_FOUND", "知识库资源不存在", 404))
 		return
 	}
-	if err := s.store.RetryKnowledgeDocument(r.Context(), principalFrom(r.Context()), id); err != nil {
+	if err := s.knowledgeService.Retry(r.Context(), principalFrom(r.Context()), id); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	httpx.JSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
 func (s *Server) listKnowledgeCollections(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.ListKnowledgeCollections(r.Context(), principalFrom(r.Context()))
+	items, err := s.knowledgeService.Collections(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -191,7 +191,7 @@ func (s *Server) createKnowledgeCollection(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	item, err := s.store.CreateKnowledgeCollection(r.Context(), principalFrom(r.Context()), req.Name, req.Description)
+	item, err := s.knowledgeService.CreateCollection(r.Context(), principalFrom(r.Context()), req.Name, req.Description)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -199,7 +199,7 @@ func (s *Server) createKnowledgeCollection(w http.ResponseWriter, r *http.Reques
 	httpx.JSON(w, 201, item)
 }
 func (s *Server) listKnowledgeDocuments(w http.ResponseWriter, r *http.Request) {
-	items, used, reserved, err := s.store.ListKnowledgeDocuments(r.Context(), principalFrom(r.Context()))
+	items, used, reserved, err := s.knowledgeService.Documents(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -212,7 +212,7 @@ func (s *Server) deleteKnowledgeDocument(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_SCOPE_NOT_FOUND", "知识库资源不存在", 404))
 		return
 	}
-	_, _, err = s.store.DeleteKnowledgeDocument(r.Context(), principalFrom(r.Context()), id)
+	_, _, err = s.knowledgeService.DeleteDocument(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -233,7 +233,7 @@ func (s *Server) setNoteKnowledge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	noteID := int32(parsedNoteID)
-	if err := s.store.SetNoteKnowledge(r.Context(), principalFrom(r.Context()), noteID, req.Enabled); err != nil {
+	if err := s.knowledgeService.SetNote(r.Context(), principalFrom(r.Context()), noteID, req.Enabled); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
@@ -263,7 +263,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, s.logger, apierror.Validation(nil))
 			return
 		}
-		pending, consumeErr := s.store.ConsumeKnowledgeClarification(r.Context(), p, clarificationID)
+		pending, consumeErr := s.knowledgeService.ConsumeClarification(r.Context(), p, clarificationID)
 		if consumeErr != nil {
 			httpx.WriteError(w, s.logger, consumeErr)
 			return
@@ -273,7 +273,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		req.CollectionIDs = pending.CollectionIDs
 		req.RequestID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(pending.OriginalRequestID)).String() + ":resume"
 		if pending.AlreadyResumed {
-			previous, found, replayErr := s.store.GetKnowledgeRequest(r.Context(), p, req.RequestID)
+			previous, found, replayErr := s.knowledgeService.Request(r.Context(), p, req.RequestID)
 			if replayErr != nil {
 				httpx.WriteError(w, s.logger, replayErr)
 				return
@@ -294,7 +294,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	if previous, found, err := s.store.GetKnowledgeRequest(r.Context(), p, req.RequestID); err != nil {
+	if previous, found, err := s.knowledgeService.Request(r.Context(), p, req.RequestID); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	} else if found {
@@ -303,7 +303,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ResumeClarificationID == "" {
 		resumeRequestID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(req.RequestID)).String() + ":resume"
-		if previous, found, err := s.store.GetKnowledgeRequest(r.Context(), p, resumeRequestID); err != nil {
+		if previous, found, err := s.knowledgeService.Request(r.Context(), p, resumeRequestID); err != nil {
 			httpx.WriteError(w, s.logger, err)
 			return
 		} else if found {
@@ -311,13 +311,13 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.store.ValidateKnowledgeCollections(r.Context(), p, req.CollectionIDs); err != nil {
+	if err := s.knowledgeService.ValidateCollections(r.Context(), p, req.CollectionIDs); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	conversationContext := ""
 	if req.ConversationID != nil {
-		history, err := s.store.LoadKnowledgeConversation(r.Context(), p, *req.ConversationID, 5)
+		history, err := s.knowledgeService.Conversation(r.Context(), p, *req.ConversationID, 5)
 		if err != nil {
 			httpx.WriteError(w, s.logger, err)
 			return
@@ -429,7 +429,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		knowledgeNoEvidence.Add(1)
 		decision := decideWeakKnowledgeEvidence(req.Question, gate.MarginConflict)
 		if decision != knowledgeDecisionAbsent && req.ResumeClarificationID == "" {
-			pending, stateErr := s.store.CreateKnowledgeClarification(r.Context(), p, req.ConversationID, req.RequestID, req.Question, req.CollectionIDs, string(decision), clarificationPrompt(decision), 15*time.Minute)
+			pending, stateErr := s.knowledgeService.CreateClarification(r.Context(), p, req.ConversationID, req.RequestID, req.Question, req.CollectionIDs, string(decision), clarificationPrompt(decision), 15*time.Minute)
 			if stateErr != nil {
 				httpx.WriteError(w, s.logger, stateErr)
 				return
@@ -461,7 +461,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeKnowledgeSSE(w, r, events, sources, progress, func(ctx context.Context, answer, status, errorCode, upstreamStage string, outputTokens int) (int32, int32, error) {
 		traceConfig := store.KnowledgeTraceConfig{EmbeddingModel: s.cfg.EmbeddingModel, RerankModel: s.cfg.RerankModel, GenerateModel: s.cfg.AIModel, VerifierModel: s.cfg.RAGVerifierModel, VectorTopK: s.cfg.RAGVectorTopK, TitleTopK: s.cfg.RAGTitleTopK, KeywordTopK: s.cfg.RAGKeywordTopK, FusionTopK: s.cfg.RAGFusionTopK, ContextTopK: s.cfg.RAGContextTopK}
-		return s.store.SaveKnowledgeAnswerOutcome(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, status, errorCode, upstreamStage, outputTokens, candidates, traceConfig)
+		return s.knowledgeService.SaveOutcome(ctx, p, req.ConversationID, req.RequestID, req.Question, answer, status, errorCode, upstreamStage, outputTokens, candidates, traceConfig)
 	})
 }
 
@@ -502,7 +502,7 @@ func (s *Server) createKnowledgeFeedback(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	item, err := s.store.CreateKnowledgeFeedback(r.Context(), principalFrom(r.Context()), requestID, req.Category, req.Comment)
+	item, err := s.knowledgeService.Feedback(r.Context(), principalFrom(r.Context()), requestID, req.Category, req.Comment)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -551,7 +551,7 @@ func (s *Server) promoteKnowledgeFeedback(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	item, err := s.store.PromoteKnowledgeFeedback(r.Context(), principalFrom(r.Context()), feedbackID, store.KnowledgeEvalPromotion{DatasetName: req.DatasetName, DatasetVersion: req.DatasetVersion, CaseID: req.CaseID, Query: req.Query, ExpectedAnswer: req.ExpectedAnswer, EvidenceHashes: req.EvidenceHashes, Tags: req.Tags, ReviewSummary: req.ReviewSummary})
+	item, err := s.knowledgeService.Promote(r.Context(), principalFrom(r.Context()), feedbackID, store.KnowledgeEvalPromotion{DatasetName: req.DatasetName, DatasetVersion: req.DatasetVersion, CaseID: req.CaseID, Query: req.Query, ExpectedAnswer: req.ExpectedAnswer, EvidenceHashes: req.EvidenceHashes, Tags: req.Tags, ReviewSummary: req.ReviewSummary})
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -565,7 +565,7 @@ func (s *Server) freezeKnowledgeEvalDataset(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_DATASET_NOT_FOUND", "评测集不存在", 404))
 		return
 	}
-	item, err := s.store.FreezeKnowledgeEvalDataset(r.Context(), principalFrom(r.Context()), id)
+	item, err := s.knowledgeService.Freeze(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return

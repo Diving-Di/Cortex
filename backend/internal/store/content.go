@@ -12,32 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type Tag struct {
-	ID    int32   `json:"id"`
-	Name  string  `json:"name"`
-	Color *string `json:"color"`
-}
-
-type SearchFilter struct {
-	Query     string
-	Type      string
-	StartDate *time.Time
-	EndDate   *time.Time
-	TagID     *int32
-	Limit     int
-}
-
-type SearchItem struct {
-	ID        int32   `json:"id"`
-	Title     string  `json:"title"`
-	Snippet   string  `json:"snippet"`
-	Type      string  `json:"type"`
-	NoteDate  *string `json:"note_date"`
-	UpdatedAt string  `json:"updated_at"`
-}
-
-func (s *Store) ListTags(ctx context.Context, principal domain.Principal) ([]Tag, error) {
-	var result []Tag
+func (s *Store) ListTags(ctx context.Context, principal domain.Principal) ([]domain.Tag, error) {
+	var result []domain.Tag
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -48,7 +24,7 @@ func (s *Store) ListTags(ctx context.Context, principal domain.Principal) ([]Tag
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var item Tag
+			var item domain.Tag
 			if err := rows.Scan(&item.ID, &item.Name, &item.Color); err != nil {
 				return err
 			}
@@ -59,8 +35,8 @@ func (s *Store) ListTags(ctx context.Context, principal domain.Principal) ([]Tag
 	return result, err
 }
 
-func (s *Store) CreateTag(ctx context.Context, principal domain.Principal, name string, color *string) (Tag, error) {
-	var result Tag
+func (s *Store) CreateTag(ctx context.Context, principal domain.Principal, name string, color *string) (domain.Tag, error) {
+	var result domain.Tag
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -75,8 +51,8 @@ func (s *Store) CreateTag(ctx context.Context, principal domain.Principal, name 
 	return result, err
 }
 
-func (s *Store) ListNoteTags(ctx context.Context, principal domain.Principal, noteID int32) ([]Tag, error) {
-	var result []Tag
+func (s *Store) ListNoteTags(ctx context.Context, principal domain.Principal, noteID int32) ([]domain.Tag, error) {
+	var result []domain.Tag
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -91,8 +67,8 @@ func (s *Store) ListNoteTags(ctx context.Context, principal domain.Principal, no
 	return result, err
 }
 
-func (s *Store) AssignNoteTags(ctx context.Context, principal domain.Principal, noteID int32, tagIDs []int32) ([]Tag, error) {
-	var result []Tag
+func (s *Store) AssignNoteTags(ctx context.Context, principal domain.Principal, noteID int32, tagIDs []int32) ([]domain.Tag, error) {
+	var result []domain.Tag
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -132,7 +108,7 @@ func (s *Store) AssignNoteTags(ctx context.Context, principal domain.Principal, 
 	return result, err
 }
 
-func listNoteTagsTx(ctx context.Context, tx pgx.Tx, principal domain.Principal, noteID int32) ([]Tag, error) {
+func listNoteTagsTx(ctx context.Context, tx pgx.Tx, principal domain.Principal, noteID int32) ([]domain.Tag, error) {
 	rows, err := tx.Query(ctx, `
         SELECT t.id,t.name,t.color FROM tags t
         JOIN note_tags nt ON nt.tag_id=t.id AND nt.tenant_id=t.tenant_id
@@ -142,9 +118,9 @@ func listNoteTagsTx(ctx context.Context, tx pgx.Tx, principal domain.Principal, 
 		return nil, err
 	}
 	defer rows.Close()
-	var result []Tag
+	var result []domain.Tag
 	for rows.Next() {
-		var item Tag
+		var item domain.Tag
 		if err := rows.Scan(&item.ID, &item.Name, &item.Color); err != nil {
 			return nil, err
 		}
@@ -153,8 +129,8 @@ func listNoteTagsTx(ctx context.Context, tx pgx.Tx, principal domain.Principal, 
 	return result, rows.Err()
 }
 
-func (s *Store) SearchNotes(ctx context.Context, principal domain.Principal, filter SearchFilter) ([]SearchItem, int64, error) {
-	var items []SearchItem
+func (s *Store) SearchNotes(ctx context.Context, principal domain.Principal, filter domain.SearchFilter) ([]domain.SearchItem, int64, error) {
+	var items []domain.SearchItem
 	var total int64
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
@@ -198,7 +174,7 @@ func (s *Store) SearchNotes(ctx context.Context, principal domain.Principal, fil
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var item SearchItem
+			var item domain.SearchItem
 			var content string
 			var summary *string
 			var noteDate *time.Time
@@ -235,15 +211,6 @@ func searchSnippet(source, query string) string {
 	byteStart := len([]rune(source[:min(start, len(source))]))
 	end := min(byteStart+160, len(runes))
 	return string(runes[byteStart:end])
-}
-
-type DashboardRecent struct {
-	ID        int32   `json:"id"`
-	Title     string  `json:"title"`
-	Type      string  `json:"type"`
-	NoteDate  *string `json:"note_date"`
-	UpdatedAt string  `json:"updated_at"`
-	Summary   *string `json:"summary"`
 }
 
 func (s *Store) Dashboard(ctx context.Context, principal domain.Principal, timezoneName string) (map[string]any, error) {
@@ -300,16 +267,16 @@ func (s *Store) Dashboard(ctx context.Context, principal domain.Principal, timez
 	return result, err
 }
 
-func dashboardRecent(ctx context.Context, tx pgx.Tx, principal domain.Principal) ([]DashboardRecent, error) {
+func dashboardRecent(ctx context.Context, tx pgx.Tx, principal domain.Principal) ([]domain.DashboardRecent, error) {
 	rows, err := tx.Query(ctx, `SELECT id,title,type,note_date,updated_at,summary FROM notes
         WHERE tenant_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC,id DESC LIMIT 6`, principal.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	result := make([]DashboardRecent, 0)
+	result := make([]domain.DashboardRecent, 0)
 	for rows.Next() {
-		var item DashboardRecent
+		var item domain.DashboardRecent
 		var date *time.Time
 		var updated time.Time
 		if err := rows.Scan(&item.ID, &item.Title, &item.Type, &date, &updated, &item.Summary); err != nil {

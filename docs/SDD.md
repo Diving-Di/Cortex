@@ -29,6 +29,11 @@ Cortex 是个人记录与回顾工作台，提供笔记、日报/周报/月报�
 PostgreSQL 是个人笔记正文的唯一权威来源。Markdown 只用于笔记交换、导出以及个人知识库
 上传语料，不与数据库做双向同步。
 
+后端业务代码按增量方式收敛为 `server → application → domain/ports → infrastructure/store`：
+`server` 只处理 HTTP 契约和 Principal 传递，`application` 负责用例校验与编排，端口由用例侧定义，
+`store` 保留 SQL、事务和 transaction-local RLS，Redis、对象存储、Kafka 与 Elasticsearch 等适配器
+放在基础设施边界。现有领域在修改时逐条迁移，不为目录整齐而一次性改写稳定业务。
+
 ## 3. 租户与数据安全
 
 - 每个账号对应一个服务端解析的个人租户，客户端 `tenant_id` 不可信。

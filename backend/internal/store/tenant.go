@@ -8,19 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type TenantSummary struct {
-	ID                   string `json:"id"`
-	Name                 string `json:"name"`
-	Status               string `json:"status"`
-	NoteQuota            int64  `json:"note_quota"`
-	NoteCount            int64  `json:"note_count"`
-	AttachmentQuotaBytes int64  `json:"attachment_quota_bytes"`
-	AITokenQuota         int64  `json:"ai_token_quota"`
-	AITokensUsed         int64  `json:"ai_tokens_used"`
-}
-
-func tenantSummary(ctx context.Context, tx pgx.Tx, principal domain.Principal) (TenantSummary, error) {
-	var summary TenantSummary
+func tenantSummary(ctx context.Context, tx pgx.Tx, principal domain.Principal) (domain.TenantSummary, error) {
+	var summary domain.TenantSummary
 	err := tx.QueryRow(ctx, `
         SELECT t.id::text,t.name,t.status,t.note_quota,
             (SELECT count(*) FROM notes n WHERE n.tenant_id=t.id AND n.deleted_at IS NULL),
@@ -35,8 +24,8 @@ func tenantSummary(ctx context.Context, tx pgx.Tx, principal domain.Principal) (
 	return summary, err
 }
 
-func (s *Store) GetTenant(ctx context.Context, principal domain.Principal) (TenantSummary, error) {
-	var result TenantSummary
+func (s *Store) GetTenant(ctx context.Context, principal domain.Principal) (domain.TenantSummary, error) {
+	var result domain.TenantSummary
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -48,8 +37,8 @@ func (s *Store) GetTenant(ctx context.Context, principal domain.Principal) (Tena
 	return result, err
 }
 
-func (s *Store) UpdateTenant(ctx context.Context, principal domain.Principal, name string) (TenantSummary, error) {
-	var result TenantSummary
+func (s *Store) UpdateTenant(ctx context.Context, principal domain.Principal, name string) (domain.TenantSummary, error) {
+	var result domain.TenantSummary
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err

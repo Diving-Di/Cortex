@@ -5,9 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
 	"cortex/backend/internal/httpx"
-	"cortex/backend/internal/store"
 )
 
 type conversationRequest struct {
@@ -22,20 +21,17 @@ func (s *Server) listV1Conversations(w http.ResponseWriter, r *http.Request) {
 		offset, _ = strconv.Atoi(raw)
 	}
 	scope := strings.TrimSpace(r.URL.Query().Get("source_scope"))
-	if err == nil && scope != "" && !store.ValidSourceScope(scope) {
-		err = apierror.Validation(nil)
-	}
-	var result []store.Conversation
+	var result []domain.Conversation
 	var total int
 	if err == nil {
-		result, total, err = s.store.ListScopedConversations(r.Context(), principalFrom(r.Context()), strings.TrimSpace(r.URL.Query().Get("search")), scope, limit, offset)
+		result, total, err = s.conversations.List(r.Context(), principalFrom(r.Context()), r.URL.Query().Get("search"), scope, limit, offset)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	if result == nil {
-		result = []store.Conversation{}
+		result = []domain.Conversation{}
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": result, "total": total})
 }
@@ -51,15 +47,11 @@ func (s *Server) renameV1Conversation(w http.ResponseWriter, r *http.Request) {
 			err = decodeErr
 		}
 	}
-	request.Title = strings.TrimSpace(request.Title)
-	if err == nil && (len([]rune(request.Title)) < 1 || len([]rune(request.Title)) > 255 || request.Version < 1) {
-		err = apierror.Validation(nil)
-	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	result, err := s.store.RenameConversation(r.Context(), principalFrom(r.Context()), id, request.Title, request.Version)
+	result, err := s.conversations.Rename(r.Context(), principalFrom(r.Context()), id, request.Title, request.Version)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -73,16 +65,7 @@ func (s *Server) createV1Conversation(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	request.Title = strings.TrimSpace(request.Title)
-	request.SourceScope = strings.TrimSpace(request.SourceScope)
-	if request.Title == "" {
-		request.Title = "新对话"
-	}
-	if len([]rune(request.Title)) > 80 || !store.ValidSourceScope(request.SourceScope) {
-		httpx.WriteError(w, s.logger, apierror.Validation(nil))
-		return
-	}
-	result, err := s.store.CreateConversation(r.Context(), principalFrom(r.Context()), request.Title, request.SourceScope)
+	result, err := s.conversations.Create(r.Context(), principalFrom(r.Context()), request.Title, request.SourceScope)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -93,11 +76,8 @@ func (s *Server) createV1Conversation(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getV1Conversation(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "conversationID")
 	if err == nil {
-		var result store.Conversation
-		result, err = s.store.GetConversation(r.Context(), principalFrom(r.Context()), id)
-		if err == nil && !store.ValidSourceScope(result.SourceScope) {
-			err = apierror.New("CONVERSATION_NOT_FOUND", "对话不存在", 404)
-		}
+		var result domain.Conversation
+		result, err = s.conversations.Get(r.Context(), principalFrom(r.Context()), id)
 		if err == nil {
 			httpx.JSON(w, http.StatusOK, result)
 			return
@@ -109,14 +89,7 @@ func (s *Server) getV1Conversation(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteV1Conversation(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "conversationID")
 	if err == nil {
-		var result store.Conversation
-		result, err = s.store.GetConversation(r.Context(), principalFrom(r.Context()), id)
-		if err == nil && !store.ValidSourceScope(result.SourceScope) {
-			err = apierror.New("CONVERSATION_NOT_FOUND", "对话不存在", 404)
-		}
-		if err == nil {
-			err = s.store.DeleteConversation(r.Context(), principalFrom(r.Context()), id)
-		}
+		err = s.conversations.Delete(r.Context(), principalFrom(r.Context()), id)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)

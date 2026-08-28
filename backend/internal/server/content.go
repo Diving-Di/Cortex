@@ -3,11 +3,10 @@ package server
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
 	"cortex/backend/internal/httpx"
-	"cortex/backend/internal/store"
 )
 
 type tagCreateRequest struct {
@@ -20,13 +19,13 @@ type tagAssignmentRequest struct {
 }
 
 func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.ListTags(r.Context(), principalFrom(r.Context()))
+	items, err := s.content.ListTags(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	if items == nil {
-		items = []store.Tag{}
+		items = []domain.Tag{}
 	}
 	httpx.JSON(w, http.StatusOK, items)
 }
@@ -37,12 +36,7 @@ func (s *Server) createTag(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	request.Name = strings.TrimSpace(request.Name)
-	if request.Name == "" {
-		httpx.WriteError(w, s.logger, apierror.New("TAG_NAME_REQUIRED", "标签名称不能为空", 422))
-		return
-	}
-	item, err := s.store.CreateTag(r.Context(), principalFrom(r.Context()), request.Name, request.Color)
+	item, err := s.content.CreateTag(r.Context(), principalFrom(r.Context()), request.Name, request.Color)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -56,13 +50,13 @@ func (s *Server) listNoteTags(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	items, err := s.store.ListNoteTags(r.Context(), principalFrom(r.Context()), noteID)
+	items, err := s.content.ListNoteTags(r.Context(), principalFrom(r.Context()), noteID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	if items == nil {
-		items = []store.Tag{}
+		items = []domain.Tag{}
 	}
 	httpx.JSON(w, http.StatusOK, items)
 }
@@ -78,13 +72,13 @@ func (s *Server) assignNoteTags(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	items, err := s.store.AssignNoteTags(r.Context(), principalFrom(r.Context()), noteID, request.TagIDs)
+	items, err := s.content.AssignNoteTags(r.Context(), principalFrom(r.Context()), noteID, request.TagIDs)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	if items == nil {
-		items = []store.Tag{}
+		items = []domain.Tag{}
 	}
 	httpx.JSON(w, http.StatusOK, items)
 }
@@ -96,7 +90,7 @@ func (s *Server) searchNotes(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	filter := store.SearchFilter{
+	filter := domain.SearchFilter{
 		Query: query.Get("q"), Type: query.Get("type"), Limit: limit,
 	}
 	if filter.Type != "" && !validNoteType(filter.Type) {
@@ -124,13 +118,13 @@ func (s *Server) searchNotes(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	items, total, err := s.store.SearchNotes(r.Context(), principalFrom(r.Context()), filter)
+	items, total, err := s.content.Search(r.Context(), principalFrom(r.Context()), filter)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	if items == nil {
-		items = []store.SearchItem{}
+		items = []domain.SearchItem{}
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
 }
@@ -144,7 +138,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	result, err := s.store.Dashboard(r.Context(), principalFrom(r.Context()), timezoneName)
+	result, err := s.content.Dashboard(r.Context(), principalFrom(r.Context()), timezoneName)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return

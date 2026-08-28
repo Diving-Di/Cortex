@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 	"unicode"
 
 	"cortex/backend/internal/apierror"
@@ -14,39 +13,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-type NoteFilter struct {
-	Page      int
-	PageSize  int
-	Type      string
-	StartDate *time.Time
-	EndDate   *time.Time
-	TagID     *int32
-}
-
-type NoteInput struct {
-	Type     string
-	Title    string
-	Content  string
-	NoteDate *time.Time
-	Summary  *string
-}
-
-type NotePatch struct {
-	Title             *string
-	Content           *string
-	NoteDate          *time.Time
-	SetNoteDate       bool
-	Summary           *string
-	SetSummary        bool
-	ExpectedUpdatedAt *time.Time
-}
-
 func setTenant(ctx context.Context, tx pgx.Tx, principal domain.Principal) error {
 	_, err := tx.Exec(ctx, `SELECT set_config('app.current_tenant_id',$1,true)`, principal.TenantID.String())
 	return err
 }
 
-func (s *Store) ListNotes(ctx context.Context, principal domain.Principal, filter NoteFilter) ([]domain.Note, int64, error) {
+func (s *Store) ListNotes(ctx context.Context, principal domain.Principal, filter domain.NoteFilter) ([]domain.Note, int64, error) {
 	var items []domain.Note
 	var total int64
 	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
@@ -96,7 +68,7 @@ func (s *Store) ListNotes(ctx context.Context, principal domain.Principal, filte
 	return items, total, err
 }
 
-func (s *Store) CreateNote(ctx context.Context, principal domain.Principal, input NoteInput) (domain.Note, error) {
+func (s *Store) CreateNote(ctx context.Context, principal domain.Principal, input domain.NoteInput) (domain.Note, error) {
 	var result domain.Note
 	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
 		var quota, count int64
@@ -140,7 +112,7 @@ func (s *Store) GetNote(ctx context.Context, principal domain.Principal, noteID 
 	return result, err
 }
 
-func (s *Store) UpdateNote(ctx context.Context, principal domain.Principal, noteID int32, patch NotePatch) (domain.Note, error) {
+func (s *Store) UpdateNote(ctx context.Context, principal domain.Principal, noteID int32, patch domain.NotePatch) (domain.Note, error) {
 	var result domain.Note
 	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
 		note, err := getNoteTx(ctx, tx, principal, noteID)

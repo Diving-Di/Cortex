@@ -70,12 +70,7 @@ func (s *Server) confirmOrganize(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	request.Title = strings.TrimSpace(request.Title)
-	if request.Title == "" {
-		httpx.WriteError(w, s.logger, apierror.New("TITLE_REQUIRED", "标题不能为空", 422))
-		return
-	}
-	result, err := s.store.ConfirmOrganize(
+	result, err := s.reports.ConfirmOrganize(
 		r.Context(), principalFrom(r.Context()), request.NoteID,
 		request.Title, request.Content, request.Summary,
 	)
@@ -92,7 +87,7 @@ func (s *Server) previewReport(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	start, end, sources, err := s.store.ReportSources(
+	start, end, sources, err := s.reports.Sources(
 		r.Context(), principalFrom(r.Context()), request.Type, anchor,
 	)
 	if err != nil {
@@ -118,7 +113,7 @@ func (s *Server) generateReport(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	start, end, sources, err := s.store.ReportSources(
+	start, end, sources, err := s.reports.Sources(
 		r.Context(), principalFrom(r.Context()), request.Type, anchor,
 	)
 	if err != nil {
@@ -155,7 +150,7 @@ func (s *Server) confirmReport(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	result, err := s.store.ConfirmReport(
+	result, err := s.reports.Confirm(
 		r.Context(), principalFrom(r.Context()), request.Type, anchor,
 		request.Title, request.Content, request.SourceIDs, request.Overwrite,
 		nil, 0,
@@ -173,7 +168,7 @@ func (s *Server) reportSourceList(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	result, err := s.store.GetReportSources(r.Context(), principalFrom(r.Context()), noteID)
+	result, err := s.reports.SavedSources(r.Context(), principalFrom(r.Context()), noteID)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return

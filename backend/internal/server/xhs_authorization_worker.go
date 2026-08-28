@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	xhsapp "cortex/backend/internal/application/xhs"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/domain"
 	"cortex/backend/internal/research"
@@ -35,11 +36,11 @@ func RunXHSAuthorizationWorkers(
 		logger.Error("disable xhs authorization", "error_code", "XHS_SESSION_KEY_INVALID")
 		return
 	}
-	go runXHSAuthorizationWorker(ctx, cfg, database, logger, box, "xhs-auth-"+uuid.NewString())
+	go runXHSAuthorizationWorker(ctx, cfg, xhsapp.NewService(database), logger, box, "xhs-auth-"+uuid.NewString())
 }
 
 func runXHSAuthorizationWorker(
-	ctx context.Context, cfg config.Config, database *store.Store, logger *slog.Logger,
+	ctx context.Context, cfg config.Config, database *xhsapp.Service, logger *slog.Logger,
 	box *secretbox.Box, owner string,
 ) {
 	ticker := time.NewTicker(3 * time.Second)
@@ -61,7 +62,7 @@ func runXHSAuthorizationWorker(
 }
 
 func processXHSAuthorization(
-	parent context.Context, cfg config.Config, database *store.Store, logger *slog.Logger,
+	parent context.Context, cfg config.Config, database *xhsapp.Service, logger *slog.Logger,
 	box *secretbox.Box, attempt store.XHSAuthAttempt,
 ) {
 	principal := domain.Principal{

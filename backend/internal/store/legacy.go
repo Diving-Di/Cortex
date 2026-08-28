@@ -11,32 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type LegacyMessage struct {
-	ID        int32  `json:"id"`
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	CreatedAt string `json:"created_at"`
-}
-
-type Conversation struct {
-	ID           int32           `json:"id"`
-	Title        string          `json:"title"`
-	SourceScope  string          `json:"source_scope"`
-	CreatedAt    string          `json:"created_at"`
-	UpdatedAt    string          `json:"updated_at"`
-	Messages     []LegacyMessage `json:"messages,omitempty"`
-	Version      int             `json:"version"`
-	MessageCount int             `json:"message_count"`
-	TotalTokens  int64           `json:"total_tokens"`
-	Summary      *string         `json:"summary,omitempty"`
-}
-
-func ValidSourceScope(scope string) bool {
-	return scope == "knowledge" || scope == "growth" || scope == "all"
-}
-
-func (s *Store) CreateConversation(ctx context.Context, principal domain.Principal, title, sourceScope string) (Conversation, error) {
-	var result Conversation
+func (s *Store) CreateConversation(ctx context.Context, principal domain.Principal, title, sourceScope string) (domain.Conversation, error) {
+	var result domain.Conversation
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -50,14 +26,14 @@ func (s *Store) CreateConversation(ctx context.Context, principal domain.Princip
 		}
 		result.CreatedAt = created.Format(time.RFC3339Nano)
 		result.UpdatedAt = updated.Format(time.RFC3339Nano)
-		result.Messages = []LegacyMessage{}
+		result.Messages = []domain.ConversationMessage{}
 		return nil
 	})
 	return result, err
 }
 
-func (s *Store) ListScopedConversations(ctx context.Context, principal domain.Principal, search, scope string, limit, offset int) ([]Conversation, int, error) {
-	var result []Conversation
+func (s *Store) ListScopedConversations(ctx context.Context, principal domain.Principal, search, scope string, limit, offset int) ([]domain.Conversation, int, error) {
+	var result []domain.Conversation
 	var total int
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
@@ -80,7 +56,7 @@ func (s *Store) ListScopedConversations(ctx context.Context, principal domain.Pr
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var item Conversation
+			var item domain.Conversation
 			var created, updated time.Time
 			if err := rows.Scan(&item.ID, &item.Title, &item.SourceScope, &created, &updated, &item.Version, &item.MessageCount, &item.TotalTokens); err != nil {
 				return err
@@ -94,8 +70,8 @@ func (s *Store) ListScopedConversations(ctx context.Context, principal domain.Pr
 	return result, total, err
 }
 
-func (s *Store) RenameConversation(ctx context.Context, principal domain.Principal, id int32, title string, version int) (Conversation, error) {
-	var result Conversation
+func (s *Store) RenameConversation(ctx context.Context, principal domain.Principal, id int32, title string, version int) (domain.Conversation, error) {
+	var result domain.Conversation
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -125,8 +101,8 @@ func (s *Store) RenameConversation(ctx context.Context, principal domain.Princip
 	return result, err
 }
 
-func (s *Store) GetConversation(ctx context.Context, principal domain.Principal, id int32) (Conversation, error) {
-	var result Conversation
+func (s *Store) GetConversation(ctx context.Context, principal domain.Principal, id int32) (domain.Conversation, error) {
+	var result domain.Conversation
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
@@ -150,7 +126,7 @@ func (s *Store) GetConversation(ctx context.Context, principal domain.Principal,
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var message LegacyMessage
+			var message domain.ConversationMessage
 			var timestamp time.Time
 			if err := rows.Scan(&message.ID, &message.Role, &message.Content, &timestamp); err != nil {
 				return err
@@ -159,7 +135,7 @@ func (s *Store) GetConversation(ctx context.Context, principal domain.Principal,
 			result.Messages = append(result.Messages, message)
 		}
 		if result.Messages == nil {
-			result.Messages = []LegacyMessage{}
+			result.Messages = []domain.ConversationMessage{}
 		}
 		return rows.Err()
 	})

@@ -100,7 +100,7 @@ func (s *Server) createResearchJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, _ := json.Marshal(payload)
-	job, err := s.store.CreateResearchJob(r.Context(), principalFrom(r.Context()), request.Mode,
+	job, err := s.research.Create(r.Context(), principalFrom(r.Context()), request.Mode,
 		raw, request.TargetCount, idempotencyKey, s.cfg.ResearchMaxAttempts)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -116,7 +116,7 @@ func (s *Server) listResearchJobs(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	items, total, err := s.store.ListResearchJobs(r.Context(), principalFrom(r.Context()), limit, offset)
+	items, total, err := s.research.Jobs(r.Context(), principalFrom(r.Context()), limit, offset)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -131,7 +131,7 @@ func (s *Server) getResearchJob(w http.ResponseWriter, r *http.Request) {
 	id, err := researchPathID(r, "jobID")
 	if err == nil {
 		var job store.ResearchJob
-		job, err = s.store.GetResearchJob(r.Context(), principalFrom(r.Context()), id)
+		job, err = s.research.Job(r.Context(), principalFrom(r.Context()), id)
 		if err == nil {
 			httpx.JSON(w, http.StatusOK, job)
 			return
@@ -143,7 +143,7 @@ func (s *Server) getResearchJob(w http.ResponseWriter, r *http.Request) {
 func (s *Server) cancelResearchJob(w http.ResponseWriter, r *http.Request) {
 	id, err := researchPathID(r, "jobID")
 	if err == nil {
-		err = s.store.CancelResearchJob(r.Context(), principalFrom(r.Context()), id)
+		err = s.research.Cancel(r.Context(), principalFrom(r.Context()), id)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -156,7 +156,7 @@ func (s *Server) cancelResearchJob(w http.ResponseWriter, r *http.Request) {
 func (s *Server) retryResearchJob(w http.ResponseWriter, r *http.Request) {
 	id, err := researchPathID(r, "jobID")
 	if err == nil {
-		err = s.store.RetryResearchJob(r.Context(), principalFrom(r.Context()), id)
+		err = s.research.Retry(r.Context(), principalFrom(r.Context()), id)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -185,7 +185,7 @@ func (s *Server) listResearchSources(w http.ResponseWriter, r *http.Request) {
 		Search: strings.TrimSpace(r.URL.Query().Get("search")),
 		Sort:   strings.TrimSpace(r.URL.Query().Get("sort")), Limit: limit, Offset: offset,
 	}
-	items, total, err := s.store.ListResearchSources(r.Context(), principalFrom(r.Context()), filter)
+	items, total, err := s.research.Sources(r.Context(), principalFrom(r.Context()), filter)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -200,7 +200,7 @@ func (s *Server) getResearchSource(w http.ResponseWriter, r *http.Request) {
 	id, err := researchPathID(r, "sourceID")
 	if err == nil {
 		var item store.ResearchSource
-		item, err = s.store.GetResearchSource(r.Context(), principalFrom(r.Context()), id)
+		item, err = s.research.Source(r.Context(), principalFrom(r.Context()), id)
 		if err == nil {
 			httpx.JSON(w, http.StatusOK, item)
 			return
@@ -216,7 +216,7 @@ func (s *Server) recollectResearchSource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	principal := principalFrom(r.Context())
-	source, err := s.store.GetResearchSource(r.Context(), principal, id)
+	source, err := s.research.Source(r.Context(), principal, id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -226,7 +226,7 @@ func (s *Server) recollectResearchSource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	raw, _ := json.Marshal(map[string]any{"urls": []string{source.NormalizedURL}})
-	job, err := s.store.CreateResearchJob(r.Context(), principal, "urls", raw, 1,
+	job, err := s.research.Create(r.Context(), principal, "urls", raw, 1,
 		uuid.NewString(), s.cfg.ResearchMaxAttempts)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -262,7 +262,7 @@ func (s *Server) updateResearchDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	draft, err := s.store.UpdateResearchDraft(r.Context(), principalFrom(r.Context()), id,
+	draft, err := s.research.Draft(r.Context(), principalFrom(r.Context()), id,
 		request.Version, request.Summary, cleanStrings(request.KeyPoints, 500),
 		cleanStrings(request.SuggestedTags, 80), request.Category)
 	if err != nil {
@@ -279,7 +279,7 @@ type researchIDsRequest struct {
 func (s *Server) ignoreResearchSource(w http.ResponseWriter, r *http.Request) {
 	id, err := researchPathID(r, "sourceID")
 	if err == nil {
-		err = s.store.IgnoreResearchSources(r.Context(), principalFrom(r.Context()), []int64{id})
+		err = s.research.Ignore(r.Context(), principalFrom(r.Context()), []int64{id})
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -298,7 +298,7 @@ func (s *Server) batchIgnoreResearchSources(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	if err := s.store.IgnoreResearchSources(r.Context(), principalFrom(r.Context()), request.IDs); err != nil {
+	if err := s.research.Ignore(r.Context(), principalFrom(r.Context()), request.IDs); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
@@ -311,7 +311,7 @@ func (s *Server) downloadResearchAsset(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	item, err := s.store.GetResearchAsset(r.Context(), principalFrom(r.Context()), id)
+	item, err := s.research.Asset(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -349,7 +349,7 @@ func (s *Server) deleteResearchSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := principalFrom(r.Context())
-	source, err := s.store.GetResearchSource(r.Context(), principal, id)
+	source, err := s.research.Source(r.Context(), principal, id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -359,7 +359,7 @@ func (s *Server) deleteResearchSource(w http.ResponseWriter, r *http.Request) {
 			_ = os.Remove(path)
 		}
 	}
-	if err := s.store.SoftDeleteResearchSource(r.Context(), principal, id); err != nil {
+	if err := s.research.DeleteSource(r.Context(), principal, id); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}

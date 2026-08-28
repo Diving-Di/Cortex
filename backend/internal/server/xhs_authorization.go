@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cortex/backend/internal/apierror"
+	xhsapp "cortex/backend/internal/application/xhs"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/domain"
 	"cortex/backend/internal/httpx"
@@ -27,7 +28,7 @@ func (s *Server) getXHSAuthorization(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("XHS_AUTH_NOT_CONFIGURED", "小红书授权功能未配置", 503))
 		return
 	}
-	item, err := s.store.GetXHSAuthorization(r.Context(), principalFrom(r.Context()))
+	item, err := s.xhs.Authorization(r.Context(), principalFrom(r.Context()))
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -48,7 +49,7 @@ func (s *Server) startXHSAuthorization(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("XHS_AUTH_NOT_CONFIGURED", "小红书授权功能未配置", 503))
 		return
 	}
-	item, err := s.store.CreateXHSAuthAttempt(r.Context(), principalFrom(r.Context()),
+	item, err := s.xhs.Start(r.Context(), principalFrom(r.Context()),
 		time.Now().Add(s.cfg.XHSAuthorizationTTL), s.cfg.XHSSessionKeyVersion)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -64,7 +65,7 @@ func (s *Server) getXHSAuthAttempt(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	item, err := s.store.GetXHSAuthAttempt(r.Context(), principalFrom(r.Context()), id)
+	item, err := s.xhs.Attempt(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -78,7 +79,7 @@ func (s *Server) getXHSAuthQR(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.Validation(nil))
 		return
 	}
-	item, err := s.store.GetXHSAuthAttempt(r.Context(), principalFrom(r.Context()), id)
+	item, err := s.xhs.Attempt(r.Context(), principalFrom(r.Context()), id)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -114,7 +115,7 @@ func (s *Server) getXHSAuthQR(w http.ResponseWriter, r *http.Request) {
 func (s *Server) cancelXHSAuthorization(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(strings.TrimSpace(r.PathValue("attemptID")))
 	if err == nil {
-		err = s.store.CancelXHSAuthAttempt(r.Context(), principalFrom(r.Context()), id)
+		err = s.xhs.Cancel(r.Context(), principalFrom(r.Context()), id)
 	}
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
@@ -124,7 +125,7 @@ func (s *Server) cancelXHSAuthorization(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) revokeXHSAuthorization(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.RevokeXHSAuthorization(r.Context(), principalFrom(r.Context())); err != nil {
+	if err := s.xhs.Revoke(r.Context(), principalFrom(r.Context())); err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
@@ -153,7 +154,7 @@ func (s *Server) verifyXHSAuthorization(w http.ResponseWriter, r *http.Request) 
 		}
 		_ = response.Body.Close()
 	}
-	_ = s.store.MarkXHSAuthorizationVerified(r.Context(), principalFrom(r.Context()), valid)
+	_ = s.xhs.Verify(r.Context(), principalFrom(r.Context()), valid)
 	if !valid {
 		httpx.WriteError(w, s.logger, apierror.New("XHS_AUTH_EXPIRED", "小红书授权已失效，请重新扫码", 401))
 		return
@@ -171,12 +172,12 @@ func (s *Server) xhsAuthorizationConfigured() bool {
 }
 
 func (s *Server) loadXHSSession(ctx context.Context, principal domain.Principal) (store.XHSAuthorization, research.SessionState, error) {
-	return loadXHSSession(ctx, s.cfg, s.store, principal)
+	return loadXHSSession(ctx, s.cfg, s.xhs, principal)
 }
 
-func loadXHSSession(ctx context.Context, cfg config.Config, database *store.Store, principal domain.Principal) (store.XHSAuthorization, research.SessionState, error) {
+func loadXHSSession(ctx context.Context, cfg config.Config, service *xhsapp.Service, principal domain.Principal) (store.XHSAuthorization, research.SessionState, error) {
 	var state research.SessionState
-	item, err := database.GetXHSAuthorization(ctx, principal)
+	item, err := service.Authorization(ctx, principal)
 	if err != nil {
 		return item, state, err
 	}

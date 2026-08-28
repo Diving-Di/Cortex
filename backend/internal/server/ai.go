@@ -11,8 +11,8 @@ import (
 
 	"cortex/backend/internal/ai"
 	"cortex/backend/internal/apierror"
+	"cortex/backend/internal/domain"
 	"cortex/backend/internal/httpx"
-	"cortex/backend/internal/store"
 )
 
 type aiChatRequest struct {
@@ -42,16 +42,7 @@ func (s *Server) configureAIProvider(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	if request.Capabilities == "" {
-		request.Capabilities = "chat,stream"
-	}
-	if strings.TrimSpace(request.DisplayName) == "" ||
-		strings.TrimSpace(request.BaseURL) == "" ||
-		strings.TrimSpace(request.DefaultModel) == "" {
-		httpx.WriteError(w, s.logger, apierror.Validation(nil))
-		return
-	}
-	result, err := s.store.UpsertAIProvider(r.Context(), principalFrom(r.Context()), store.AIProvider{
+	result, err := s.aiService.Configure(r.Context(), principalFrom(r.Context()), domain.AIProvider{
 		DisplayName: request.DisplayName, BaseURL: request.BaseURL,
 		DefaultModel: request.DefaultModel, Capabilities: request.Capabilities,
 	})
@@ -149,7 +140,7 @@ func (s *Server) writeSSE(
 	}
 	usageCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 	defer cancel()
-	if err := s.store.RecordAIUsage(usageCtx, principalFrom(r.Context()), store.AIUsage{
+	if err := s.aiService.RecordUsage(usageCtx, principalFrom(r.Context()), domain.AIUsage{
 		RequestType: requestType, Model: model,
 		InputTokens:  max(1, len([]rune(prompt))/4),
 		OutputTokens: len([]rune(output.String())) / 4,

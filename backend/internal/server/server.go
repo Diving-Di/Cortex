@@ -16,10 +16,27 @@ import (
 
 	"cortex/backend/internal/ai"
 	"cortex/backend/internal/apierror"
+	aiapp "cortex/backend/internal/application/ai"
+	aieventsapp "cortex/backend/internal/application/aievents"
+	attachmentsapp "cortex/backend/internal/application/attachments"
+	authapp "cortex/backend/internal/application/auth"
+	contentapp "cortex/backend/internal/application/content"
+	conversationsapp "cortex/backend/internal/application/conversations"
+	exportapp "cortex/backend/internal/application/export"
+	knowledgeapp "cortex/backend/internal/application/knowledge"
+	marketplaceapp "cortex/backend/internal/application/marketplace"
+	notesapp "cortex/backend/internal/application/notes"
+	preferencesapp "cortex/backend/internal/application/preferences"
+	reportsapp "cortex/backend/internal/application/reports"
+	researchapp "cortex/backend/internal/application/research"
+	scheduledapp "cortex/backend/internal/application/scheduled"
+	tenantapp "cortex/backend/internal/application/tenant"
+	xhsapp "cortex/backend/internal/application/xhs"
 	"cortex/backend/internal/blobstore"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/domain"
 	"cortex/backend/internal/httpx"
+	"cortex/backend/internal/infrastructure/tenantcache"
 	"cortex/backend/internal/rediscoord"
 	"cortex/backend/internal/searchindex"
 	"cortex/backend/internal/store"
@@ -39,6 +56,22 @@ type Server struct {
 	blobs                  blobstore.BlobStore
 	localBlobs             blobstore.BlobStore
 	search                 *searchindex.Elasticsearch
+	tenants                *tenantapp.Service
+	notes                  *notesapp.Service
+	content                *contentapp.Service
+	preferences            *preferencesapp.Service
+	export                 *exportapp.Service
+	attachments            *attachmentsapp.Service
+	aiService              *aiapp.Service
+	reports                *reportsapp.Service
+	conversations          *conversationsapp.Service
+	authService            *authapp.Service
+	aiEvents               *aieventsapp.Service
+	marketplace            *marketplaceapp.Service
+	research               *researchapp.Service
+	knowledgeService       *knowledgeapp.Service
+	scheduled              *scheduledapp.Service
+	xhs                    *xhsapp.Service
 	rateMu                 sync.Mutex
 	localRates             map[string]localRateWindow
 	aiEventFallbackSlots   chan struct{}
@@ -70,10 +103,26 @@ func New(cfg config.Config, db *store.Store, logger *slog.Logger, version string
 // these once and shares them with the HTTP server and background workers.
 // Zero values are supported for focused handler tests.
 type Dependencies struct {
-	Blobs      blobstore.BlobStore
-	LocalBlobs blobstore.BlobStore
-	Redis      *rediscoord.Client
-	Search     *searchindex.Elasticsearch
+	Blobs         blobstore.BlobStore
+	LocalBlobs    blobstore.BlobStore
+	Redis         *rediscoord.Client
+	Search        *searchindex.Elasticsearch
+	Tenants       *tenantapp.Service
+	Notes         *notesapp.Service
+	Content       *contentapp.Service
+	Preferences   *preferencesapp.Service
+	Export        *exportapp.Service
+	Attachments   *attachmentsapp.Service
+	AI            *aiapp.Service
+	Reports       *reportsapp.Service
+	Conversations *conversationsapp.Service
+	Auth          *authapp.Service
+	AIEvents      *aieventsapp.Service
+	Marketplace   *marketplaceapp.Service
+	Research      *researchapp.Service
+	Knowledge     *knowledgeapp.Service
+	Scheduled     *scheduledapp.Service
+	XHS           *xhsapp.Service
 }
 
 func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger, version string, deps Dependencies) http.Handler {
@@ -82,6 +131,70 @@ func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger
 	s.blobs = deps.Blobs
 	s.localBlobs = deps.LocalBlobs
 	s.search = deps.Search
+	s.tenants = deps.Tenants
+	if s.tenants == nil && db != nil {
+		s.tenants = tenantapp.NewService(db, tenantcache.NewRedis(deps.Redis))
+	}
+	s.notes = deps.Notes
+	if s.notes == nil && db != nil {
+		s.notes = notesapp.NewService(db)
+	}
+	s.content = deps.Content
+	if s.content == nil && db != nil {
+		s.content = contentapp.NewService(db)
+	}
+	s.preferences = deps.Preferences
+	if s.preferences == nil && db != nil {
+		s.preferences = preferencesapp.NewService(db)
+	}
+	s.export = deps.Export
+	if s.export == nil && db != nil {
+		s.export = exportapp.NewService(db)
+	}
+	s.attachments = deps.Attachments
+	if s.attachments == nil && db != nil {
+		s.attachments = attachmentsapp.NewService(db, deps.Blobs, deps.LocalBlobs, cfg.StorageBackend)
+	}
+	s.aiService = deps.AI
+	if s.aiService == nil && db != nil {
+		s.aiService = aiapp.NewService(db)
+	}
+	s.reports = deps.Reports
+	if s.reports == nil && db != nil {
+		s.reports = reportsapp.NewService(db)
+	}
+	s.conversations = deps.Conversations
+	if s.conversations == nil && db != nil {
+		s.conversations = conversationsapp.NewService(db)
+	}
+	s.authService = deps.Auth
+	if s.authService == nil && db != nil {
+		s.authService = authapp.NewService(db)
+	}
+	s.aiEvents = deps.AIEvents
+	if s.aiEvents == nil && db != nil {
+		s.aiEvents = aieventsapp.NewService(db)
+	}
+	s.marketplace = deps.Marketplace
+	if s.marketplace == nil && db != nil {
+		s.marketplace = marketplaceapp.NewService(db)
+	}
+	s.research = deps.Research
+	if s.research == nil && db != nil {
+		s.research = researchapp.NewService(db)
+	}
+	s.knowledgeService = deps.Knowledge
+	if s.knowledgeService == nil && db != nil {
+		s.knowledgeService = knowledgeapp.NewService(db)
+	}
+	s.scheduled = deps.Scheduled
+	if s.scheduled == nil && db != nil {
+		s.scheduled = scheduledapp.NewService(db)
+	}
+	s.xhs = deps.XHS
+	if s.xhs == nil && db != nil {
+		s.xhs = xhsapp.NewService(db)
+	}
 	s.redis = deps.Redis
 	s.authRedis = deps.Redis
 	s.claimRedis = deps.Redis
@@ -353,7 +466,7 @@ func (s *Server) resolvePrincipal(ctx context.Context, raw string) (domain.Princ
 		}
 	}
 	resolved, err, _ := s.authResolveGroup.Do(key, func() (any, error) {
-		return s.store.ResolvePrincipal(ctx, raw)
+		return s.authService.Resolve(ctx, raw)
 	})
 	if err != nil {
 		if s.authRedis != nil {
@@ -442,7 +555,7 @@ func principalFrom(ctx context.Context) domain.Principal {
 // Handlers for user preferences (marketplace personalization only).
 func (s *Server) getPreferences(w http.ResponseWriter, r *http.Request) {
 	principal := principalFrom(r.Context())
-	prefs, err := s.store.GetUserPreferences(r.Context(), principal)
+	prefs, err := s.preferences.Get(r.Context(), principal)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
@@ -463,7 +576,7 @@ func (s *Server) updatePreferences(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	prefs, err := s.store.UpdateUserPreferences(r.Context(), principal, body.MarketplacePersonalization, body.Version)
+	prefs, err := s.preferences.Update(r.Context(), principal, body.MarketplacePersonalization, body.Version)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return
