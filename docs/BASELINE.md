@@ -92,8 +92,8 @@ Elasticsearch 验收。依赖与镜像还需通过 govulncheck、npm audit、pip
 - `db`、`redis`、`llm-gateway`、`embedding-service`、`reranker-service`、`minio`、`kafka`、
   `elasticsearch` 和 `backend` 必须为 healthy；无 HTTP 健康检查的消费者须以进程、积压和任务状态验收。
 - 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
-- 新 PostgreSQL 空库必须完成全部版本化迁移（当前迁移版本 41、63 张业务表，连同 `schema_migrations`
-  共 64 张 public 表）、RLS、注册和登录验收。
+- 新 PostgreSQL 空库必须完成全部版本化迁移（当前迁移版本 41、56 张业务表，连同 `schema_migrations`
+  共 57 张 public 表）、RLS、注册和登录验收。
 - 模板广场还需验证 Outbox 类型隔离、排行 active pointer 原子切换、daily/HLL 8 天 TTL、匿名 UV
   读取和 Redis 故障回表降级。本地容量结果不能作为线上 QPS 或 p95/p99。
 - 个人知识库上传、索引阶段/进度、混合问答、一次性澄清恢复、幂等回放、跨租户隔离和 3 GiB 配额验收通过。

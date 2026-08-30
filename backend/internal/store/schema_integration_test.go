@@ -39,8 +39,8 @@ func TestProductionSchemaAndRLSContract(t *testing.T) {
 		FROM pg_tables WHERE schemaname='public'`).Scan(&tableCount, &businessTableCount); err != nil {
 		t.Fatal(err)
 	}
-	if tableCount != 64 || businessTableCount != 63 {
-		t.Fatalf("public table count = %d (%d business), want 64 (63 business)", tableCount, businessTableCount)
+	if tableCount != 57 || businessTableCount != 56 {
+		t.Fatalf("public table count = %d (%d business), want 57 (56 business)", tableCount, businessTableCount)
 	}
 	var unsafeTables []string
 	rows, err := admin.Query(ctx, `

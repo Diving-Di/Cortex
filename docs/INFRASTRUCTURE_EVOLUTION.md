@@ -284,7 +284,7 @@ Prometheus/Grafana 必须接入真实采集和 Alertmanager 通知，覆盖 API/
 
 ### 9.2 联合备份恢复
 
-恢复顺序为 PostgreSQL（含 pgvector 基线）→ MinIO 对象 → Kafka 配置/Topic → Elasticsearch 模板与可重建 BM25 + KNN 投影。Kafka offset 和 ES 索引不作为业务权威备份。隔离恢复必须验证迁移版本 41、63 张业务表（连同 `schema_migrations` 共 64 张 public 表）、RLS/FORCE RLS、登录、附件下载、对象双向清单、pgvector 降级问答、ES 全量投影重建、主路径恢复切回和任务幂等恢复，并记录目标与实测 RPO/RTO。Markdown、PDF、Word、扫描 PDF 与图片 OCR 都应纳入恢复验收；Excel 和演示文稿仍不在当前范围。
+恢复顺序为 PostgreSQL（含 pgvector 基线）→ MinIO 对象 → Kafka 配置/Topic → Elasticsearch 模板与可重建 BM25 + KNN 投影。Kafka offset 和 ES 索引不作为业务权威备份。隔离恢复必须验证迁移版本 41、56 张业务表（连同 `schema_migrations` 共 57 张 public 表）、RLS/FORCE RLS、登录、附件下载、对象双向清单、pgvector 降级问答、ES 全量投影重建、主路径恢复切回和任务幂等恢复，并记录目标与实测 RPO/RTO。Markdown、PDF、Word、扫描 PDF 与图片 OCR 都应纳入恢复验收；Excel 和演示文稿仍不在当前范围。
 
 ## 10. 已实施阶段记录与配置基线
 

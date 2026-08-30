@@ -49,8 +49,8 @@ docker compose config --quiet
 
 ## 3. 数据库、租户与文件安全
 
-- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 41、63 张业务表（连同 `schema_migrations`
-  共 64 张 public 表），迁移记录和 schema 基线一致。
+- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 41、56 张业务表（连同 `schema_migrations`
+  共 57 张 public 表），迁移记录和 schema 基线一致。
 - [ ] 租户业务表启用并强制 RLS；`cortex_app` 使用低权限连接，跨租户资源访问表现为 404。
 - [ ] 注册、登录、Token 过期/撤销、软删除租户拒绝认证通过验收。
 - [ ] 乐观锁、revision、软删除和来源有效性检查没有被绕过。
