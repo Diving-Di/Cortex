@@ -8,7 +8,7 @@
 
 | 组件 | 当前决策 | 在 Cortex 中的职责 | 上线完成标准 |
 |---|---|---|---|
-| MinIO | Compose 默认启用；生产门禁待目标环境验收 | 附件、知识原文件、解析派生文件和研究资产的私有对象存储 | 完成历史对象 checksum 对账、回滚与联合恢复验收 |
+| MinIO | Compose 默认启用；生产门禁待目标环境验收 | 附件、知识原文件和解析派生文件的私有对象存储 | 完成历史对象 checksum 对账、回滚与联合恢复验收 |
 | Kafka / Redpanda | Compose 默认启用；生产门禁待目标环境验收 | Transactional Outbox 的事件分发与知识索引、搜索投影、文件 GC 消费 | 完成幂等、DLQ、积压告警、重复/乱序与 broker 故障验收 |
 | Elasticsearch | Compose 默认启用 BM25 + KNN；生产门禁待目标环境验收 | RAG 生产主 backend，承载关键词与向量混合检索 | 完成全量投影、PostgreSQL 二次校验、影子对比、灰度与 pgvector 降级验收 |
 
@@ -84,7 +84,7 @@ type BlobStore interface {
 }
 ```
 
-新增版本化迁移，为附件、知识文档和研究资产增加：
+新增版本化迁移，为附件和知识文档增加：
 
 - `storage_backend`: `local|minio`；
 - `object_key`: 服务端生成的不可猜测相对 key；

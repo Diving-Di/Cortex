@@ -17,7 +17,7 @@ Cortex 的唯一后端实现，使用 Gin、pgx/v5 和 PostgreSQL。Go module、
 业务调用统一遵循 `server → application → domain/store ports → infrastructure`：
 
 - `internal/server` 负责 HTTP/SSE 契约、Principal 传递和进程探针；普通业务 handler 不得直接调用 Store。
-- `internal/application/<domain>` 定义窄 Repository 端口并编排认证、笔记、附件、知识库、研究、模板、活动和定时报告等用例。
+- `internal/application/<domain>` 定义窄 Repository 端口并编排认证、笔记、附件、知识库、模板、活动和定时报告等用例。
 - `internal/domain` 保存跨传输与持久化边界的领域模型；`internal/store` 实现 PostgreSQL 事务、SQL 和 transaction-local RLS。
 - `internal/infrastructure` 保存 Redis 等外部端口适配器；对象存储、Kafka 和 Elasticsearch 仍通过各自抽象访问。
 
@@ -64,7 +64,7 @@ docker compose up --build
 
 运行时配置：
 
-`CORTEX_RUNTIME_ROLE` 可设为 `all`（默认）、`api` 或 `worker`。`api` 仅运行 HTTP 且不持有迁移账号；`worker` 运行 scheduler、outbox、知识索引、研究与投影任务且不监听 HTTP。
+`CORTEX_RUNTIME_ROLE` 可设为 `all`（默认）、`api` 或 `worker`。`api` 仅运行 HTTP 且不持有迁移账号；`worker` 运行 scheduler、outbox、知识摄取、搜索投影与对象 GC 任务且不监听 HTTP。
 
 ```text
 DATABASE_URL=postgresql://cortex_app:<password>@db:5432/cortex

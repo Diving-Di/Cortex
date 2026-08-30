@@ -1,12 +1,12 @@
 # 未完成事项与生产风险
 
-> 更新日期：2026-08-28
+> 更新日期：2026-08-30
 > 本文只记录真实缺口和不能对外承诺的事项。已实现能力见 `README.md`、`docs/BASELINE.md`、
 > `docs/SDD.md` 和 `docs/RAG.md`；发布门禁统一见 `docs/RELEASE_CHECKLIST.md`。
 
 ## P0：发布前必须关闭
 
-- 在目标部署环境运行完整非 AI、AI、研究、模板和活动验收；本地通过不能代替目标环境结果。
+- 在目标部署环境运行完整非 AI、AI、模板和活动验收；本地通过不能代替目标环境结果。
 - 用新 PostgreSQL 空库验证迁移版本 41、63 张业务表（连同 `schema_migrations` 共 64 张 public 表）、
   全部迁移、FORCE RLS、低权限 `cortex_app`、ready、注册和登录。
 - 为迁移 `000035_knowledge_index_progress` 与 `000036_knowledge_clarifications` 补目标数据库验收：
@@ -66,4 +66,6 @@
 - 2026-08-27：迁移 `000041_kafka_knowledge_pipeline` 已把知识摄取拆为解析、Embedding、搜索投影
   三个 Kafka 阶段；阶段进度、租约、重试和最终状态继续以 PostgreSQL 为准。
 - 2026-08-28：HTTP handler 到 `application` 用例服务的边界已覆盖认证、租户、笔记、附件、AI、
-  报告、知识库、研究、模板、活动等现有领域，并由架构测试约束依赖方向。
+  报告、知识库、模板、活动等现有领域，并由架构测试约束依赖方向。
+- 2026-08-30：小红书研究功能已从前端、API、application/store、后台 worker、初始化基线、迁移清单和
+  验收脚本中移除；历史迁移编号保留空缺，不复用已发布过的版本号。

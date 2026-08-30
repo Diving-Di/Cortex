@@ -107,7 +107,7 @@ Browser
 │   └── scripts/                 # 数据库初始化与验收脚本
 ├── frontend/src/
 │   ├── api/                     # API 请求封装
-│   ├── features/                # 工作台、笔记、知识库、研究、模板等
+│   ├── features/                # 工作台、笔记、知识库、模板、活动等
 │   └── routes/                  # 路由保护
 ├── docs/                        # API、设计、网关与验收文档
 ├── docker-compose.yml

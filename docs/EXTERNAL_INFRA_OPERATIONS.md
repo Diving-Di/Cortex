@@ -1,6 +1,6 @@
 # 外部基础设施运行与恢复
 
-> 当前状态（2026-08-28）：Compose 已默认启用 MinIO、Kafka 兼容的 Redpanda 与 Elasticsearch；
+> 当前状态（2026-08-30）：Compose 已默认启用 MinIO、Kafka 兼容的 Redpanda 与 Elasticsearch；
 > 本文的分阶段门禁用于目标环境发布，不表示仅凭本地 Compose 配置即已完成生产验收。
 
 生产发布顺序固定为 MinIO、Kafka、Elasticsearch，禁止在同一次发布中同时切换三条主路径。所有凭据通过 Secret 注入；Compose 中的单节点 Kafka 与 Elasticsearch 仅用于本地开发，生产必须使用三节点、TLS、最小权限账号、显式 Topic 和快照仓库。

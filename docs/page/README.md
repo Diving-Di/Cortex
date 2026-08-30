@@ -24,6 +24,7 @@
 | `/settings` | `features/settings/SettingsPage.tsx` |
 
 `/recipes` 与 `/assistant` 已在 `App.tsx` 中重定向到 `/knowledge`；菜谱前端组件已随功能删除。
+`/research` 及其页面组件已随小红书研究功能删除，当前不会重定向到其他产品页面。
 
 这些缺项不代表页面功能未实现，只表示尚无页面级专项说明。新增对应文档时，应至少包含：
 
