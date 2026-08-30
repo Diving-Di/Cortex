@@ -1,6 +1,7 @@
 FROM python:3.12-slim-bookworm
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     antiword=0.37-16 tesseract-ocr=5.3.0-2 tesseract-ocr-chi-sim=1:4.1.0-2 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

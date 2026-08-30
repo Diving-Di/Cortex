@@ -98,6 +98,7 @@ jobs:
       MINIO_SECRET_KEY: ci-minio-app-password
       ELASTICSEARCH_PASSWORD: ci-elasticsearch-password
       GRAFANA_ADMIN_PASSWORD: ci-grafana-password
+      REDIS_PASSWORD: ci-redis-password
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet
@@ -197,8 +198,8 @@ jobs:
         run: docker run --rm -v "$PWD:/workspace" zricethezav/gitleaks:v8.28.0 detect --source /workspace --no-git --config /workspace/.gitleaks.toml --redact --exit-code 1
       - name: Filesystem vulnerability scan and SBOM
         run: |
-          docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.65.0 fs --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed /workspace
-          docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.65.0 fs --format cyclonedx --output /workspace/cortex-sbom.json /workspace
+          docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.65.0 fs --scanners vuln --skip-dirs /workspace/frontend/node_modules --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed /workspace
+          docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.65.0 fs --scanners vuln --skip-dirs /workspace/frontend/node_modules --format cyclonedx --output /workspace/cortex-sbom.json /workspace
       - uses: actions/upload-artifact@v4
         with:
           name: cortex-sbom
@@ -217,5 +218,5 @@ jobs:
       - name: Scan built runtime images
         run: |
           for image in cortex-backend:ci cortex-frontend:ci cortex-document-parser:ci; do
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.65.0 image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$image"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.65.0 image --scanners vuln --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$image"
           done

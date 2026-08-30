@@ -29,7 +29,8 @@ FROM alpine:3.23
 LABEL org.opencontainers.image.title="Cortex Backend" \
       org.opencontainers.image.description="Personal notes and knowledge service"
 
-RUN apk add --no-cache ca-certificates chromium tzdata su-exec \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates chromium tzdata su-exec \
     && addgroup -S cortex \
     && adduser -S -G cortex -h /app cortex
 
@@ -38,7 +39,6 @@ COPY --from=builder /out/server /app/server
 COPY --from=builder /out/migrate /app/migrate
 COPY --from=builder /out/rag-eval /app/rag-eval
 COPY --from=builder /out/blob-migrate /app/blob-migrate
-COPY --from=builder /src/resources /app/resources
 COPY --from=builder /src/testdata/rag /app/testdata/rag
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
