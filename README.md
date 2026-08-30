@@ -42,15 +42,6 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 
 PDF、Word 和图片由无业务凭据的隔离 `document-parser` 服务解析为统一文本块。解析结果通过 PostgreSQL 中间结果与 Transactional Outbox 进入独立 Embedding Kafka 阶段，完成后再触发 Elasticsearch 投影；消息仅携带事件和文档标识。Excel 摄取仍不在当前范围。
 
-### 小红书研究
-
-- 在 `/research` 通过关键词或公开笔记链接创建异步研究任务。
-- 对公开正文和图片执行受控采集，图片 OCR 可通过 `RESEARCH_OCR_URL` 接入内部服务。
-- 通过 LiteLLM 生成摘要、关键观点、分类和标签研究草稿。
-- 任务、来源和草稿使用 PostgreSQL 持久化并受 RLS 隔离，不依赖 Redis。
-- 支持按个人租户扫码授权；会话使用 AES-256-GCM 加密保存，二维码和 Chromium Profile 仅临时存在。
-- 采集授权、平台限流或 AI/OCR 不可用时按能力降级，不影响笔记和个人知识库。
-
 ### 数据自主与隔离
 
 - 将有效笔记导出为 Markdown ZIP。
@@ -310,11 +301,10 @@ docker compose config --quiet
 docker compose -f docker-compose.ci.yml config --quiet
 .\backend\scripts\non_ai_smoke.ps1
 .\backend\scripts\ai_acceptance.ps1
-.\backend\scripts\research_acceptance.ps1
 .\backend\scripts\template_ai_event_acceptance.ps1
 ```
 
-知识库验收覆盖上传、索引、混合问答、来源保存与 3 GiB 配额；研究与模板验收覆盖各自流程。
+知识库验收覆盖上传、索引、混合问答、来源保存与 3 GiB 配额；模板验收覆盖私有模板、公开快照与 AI 活动流程。
 
 ## 文档
 
@@ -327,7 +317,6 @@ docker compose -f docker-compose.ci.yml config --quiet
 - [个人知识库页](docs/page/KNOWLEDGE_PAGE_ARCHITECTURE.md)：上传、配额、文档管理与降级说明
 - [模板广场页](docs/page/TEMPLATES_PAGE_ARCHITECTURE.md)：私有模板、公开快照、榜单与使用流程
 - [AI 限量活动页](docs/page/AI_EVENTS_PAGE_ARCHITECTURE.md)：活动倒计时、资格、点数与领取
-- [小红书研究页](docs/page/RESEARCH_PAGE_ARCHITECTURE.md)：研究采集、整理、保存、授权和验收说明
 - [2026-08-25 基础设施验收](docs/operations/INFRASTRUCTURE_ACCEPTANCE_20260825.md)：当前 Compose 主路径、故障注入、备份恢复和可观测性证据
 - [2026-08-25 RAG 与负载复验](docs/operations/RAG_AND_K6_RERUN_20260825.md)：当前 RAG 质量和 AI 活动负载结果
 - [RAG 与基础设施演进技术方案](docs/INFRASTRUCTURE_EVOLUTION.md)：MinIO/Redis 大文件上传、Kafka 多格式文档处理、Elasticsearch 检索及生产验收方案

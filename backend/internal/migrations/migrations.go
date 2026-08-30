@@ -25,6 +25,7 @@ var cortexRoleReplacer = strings.NewReplacer(
 var acceptedLegacyChecksums = map[int64]map[string]struct{}{
 	10: {"e0fa4cb4fe22b92551fe9666520742e681870d79f76a1fffc776b1dddcb8936e": {}},
 	11: {"01046b8740695e346c9399bf49df09eb19b9c03a71906473de9fab157cc667cc": {}},
+	12: {"2b3b30f0f765b42e28af0b8e03359a6b235d76cf5c9dfcac6ac7caddedd7aa65": {}},
 }
 
 func executableSQL(sql string) string {

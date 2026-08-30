@@ -1,9 +1,3 @@
-ALTER TABLE public.research_drafts
-    DROP COLUMN IF EXISTS knowledge_document_id;
-
-ALTER TABLE public.research_jobs
-    DROP COLUMN IF EXISTS target_collection_id;
-
 DROP TABLE IF EXISTS public.knowledge_message_sources CASCADE;
 DROP TABLE IF EXISTS public.knowledge_index_jobs CASCADE;
 DROP TABLE IF EXISTS public.knowledge_child_chunks CASCADE;

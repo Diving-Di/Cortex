@@ -66,8 +66,6 @@ func main() {
 	if cfg.RuntimeRole != "api" {
 		workers.Run(ctx, cfg, db, blobs, localBlobs, logger)
 		go server.RunScheduler(ctx, cfg, db, logger)
-		server.RunResearchWorkers(ctx, cfg, db, logger)
-		server.RunXHSAuthorizationWorkers(ctx, cfg, db, logger)
 		server.RunAIEventWorkers(ctx, cfg, db, logger)
 		server.RunMarketplaceWorker(ctx, db, redis, logger)
 	}

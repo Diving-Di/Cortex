@@ -6,7 +6,6 @@ import {
   EditOutlined,
   LogoutOutlined,
   MessageOutlined,
-  SearchOutlined,
   ThunderboltOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
@@ -28,7 +27,6 @@ const NotesPage = lazy(() => import('./features/notes/NotesPage'));
 const ReportsPage = lazy(() => import('./features/reports/ReportsPage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const KnowledgePage = lazy(() => import('./features/knowledge/KnowledgePage'));
-const ResearchPage = lazy(() => import('./features/research/ResearchPage'));
 const AIEventsPage = lazy(() => import('./features/aiEvents/AIEventsPage'));
 
 function AppLayout() {
@@ -62,7 +60,6 @@ function AppLayout() {
             { key: '/', icon: <MessageOutlined />, label: '工作台' },
             { key: '/notes', icon: <EditOutlined />, label: '笔记本' },
             { key: '/knowledge', icon: <BookOutlined />, label: '个人知识库' },
-            { key: '/research', icon: <SearchOutlined />, label: '小红书研究' },
             { key: '/ai-events', icon: <ThunderboltOutlined />, label: 'AI 限量活动' },
             { key: '/reports', icon: <BarChartOutlined />, label: '周期报告' },
             { key: '/settings', icon: <SettingOutlined />, label: '设置' },
@@ -83,7 +80,6 @@ function AppLayout() {
             <Route path="knowledge" element={<KnowledgePage />} />
             <Route path="recipes" element={<Navigate to="/knowledge" replace />} />
             <Route path="assistant" element={<Navigate to="/knowledge" replace />} />
-            <Route path="research" element={<ResearchPage />} />
             <Route path="ai-events" element={<AIEventsPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="settings" element={<SettingsPage />} />

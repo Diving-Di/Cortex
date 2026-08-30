@@ -28,10 +28,8 @@ import (
 	notesapp "cortex/backend/internal/application/notes"
 	preferencesapp "cortex/backend/internal/application/preferences"
 	reportsapp "cortex/backend/internal/application/reports"
-	researchapp "cortex/backend/internal/application/research"
 	scheduledapp "cortex/backend/internal/application/scheduled"
 	tenantapp "cortex/backend/internal/application/tenant"
-	xhsapp "cortex/backend/internal/application/xhs"
 	"cortex/backend/internal/blobstore"
 	"cortex/backend/internal/config"
 	"cortex/backend/internal/domain"
@@ -68,10 +66,8 @@ type Server struct {
 	authService            *authapp.Service
 	aiEvents               *aieventsapp.Service
 	marketplace            *marketplaceapp.Service
-	research               *researchapp.Service
 	knowledgeService       *knowledgeapp.Service
 	scheduled              *scheduledapp.Service
-	xhs                    *xhsapp.Service
 	rateMu                 sync.Mutex
 	localRates             map[string]localRateWindow
 	aiEventFallbackSlots   chan struct{}
@@ -119,10 +115,8 @@ type Dependencies struct {
 	Auth          *authapp.Service
 	AIEvents      *aieventsapp.Service
 	Marketplace   *marketplaceapp.Service
-	Research      *researchapp.Service
 	Knowledge     *knowledgeapp.Service
 	Scheduled     *scheduledapp.Service
-	XHS           *xhsapp.Service
 }
 
 func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger, version string, deps Dependencies) http.Handler {
@@ -179,10 +173,6 @@ func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger
 	if s.marketplace == nil && db != nil {
 		s.marketplace = marketplaceapp.NewService(db)
 	}
-	s.research = deps.Research
-	if s.research == nil && db != nil {
-		s.research = researchapp.NewService(db)
-	}
 	s.knowledgeService = deps.Knowledge
 	if s.knowledgeService == nil && db != nil {
 		s.knowledgeService = knowledgeapp.NewService(db)
@@ -190,10 +180,6 @@ func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger
 	s.scheduled = deps.Scheduled
 	if s.scheduled == nil && db != nil {
 		s.scheduled = scheduledapp.NewService(db)
-	}
-	s.xhs = deps.XHS
-	if s.xhs == nil && db != nil {
-		s.xhs = xhsapp.NewService(db)
 	}
 	s.redis = deps.Redis
 	s.authRedis = deps.Redis
@@ -262,27 +248,6 @@ func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger
 			active.POST("/api/v1/exports/markdown", gin.WrapF(s.exportMarkdown))
 			active.GET("/api/v1/settings/preferences", gin.WrapF(s.getPreferences))
 			active.PUT("/api/v1/settings/preferences", gin.WrapF(s.updatePreferences))
-			active.POST("/api/v1/research/jobs", gin.WrapF(s.createResearchJob))
-			active.GET("/api/v1/research/jobs", gin.WrapF(s.listResearchJobs))
-			active.GET("/api/v1/research/jobs/:jobID", gin.WrapF(s.getResearchJob))
-			active.POST("/api/v1/research/jobs/:jobID/cancel", gin.WrapF(s.cancelResearchJob))
-			active.POST("/api/v1/research/jobs/:jobID/retry", gin.WrapF(s.retryResearchJob))
-			active.GET("/api/v1/research/sources", gin.WrapF(s.listResearchSources))
-			active.GET("/api/v1/research/sources/:sourceID", gin.WrapF(s.getResearchSource))
-			active.DELETE("/api/v1/research/sources/:sourceID", gin.WrapF(s.deleteResearchSource))
-			active.POST("/api/v1/research/sources/:sourceID/retry", gin.WrapF(s.recollectResearchSource))
-			active.POST("/api/v1/research/sources/:sourceID/recollect", gin.WrapF(s.recollectResearchSource))
-			active.PATCH("/api/v1/research/sources/:sourceID/draft", gin.WrapF(s.updateResearchDraft))
-			active.POST("/api/v1/research/sources/:sourceID/ignore", gin.WrapF(s.ignoreResearchSource))
-			active.POST("/api/v1/research/sources/batch-ignore", gin.WrapF(s.batchIgnoreResearchSources))
-			active.GET("/api/v1/research/assets/:assetID", gin.WrapF(s.downloadResearchAsset))
-			active.GET("/api/v1/research/xhs/authorization", gin.WrapF(s.getXHSAuthorization))
-			active.POST("/api/v1/research/xhs/authorizations", gin.WrapF(s.startXHSAuthorization))
-			active.GET("/api/v1/research/xhs/authorizations/:attemptID", gin.WrapF(s.getXHSAuthAttempt))
-			active.GET("/api/v1/research/xhs/authorizations/:attemptID/qr", gin.WrapF(s.getXHSAuthQR))
-			active.POST("/api/v1/research/xhs/authorizations/:attemptID/cancel", gin.WrapF(s.cancelXHSAuthorization))
-			active.POST("/api/v1/research/xhs/authorization/verify", gin.WrapF(s.verifyXHSAuthorization))
-			active.DELETE("/api/v1/research/xhs/authorization", gin.WrapF(s.revokeXHSAuthorization))
 			active.GET("/api/v1/public-profile", gin.WrapF(s.getPublicProfile))
 			active.PUT("/api/v1/public-profile", gin.WrapF(s.upsertPublicProfile))
 			active.GET("/api/v1/templates/public", gin.WrapF(s.listPublicTemplates))

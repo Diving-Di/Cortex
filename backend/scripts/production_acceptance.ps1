@@ -46,10 +46,7 @@ try {
     $metrics = Invoke-WebRequest "http://127.0.0.1:8000/metrics"
     foreach ($name in @(
         "cortex_http_requests_total",
-        "cortex_knowledge_index_jobs{status=`"queued`"}",
-        "cortex_research_jobs_created_total",
-        "cortex_research_collector_available",
-        "cortex_research_ocr_available"
+        "cortex_knowledge_index_jobs{status=`"queued`"}"
     )) {
         if ($metrics.Content -notmatch "(?m)^$([regex]::Escape($name)) ") {
             throw "missing metric $name"

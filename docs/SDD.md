@@ -108,12 +108,7 @@ flowchart LR
 `PATCH /api/v1/notes/{id}/knowledge` 开启个人笔记参与个人知识库问答；知识库检索与回忆
 问答相互隔离。
 
-## 6. 研究
-
-研究任务和来源受个人租户 RLS 隔离，可生成可编辑草稿、忽略或删除。研究内容不会保存到
-个人知识库，也不提供目标知识集合参数。图片资产保存在独立的 `research` 安全目录。
-
-## 7. AI 与降级
+## 6. AI 与降级
 
 AI 未配置或不可用时，认证、笔记、搜索、附件、导出和知识库文件管理仍可用。
 个人知识库上传、删除不依赖 Embedding；Embedding 或 Reranker 不可用时，索引任务失败或
@@ -123,7 +118,7 @@ AI 未配置或不可用时，认证、笔记、搜索、附件、导出和知�
 Excel 与演示文稿不属于当前知识库摄取范围；新增格式必须同时具备隔离解析、资源限制、来源定位、
 版本化任务和失败回滚，不能只放开扩展名。
 
-## 8. 部署与验证
+## 7. 部署与验证
 
 Compose 下数据库、Redis、MinIO、Kafka/Redpanda、Elasticsearch、LiteLLM、Embedding 和 Reranker
 服务不暴露宿主机公共端口。`/healthz` 只反映 API 进程存活，`/readyz` 只验证 PostgreSQL；`/health/dependencies` 独立报告对象存储、Redis、搜索和 AI 能力，避免可选依赖故障摘除核心笔记流量。`CORTEX_RUNTIME_ROLE` 支持 `all`、`api`、`worker`，其中 API 角色不建立 migrator 管理连接。新实例由 `backend/db/schema.sql`
@@ -144,7 +139,6 @@ Set-Location ..
 docker compose config --quiet
 .\backend\scripts\non_ai_smoke.ps1
 .\backend\scripts\ai_acceptance.ps1
-.\backend\scripts\research_acceptance.ps1
 .\backend\scripts\template_ai_event_acceptance.ps1
 ```
 
@@ -154,7 +148,7 @@ docker compose config --quiet
 运行角色，外部基础设施 worker 由 `backend/internal/workers` 受管运行。`cmd/migrate`、数据迁移和评测
 命令仅用于显式运维或离线验证，不是长期服务入口。
 
-## 9. 模板广场与限量 AI 活动
+## 8. 模板广场与限量 AI 活动
 
 私有模板受租户 RLS 保护，作者明确上架时生成不含租户标识的公开快照；作者下架或删除租户时
 立即使快照不可见。

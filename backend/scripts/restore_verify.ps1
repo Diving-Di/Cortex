@@ -145,14 +145,14 @@ try {
     try {
         New-Item -ItemType File -Path $pathsFile -Force | Out-Null
         $referencedPaths = @(docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
-            -c "SELECT stored_path FROM attachments WHERE storage_backend='local' UNION SELECT stored_path FROM knowledge_documents WHERE storage_backend='local' AND stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets WHERE storage_backend='local' UNION SELECT storage_path FROM research_assets")
+            -c "SELECT stored_path FROM attachments WHERE storage_backend='local' UNION SELECT stored_path FROM knowledge_documents WHERE storage_backend='local' AND stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets WHERE storage_backend='local'")
         if ($LASTEXITCODE -ne 0) { throw "application data reference query failed" }
         if ($referencedPaths.Count -gt 0) {
             $referencedPaths | Set-Content -LiteralPath $pathsFile -Encoding utf8NoBOM
         }
         $counts = docker run --rm --mount "type=volume,source=$appVolume,target=/data,readonly" `
             --mount "type=bind,source=$pathsFile,target=/paths.txt,readonly" alpine:3.23 `
-            sh -c 'sed "s/\r$//" /paths.txt | sed "/^$/d" | sort -u >/tmp/refs; find /data/attachments /data/knowledge /data/research -type f 2>/dev/null | sed "s#^/data/##" | sort -u >/tmp/files; missing=$(comm -23 /tmp/refs /tmp/files | wc -l); orphan=$(comm -13 /tmp/refs /tmp/files | wc -l); echo "$missing|$orphan"'
+            sh -c 'sed "s/\r$//" /paths.txt | sed "/^$/d" | sort -u >/tmp/refs; find /data/attachments /data/knowledge -type f 2>/dev/null | sed "s#^/data/##" | sort -u >/tmp/files; missing=$(comm -23 /tmp/refs /tmp/files | wc -l); orphan=$(comm -13 /tmp/refs /tmp/files | wc -l); echo "$missing|$orphan"'
         $pathCounts = $counts.Trim().Split('|')
         if ([int]$pathCounts[0] -ne 0) { throw "database references missing application files" }
         if ([int]$pathCounts[1] -ne 0) { throw "application data contains unreferenced files" }
@@ -172,7 +172,7 @@ try {
         docker run -d --name $backendContainer --network $network -P `
             -e "DATABASE_URL=postgresql://cortex_app:$appPassword@db:5432/cortex" `
             -e "MIGRATION_DATABASE_URL=postgresql://cortex_migrator:$dbPassword@db:5432/cortex" `
-            -e CORTEX_DATA_DIR=/app/data -e RESEARCH_ENABLED=false -e SCHEDULED_REPORTS_ENABLED=false `
+            -e CORTEX_DATA_DIR=/app/data -e SCHEDULED_REPORTS_ENABLED=false `
             -e REDIS_URL=redis://invalid:6379/0 --mount "type=volume,source=$appVolume,target=/app/data" cortex-backend | Out-Null
         $port = $null
         foreach ($attempt in 1..60) {

@@ -7,7 +7,6 @@
 
 | 路由 | 页面组件 | 说明文档 | 状态 |
 | --- | --- | --- | --- |
-| `/research` | `features/research/ResearchPage.tsx` | [小红书研究页](RESEARCH_PAGE_ARCHITECTURE.md) | 已覆盖 |
 | `/knowledge` | `features/knowledge/KnowledgePage.tsx` | [个人知识库页](KNOWLEDGE_PAGE_ARCHITECTURE.md) | 已覆盖 |
 | `/notes` | `features/notes/NotesPage.tsx` → `features/templates/TemplatesPage.tsx` | [模板广场页](TEMPLATES_PAGE_ARCHITECTURE.md) | 已覆盖 |
 | `/notes/list`、`/notes/:id` | `features/notes/NoteList.tsx`、`NoteEditor.tsx` | — | 尚无独立说明 |

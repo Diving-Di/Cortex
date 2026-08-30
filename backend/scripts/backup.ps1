@@ -42,7 +42,7 @@ $pathList = Join-Path $target ".referenced-paths.txt"
 try {
     New-Item -ItemType File -Path $pathList -Force | Out-Null
     $referencedPaths = @(docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
-        -c "SELECT stored_path FROM attachments WHERE storage_backend='local' UNION SELECT stored_path FROM knowledge_documents WHERE storage_backend='local' AND stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets WHERE storage_backend='local' UNION SELECT storage_path FROM research_assets ORDER BY 1")
+        -c "SELECT stored_path FROM attachments WHERE storage_backend='local' UNION SELECT stored_path FROM knowledge_documents WHERE storage_backend='local' AND stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets WHERE storage_backend='local' ORDER BY 1")
     if ($LASTEXITCODE -ne 0) { throw "application data reference query failed" }
     if ($referencedPaths.Count -gt 0) {
         $referencedPaths | Set-Content -LiteralPath $pathList -Encoding utf8NoBOM

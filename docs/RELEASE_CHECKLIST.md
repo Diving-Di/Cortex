@@ -63,7 +63,6 @@ docker compose config --quiet
 - [ ] `backend/scripts/non_ai_smoke.ps1` 通过；AI、Embedding、Reranker 或 Redis 不可用时，认证、
   笔记、搜索、附件和导出仍可用。
 - [ ] AI 已配置时 `backend/scripts/ai_acceptance.ps1` 通过；整理与报告坚持草稿确认，引用只来自当前租户。
-- [ ] 研究功能变更时运行 `research_acceptance.ps1`，验证授权、采集、忽略/重试及降级。
 - [ ] 模板或 AI 活动变更时运行 `template_ai_event_acceptance.ps1`、
   `template_ai_event_redis_failure_acceptance.ps1` 和 `ai_event_concurrency_acceptance.ps1`。
 

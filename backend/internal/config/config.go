@@ -67,24 +67,6 @@ type Config struct {
 	Environment                  string
 	ScheduledReportsEnabled      bool
 	ScheduledReportPoll          time.Duration
-	ResearchEnabled              bool
-	ResearchWorkers              int
-	ResearchMaxKeywords          int
-	ResearchMaxURLs              int
-	ResearchMaxResults           int
-	ResearchMaxImages            int
-	ResearchMaxImageBytes        int64
-	ResearchMaxBodyChars         int
-	ResearchLease                time.Duration
-	ResearchMaxAttempts          int
-	ResearchRequestInterval      time.Duration
-	ResearchHTTPTimeout          time.Duration
-	ResearchOCRURL               string
-	XHSSessionEncryptionKey      string
-	XHSSessionKeyVersion         int
-	XHSAuthorizationTTL          time.Duration
-	XHSAuthorizationEnabled      bool
-	XHSChromePath                string
 	KnowledgeIndexBatchSize      int
 	KnowledgeIndexPollSeconds    int
 	KnowledgeMaxUploadBytes      int64
@@ -207,58 +189,6 @@ func Load() (Config, error) {
 	esURLs := splitCSV(os.Getenv("ELASTICSEARCH_URLS"))
 	if retrievalBackend == "elasticsearch" && len(esURLs) == 0 {
 		return Config{}, fmt.Errorf("ELASTICSEARCH_URLS is required when RAG_RETRIEVAL_BACKEND=elasticsearch")
-	}
-	researchWorkers, err := positiveInt("RESEARCH_WORKERS", 1)
-	if err != nil {
-		return Config{}, err
-	}
-	researchMaxKeywords, err := positiveInt("RESEARCH_MAX_KEYWORDS", 5)
-	if err != nil {
-		return Config{}, err
-	}
-	researchMaxURLs, err := positiveInt("RESEARCH_MAX_URLS", 30)
-	if err != nil {
-		return Config{}, err
-	}
-	researchMaxResults, err := positiveInt("RESEARCH_MAX_RESULTS", 50)
-	if err != nil {
-		return Config{}, err
-	}
-	researchMaxImages, err := positiveInt("RESEARCH_MAX_IMAGES", 20)
-	if err != nil {
-		return Config{}, err
-	}
-	researchMaxImageBytes, err := positiveInt("RESEARCH_MAX_IMAGE_BYTES", 10*1024*1024)
-	if err != nil {
-		return Config{}, err
-	}
-	researchMaxBodyChars, err := positiveInt("RESEARCH_MAX_BODY_CHARS", 100_000)
-	if err != nil {
-		return Config{}, err
-	}
-	researchLeaseSeconds, err := positiveInt("RESEARCH_LEASE_SECONDS", 300)
-	if err != nil {
-		return Config{}, err
-	}
-	researchMaxAttempts, err := positiveInt("RESEARCH_MAX_ATTEMPTS", 3)
-	if err != nil {
-		return Config{}, err
-	}
-	researchIntervalMS, err := positiveInt("RESEARCH_REQUEST_INTERVAL_MS", 1500)
-	if err != nil {
-		return Config{}, err
-	}
-	researchTimeoutSeconds, err := positiveInt("RESEARCH_HTTP_TIMEOUT_SECONDS", 20)
-	if err != nil {
-		return Config{}, err
-	}
-	xhsKeyVersion, err := positiveInt("XHS_SESSION_KEY_VERSION", 1)
-	if err != nil {
-		return Config{}, err
-	}
-	xhsAuthorizationTTLSeconds, err := positiveInt("XHS_AUTHORIZATION_TTL_SECONDS", 180)
-	if err != nil {
-		return Config{}, err
 	}
 	knowledgeIndexBatchSize, err := positiveInt("KNOWLEDGE_INDEX_BATCH_SIZE", 16)
 	if err != nil {
@@ -398,24 +328,6 @@ func Load() (Config, error) {
 		Environment:                  valueOrDefault("APP_ENV", "development"),
 		ScheduledReportsEnabled:      parseBool(valueOrDefault("SCHEDULED_REPORTS_ENABLED", "true")),
 		ScheduledReportPoll:          time.Duration(max(10, pollSeconds)) * time.Second,
-		ResearchEnabled:              parseBool(valueOrDefault("RESEARCH_ENABLED", "true")),
-		ResearchWorkers:              researchWorkers,
-		ResearchMaxKeywords:          researchMaxKeywords,
-		ResearchMaxURLs:              researchMaxURLs,
-		ResearchMaxResults:           researchMaxResults,
-		ResearchMaxImages:            researchMaxImages,
-		ResearchMaxImageBytes:        int64(researchMaxImageBytes),
-		ResearchMaxBodyChars:         researchMaxBodyChars,
-		ResearchLease:                time.Duration(researchLeaseSeconds) * time.Second,
-		ResearchMaxAttempts:          researchMaxAttempts,
-		ResearchRequestInterval:      time.Duration(researchIntervalMS) * time.Millisecond,
-		ResearchHTTPTimeout:          time.Duration(researchTimeoutSeconds) * time.Second,
-		ResearchOCRURL:               strings.TrimSpace(os.Getenv("RESEARCH_OCR_URL")),
-		XHSSessionEncryptionKey:      strings.TrimSpace(os.Getenv("XHS_SESSION_ENCRYPTION_KEY")),
-		XHSSessionKeyVersion:         xhsKeyVersion,
-		XHSAuthorizationTTL:          time.Duration(xhsAuthorizationTTLSeconds) * time.Second,
-		XHSAuthorizationEnabled:      parseBool(valueOrDefault("XHS_AUTHORIZATION_ENABLED", "false")),
-		XHSChromePath:                valueOrDefault("XHS_CHROME_PATH", "/usr/bin/chromium"),
 		KnowledgeIndexBatchSize:      knowledgeIndexBatchSize,
 		KnowledgeIndexPollSeconds:    knowledgeIndexPollSeconds,
 		KnowledgeMaxUploadBytes:      int64(knowledgeMaxUploadBytes),
