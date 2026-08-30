@@ -143,8 +143,13 @@ try {
 
     $pathsFile = Join-Path ([IO.Path]::GetTempPath()) "$prefix-paths.txt"
     try {
-        docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
-            -c "SELECT stored_path FROM attachments WHERE storage_backend='local' UNION SELECT stored_path FROM knowledge_documents WHERE storage_backend='local' AND stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets WHERE storage_backend='local' UNION SELECT storage_path FROM research_assets" | Set-Content -LiteralPath $pathsFile -Encoding utf8NoBOM
+        New-Item -ItemType File -Path $pathsFile -Force | Out-Null
+        $referencedPaths = @(docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
+            -c "SELECT stored_path FROM attachments WHERE storage_backend='local' UNION SELECT stored_path FROM knowledge_documents WHERE storage_backend='local' AND stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets WHERE storage_backend='local' UNION SELECT storage_path FROM research_assets")
+        if ($LASTEXITCODE -ne 0) { throw "application data reference query failed" }
+        if ($referencedPaths.Count -gt 0) {
+            $referencedPaths | Set-Content -LiteralPath $pathsFile -Encoding utf8NoBOM
+        }
         $counts = docker run --rm --mount "type=volume,source=$appVolume,target=/data,readonly" `
             --mount "type=bind,source=$pathsFile,target=/paths.txt,readonly" alpine:3.23 `
             sh -c 'sed "s/\r$//" /paths.txt | sed "/^$/d" | sort -u >/tmp/refs; find /data/attachments /data/knowledge /data/research -type f 2>/dev/null | sed "s#^/data/##" | sort -u >/tmp/files; missing=$(comm -23 /tmp/refs /tmp/files | wc -l); orphan=$(comm -13 /tmp/refs /tmp/files | wc -l); echo "$missing|$orphan"'
