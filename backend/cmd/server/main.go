@@ -78,14 +78,7 @@ func main() {
 	}
 
 	handler := server.NewWithDependencies(cfg, db, logger, version, server.Dependencies{Blobs: blobs, LocalBlobs: localBlobs, Redis: redis, Search: search})
-	httpServer := &http.Server{
-		Addr:              cfg.ListenAddress,
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       90 * time.Second,
-	}
+	httpServer := newHTTPServer(cfg.ListenAddress, handler)
 
 	go func() {
 		logger.Info("server starting", "address", cfg.ListenAddress, "version", version)
@@ -100,5 +93,19 @@ func main() {
 	defer shutdownCancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("graceful shutdown failed", "error", err)
+	}
+}
+
+func newHTTPServer(address string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              address,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		// Streaming AI responses can legitimately exceed 30 seconds. Each
+		// upstream operation owns a context deadline, so a process-wide write
+		// deadline would only truncate valid SSE streams.
+		WriteTimeout: 0,
+		IdleTimeout:  90 * time.Second,
 	}
 }

@@ -1,7 +1,7 @@
 # Cortex 工程基线
 
 > 状态：当前有效
-> 更新日期：2026-08-28
+> 更新日期：2026-08-29
 
 ## 产品范围
 
@@ -27,7 +27,8 @@ Excel、演示文稿、团队知识库和断点续传不属于当前知识库摄
 | 数据库 | PostgreSQL 16、RLS |
 | AI | LiteLLM Proxy、OpenAI 兼容 Chat Completions、SSE |
 | 知识检索 | GTE 中文 Embedding（512 维）、BGE CrossEncoder Reranker；PostgreSQL/pgvector + 中文 2-gram 为本地回退，Compose 默认使用 Elasticsearch BM25 + KNN 投影 |
-| 部署 | Docker Compose、多阶段静态 Go 镜像 |
+| 部署 | Docker Compose、多阶段静态 Go 镜像；tag 发布生成带 SBOM/provenance/attestation 的 digest 镜像，部署前联合备份并支持应用自动回退 |
+| 可观测性 | Prometheus、Alertmanager、Grafana provisioning、基础设施 exporter、低基数 HTTP SLI、SLO/错误预算与备份恢复 textfile 指标 |
 | 文件与事件 | Compose 默认使用私有 MinIO 与 Kafka 兼容的 Redpanda；PostgreSQL 保存对象定位、Outbox、任务和消费事实 |
 | 文档解析 | Compose 内部隔离的 `document-parser` 处理 PDF、DOC/DOCX 与 PNG/JPG/WebP OCR；解析结果经 PostgreSQL 任务状态和 Kafka 阶段事件推进 |
 | 活动协调 | Redis 7、Lua 原子预扣；PostgreSQL 保存最终事实 |
@@ -59,7 +60,7 @@ Excel、演示文稿、团队知识库和断点续传不属于当前知识库摄
 - 个人知识库使用 Compose 内部 `embedding-service` 加载固定 revision 的
   `iic/nlp_gte_sentence-embedding_chinese-small`（512 维）。
 - 知识检索精排使用 Compose 内部 `reranker-service` 加载固定 revision 的
-  `BAAI/bge-reranker-v2-m3`；两个模型服务均不暴露宿主机端口。
+  `BAAI/bge-reranker-v2-m3`；运行时使用经依赖审计的 PyTorch 2.13/CUDA 13，两个模型服务均不暴露宿主机端口。
 - 个人知识库上传限制由 `KNOWLEDGE_MAX_*` 环境变量控制；每租户容量上限 3 GiB。
 - `RAG_PLANNER_ENABLED` 默认关闭；只有冻结评测集证明复杂查询优于单查询基线后才允许启用，
   `RAG_PLANNER_MAX_SUBQUERIES` 不得超过 4。
@@ -70,7 +71,7 @@ Excel、演示文稿、团队知识库和断点续传不属于当前知识库摄
 Set-Location backend
 gofmt -l .
 go vet ./...
-go test ./...
+pwsh ./scripts/check_go_coverage.ps1 -Minimum 18
 go build ./cmd/server
 go build ./cmd/migrate
 
@@ -81,11 +82,18 @@ docker compose up -d --build
 .\backend\scripts\ai_acceptance.ps1
 ```
 
+前端 CI 运行 Vitest 覆盖率门禁和 Chromium Playwright 登录/受保护路由 E2E；隔离 CI Compose
+从空 PostgreSQL 基线执行到迁移 41，并强制运行 RLS、租约、Outbox、Redis、MinIO、Kafka 和
+Elasticsearch 验收。依赖与镜像还需通过 govulncheck、npm audit、pip-audit、Gitleaks、Trivy 和 SBOM 门禁。
+生产发布还必须完成真实 Alertmanager receiver 送达、当期 primary/secondary 映射、联合恢复和目标容量验收；
+默认本地 receiver 与本地 RPO/RTO 不构成生产证据。
+
 - 所有 Go 源码必须通过 `gofmt`；允许使用 Go 惯例中的 Tab 缩进。
 - `db`、`redis`、`llm-gateway`、`embedding-service`、`reranker-service`、`minio`、`kafka`、
   `elasticsearch` 和 `backend` 必须为 healthy；无 HTTP 健康检查的消费者须以进程、积压和任务状态验收。
 - 固定 GTE Embedding 必须通过单条、批量、中英文、维度异常和不可用降级验收。
-- 新 PostgreSQL 空库必须完成全部版本化迁移（当前迁移版本 41、63 张 public 表）、RLS、注册和登录验收。
+- 新 PostgreSQL 空库必须完成全部版本化迁移（当前迁移版本 41、63 张业务表，连同 `schema_migrations`
+  共 64 张 public 表）、RLS、注册和登录验收。
 - 模板广场还需验证 Outbox 类型隔离、排行 active pointer 原子切换、daily/HLL 8 天 TTL、匿名 UV
   读取和 Redis 故障回表降级。本地容量结果不能作为线上 QPS 或 p95/p99。
 - 个人知识库上传、索引阶段/进度、混合问答、一次性澄清恢复、幂等回放、跨租户隔离和 3 GiB 配额验收通过。

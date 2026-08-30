@@ -15,6 +15,7 @@ import (
 	"cortex/backend/internal/apierror"
 	"cortex/backend/internal/httpx"
 	"cortex/backend/internal/store"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -460,13 +461,39 @@ func (s *Server) allowUserRequest(r *http.Request, scope string, limit int, wind
 }
 
 func (s *Server) allowIPRequest(r *http.Request, scope string, limit int, window time.Duration) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
+	host := ""
+	if s.cfg.TrustProxyHeaders {
+		host = strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	}
+	if host == "" {
+		var err error
+		host, _, err = net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
 	}
 	digest := sha256.Sum256([]byte(host))
 	key := "cortex:rate:" + scope + ":ip:" + base64.RawURLEncoding.EncodeToString(digest[:12])
 	return s.allowRateKey(r, key, limit, window)
+}
+
+func (s *Server) allowIdentityRequest(r *http.Request, scope, identity string, limit int, window time.Duration) bool {
+	digest := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(identity))))
+	key := "cortex:rate:" + scope + ":identity:" + base64.RawURLEncoding.EncodeToString(digest[:12])
+	return s.allowRateKey(r, key, limit, window)
+}
+
+func (s *Server) preAuthRateLimit(scope string, limit int, window time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Focused handler tests construct a minimal Config. Production config
+		// loading always supplies positive limits.
+		if limit > 0 && !s.allowIPRequest(c.Request, scope, limit, window) {
+			httpx.WriteError(c.Writer, s.logger, apierror.New("RATE_LIMITED", "请求过于频繁，请稍后重试", http.StatusTooManyRequests))
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
 }
 
 func (s *Server) allowRateKey(r *http.Request, key string, limit int, window time.Duration) bool {

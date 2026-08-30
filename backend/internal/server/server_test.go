@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"cortex/backend/internal/config"
@@ -25,6 +26,30 @@ func TestRouterStartsAndServesHealth(t *testing.T) {
 	}
 	if response.Header().Get("X-Request-ID") == "" {
 		t.Fatal("missing response request ID")
+	}
+}
+
+func TestMetricsExposeLowCardinalityHTTPServiceIndicators(t *testing.T) {
+	handler := New(
+		config.Config{CORSOrigins: []string{"http://localhost:5173"}},
+		nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		"test",
+	)
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/missing/123", nil))
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := response.Body.String()
+	for _, expected := range []string{
+		`cortex_http_requests_total{method="GET",route="/healthz"}`,
+		`cortex_http_requests_total{method="GET",route="unmatched"}`,
+		`cortex_http_request_duration_seconds_bucket{method="GET",route="/healthz",le="+Inf"}`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("metrics missing %q", expected)
+		}
 	}
 }
 

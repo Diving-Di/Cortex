@@ -1,0 +1,28 @@
+name: Model image verification
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 19 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-image-verification
+  cancel-in-progress: true
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t cortex-embedding:verify local-embedding
+      - run: docker build -t cortex-reranker:verify local-reranker
+      - name: Scan model runtime images
+        run: |
+          for image in cortex-embedding:verify cortex-reranker:verify; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.65.0 image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$image"
+          done

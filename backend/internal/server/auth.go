@@ -33,23 +33,28 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
+	if !s.allowIdentityRequest(r, "auth-register-user", request.Username, 3, time.Hour) ||
+		!s.allowIdentityRequest(r, "auth-register-email", request.Email, 3, time.Hour) {
+		httpx.WriteError(w, s.logger, apierror.New("RATE_LIMITED", "注册请求过于频繁，请稍后重试", http.StatusTooManyRequests))
+		return
+	}
 	if err := s.authService.Register(r.Context(), request.Username, request.Email, request.Password); err != nil {
 		if validationErr, ok := err.(*authapp.ValidationError); ok {
-			httpx.JSON(w, http.StatusBadRequest, map[string]string{"detail": validationErr.Message})
+			httpx.WriteError(w, s.logger, apierror.New("VALIDATION_ERROR", validationErr.Message, http.StatusBadRequest))
 			return
 		}
 		if appErr, ok := err.(*apierror.Error); ok && appErr.Code == "REGISTRATION_CONFLICT" {
-			httpx.JSON(w, http.StatusBadRequest, map[string]string{"detail": appErr.Message})
+			httpx.WriteError(w, s.logger, appErr)
 			return
 		}
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	httpx.JSON(w, http.StatusCreated, map[string]string{"detail": "registered"})
+	httpx.JSON(w, http.StatusCreated, map[string]string{"status": "registered"})
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	token, username, ok := s.authenticateCredentials(w, r)
+	token, username, ok := s.authenticateCredentials(w, r, "auth-login")
 	if !ok {
 		return
 	}
@@ -68,17 +73,25 @@ func (s *Server) issueToken(w http.ResponseWriter, r *http.Request) {
 		))
 		return
 	}
-	token, username, ok := s.authenticateCredentials(w, r)
+	token, username, ok := s.authenticateCredentials(w, r, "auth-token")
 	if !ok {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]string{"token": token, "username": username})
 }
 
-func (s *Server) authenticateCredentials(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+func (s *Server) authenticateCredentials(w http.ResponseWriter, r *http.Request, scope string) (string, string, bool) {
 	var request loginRequest
 	if err := httpx.DecodeJSON(r, &request); err != nil {
 		httpx.WriteError(w, s.logger, err)
+		return "", "", false
+	}
+	limit := s.cfg.AuthLoginAccountLimit
+	if limit <= 0 {
+		limit = 10
+	}
+	if !s.allowIdentityRequest(r, scope, request.Username, limit, 5*time.Minute) {
+		httpx.WriteError(w, s.logger, apierror.New("RATE_LIMITED", "登录请求过于频繁，请稍后重试", http.StatusTooManyRequests))
 		return "", "", false
 	}
 	token, username, err := s.authService.Login(
@@ -86,7 +99,7 @@ func (s *Server) authenticateCredentials(w http.ResponseWriter, r *http.Request)
 	)
 	if err != nil {
 		if appErr, ok := err.(*apierror.Error); ok && appErr.Code == "INVALID_CREDENTIALS" {
-			httpx.JSON(w, http.StatusBadRequest, map[string]string{"detail": appErr.Message})
+			httpx.WriteError(w, s.logger, appErr)
 			return "", "", false
 		}
 		httpx.WriteError(w, s.logger, err)

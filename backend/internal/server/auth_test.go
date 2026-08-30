@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cortex/backend/internal/config"
+	"github.com/gin-gonic/gin"
 )
 
 func TestBrowserLoginResponseDoesNotExposeToken(t *testing.T) {
@@ -45,6 +46,31 @@ func TestTokenEndpointRejectsBrowserOrigin(t *testing.T) {
 	server.issueToken(response, request)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+func TestPreAuthRateLimitUsesStableErrorContract(t *testing.T) {
+	server := &Server{localRates: make(map[string]localRateWindow)}
+	handler := server.preAuthRateLimit("login", 1, time.Minute)
+
+	first := httptest.NewRecorder()
+	firstContext, _ := gin.CreateTestContext(first)
+	firstContext.Request = httptest.NewRequest(http.MethodPost, "/login", nil)
+	handler(firstContext)
+
+	second := httptest.NewRecorder()
+	secondContext, _ := gin.CreateTestContext(second)
+	secondContext.Request = httptest.NewRequest(http.MethodPost, "/login", nil)
+	handler(secondContext)
+	if second.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d", second.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(second.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["code"] != "RATE_LIMITED" || body["message"] == nil {
+		t.Fatalf("unexpected error contract: %#v", body)
 	}
 }
 

@@ -24,6 +24,9 @@ func TestLoadKnowledgeIndexDefaults(t *testing.T) {
 	if cfg.AIEventClaimIPLimit != 60 {
 		t.Fatalf("AIEventClaimIPLimit = %d", cfg.AIEventClaimIPLimit)
 	}
+	if cfg.AuthLoginIPLimit != 30 || cfg.AuthLoginAccountLimit != 10 || cfg.AuthRegisterIPLimit != 5 || cfg.AuthTokenIPLimit != 15 {
+		t.Fatalf("auth rate defaults = %d/%d/%d/%d", cfg.AuthLoginIPLimit, cfg.AuthLoginAccountLimit, cfg.AuthRegisterIPLimit, cfg.AuthTokenIPLimit)
+	}
 	if cfg.AuthPoolSize != 32 || cfg.AIEventClaimConcurrency != 16 || cfg.AIEventClaimQueueTimeout != 10_000_000_000 {
 		t.Fatalf("AI event capacity defaults = auth pool %d, concurrency %d, timeout %s", cfg.AuthPoolSize, cfg.AIEventClaimConcurrency, cfg.AIEventClaimQueueTimeout)
 	}

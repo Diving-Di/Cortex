@@ -17,6 +17,11 @@ type Config struct {
 	ListenAddress                string
 	CORSOrigins                  []string
 	TokenTTL                     time.Duration
+	TrustProxyHeaders            bool
+	AuthLoginIPLimit             int
+	AuthLoginAccountLimit        int
+	AuthRegisterIPLimit          int
+	AuthTokenIPLimit             int
 	StatementTimeout             time.Duration
 	PoolSize                     int32
 	AuthPoolSize                 int32
@@ -121,6 +126,22 @@ func Load() (Config, error) {
 		}
 	}
 	tokenHours, err := positiveInt("TOKEN_TTL_HOURS", 720)
+	if err != nil {
+		return Config{}, err
+	}
+	authLoginIPLimit, err := positiveInt("AUTH_LOGIN_IP_LIMIT", 30)
+	if err != nil {
+		return Config{}, err
+	}
+	authLoginAccountLimit, err := positiveInt("AUTH_LOGIN_ACCOUNT_LIMIT", 10)
+	if err != nil {
+		return Config{}, err
+	}
+	authRegisterIPLimit, err := positiveInt("AUTH_REGISTER_IP_LIMIT", 5)
+	if err != nil {
+		return Config{}, err
+	}
+	authTokenIPLimit, err := positiveInt("AUTH_TOKEN_IP_LIMIT", 15)
 	if err != nil {
 		return Config{}, err
 	}
@@ -335,18 +356,23 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("RAG_PLANNER_MAX_SUBQUERIES must be between 1 and 4")
 	}
 	return Config{
-		RuntimeRole:          runtimeRole,
-		DatabaseURL:          databaseURL,
-		MigrationDatabaseURL: migrationDatabaseURL,
-		ListenAddress:        valueOrDefault("LISTEN_ADDRESS", "0.0.0.0:8000"),
-		CORSOrigins:          origins,
-		TokenTTL:             time.Duration(tokenHours) * time.Hour,
-		StatementTimeout:     time.Duration(statementMS) * time.Millisecond,
-		PoolSize:             int32(poolSize),
-		AuthPoolSize:         int32(authPoolSize),
-		LogLevel:             parseLogLevel(valueOrDefault("LOG_LEVEL", "INFO")),
-		DataDir:              dataDir,
-		StorageBackend:       storageBackend, MinIOEndpoint: minioEndpoint, MinIOBucket: minioBucket,
+		RuntimeRole:           runtimeRole,
+		DatabaseURL:           databaseURL,
+		MigrationDatabaseURL:  migrationDatabaseURL,
+		ListenAddress:         valueOrDefault("LISTEN_ADDRESS", "0.0.0.0:8000"),
+		CORSOrigins:           origins,
+		TokenTTL:              time.Duration(tokenHours) * time.Hour,
+		TrustProxyHeaders:     parseBool(valueOrDefault("TRUST_PROXY_HEADERS", "false")),
+		AuthLoginIPLimit:      authLoginIPLimit,
+		AuthLoginAccountLimit: authLoginAccountLimit,
+		AuthRegisterIPLimit:   authRegisterIPLimit,
+		AuthTokenIPLimit:      authTokenIPLimit,
+		StatementTimeout:      time.Duration(statementMS) * time.Millisecond,
+		PoolSize:              int32(poolSize),
+		AuthPoolSize:          int32(authPoolSize),
+		LogLevel:              parseLogLevel(valueOrDefault("LOG_LEVEL", "INFO")),
+		DataDir:               dataDir,
+		StorageBackend:        storageBackend, MinIOEndpoint: minioEndpoint, MinIOBucket: minioBucket,
 		MinIOAccessKey: minioAccessKey, MinIOSecretKey: minioSecretKey, MinIOSecure: parseBool(valueOrDefault("MINIO_SECURE", "false")),
 		EventBus: eventBus, KafkaRESTURL: kafkaRESTURL, KafkaClientID: valueOrDefault("KAFKA_CLIENT_ID", "cortex"),
 		RAGRetrievalBackend: retrievalBackend, ElasticsearchURLs: esURLs, ElasticsearchUsername: strings.TrimSpace(os.Getenv("ELASTICSEARCH_USERNAME")), ElasticsearchPassword: strings.TrimSpace(os.Getenv("ELASTICSEARCH_PASSWORD")), ElasticsearchIndexAlias: valueOrDefault("ELASTICSEARCH_INDEX_ALIAS", "cortex-knowledge-read"),

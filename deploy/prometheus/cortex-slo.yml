@@ -1,0 +1,10 @@
+groups:
+  - name: cortex-sli-recording
+    interval: 30s
+    rules:
+      - record: cortex:sli_availability:ratio_rate5m
+        expr: 1 - (sum(rate(cortex_http_request_errors_total{route!="/healthz",route!="/readyz"}[5m])) / clamp_min(sum(rate(cortex_http_requests_total{route!="/healthz",route!="/readyz"}[5m])), 0.001))
+      - record: cortex:sli_latency_p95:seconds_rate5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(cortex_http_request_duration_seconds_bucket{route!="/healthz",route!="/readyz"}[5m])))
+      - record: cortex:slo_error_budget_burn:ratio_rate1h
+        expr: (1 - (1 - sum(rate(cortex_http_request_errors_total{route!="/healthz",route!="/readyz"}[1h])) / clamp_min(sum(rate(cortex_http_requests_total{route!="/healthz",route!="/readyz"}[1h])), 0.001))) / (1 - 0.995)

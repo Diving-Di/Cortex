@@ -9,26 +9,54 @@ groups:
           summary: Cortex database readiness has failed for two minutes
           runbook_url: docs/runbooks/OPERATIONS.md#readyz-持续失败
       - alert: CortexStoragePressure
-        expr: 100 * (1 - node_filesystem_avail_bytes{mountpoint="/app/data"} / node_filesystem_size_bytes{mountpoint="/app/data"}) > 85
+        expr: 100 * (1 - node_filesystem_avail_bytes{mountpoint="/app-data"} / node_filesystem_size_bytes{mountpoint="/app-data"}) > 85
         for: 10m
         labels: { severity: warning }
         annotations:
           summary: Cortex application data volume is above 85 percent used
           runbook_url: docs/runbooks/OPERATIONS.md#数据卷容量压力
       - alert: CortexBackupStale
-        expr: time() - cortex_backup_last_success_unixtime > 90000
+        expr: absent(cortex_backup_last_success_unixtime) or time() - cortex_backup_last_success_unixtime > 90000
         for: 15m
         labels: { severity: critical }
         annotations:
           summary: No successful joint backup has been recorded in 25 hours
           runbook_url: docs/runbooks/OPERATIONS.md#备份过期或恢复演练失败
       - alert: CortexRestoreDrillStale
-        expr: time() - cortex_restore_drill_last_success_unixtime > 2678400
+        expr: absent(cortex_restore_drill_last_success_unixtime) or time() - cortex_restore_drill_last_success_unixtime > 2678400
         for: 1h
         labels: { severity: warning }
         annotations:
           summary: No successful isolated restore drill has been recorded in 31 days
           runbook_url: docs/runbooks/OPERATIONS.md#备份过期或恢复演练失败
+      - alert: CortexMetricsTargetDown
+        expr: up{job=~"cortex|postgres|redis|kafka|elasticsearch|node|minio"} == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: A required Cortex metrics target has been unavailable for five minutes
+          runbook_url: docs/runbooks/OPERATIONS.md#监控采集或告警路由失败
+      - alert: CortexHTTPMetricsMissing
+        expr: absent(cortex_http_requests_total)
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Cortex HTTP service indicators are missing
+          runbook_url: docs/runbooks/OPERATIONS.md#监控采集或告警路由失败
+      - alert: CortexAvailabilityErrorBudgetBurn
+        expr: cortex:slo_error_budget_burn:ratio_rate1h > 2
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: The API is consuming the monthly availability error budget too quickly
+          runbook_url: docs/runbooks/OPERATIONS.md#api-slo-越界
+      - alert: CortexAPILatencyHigh
+        expr: cortex:sli_latency_p95:seconds_rate5m > 1
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: Non-streaming API P95 latency has exceeded one second
+          runbook_url: docs/runbooks/OPERATIONS.md#api-slo-越界
 
   - name: cortex-rag-workers
     rules:

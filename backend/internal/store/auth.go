@@ -22,7 +22,7 @@ func (s *Store) Register(ctx context.Context, username, email, passwordHash stri
 			return err
 		}
 		if exists {
-			return apierror.New("REGISTRATION_CONFLICT", "用户名或邮箱已存在", 400)
+			return apierror.New("REGISTRATION_CONFLICT", "用户名或邮箱已存在", 409)
 		}
 		var userID int32
 		if err := tx.QueryRow(ctx,
@@ -48,7 +48,7 @@ func (s *Store) Login(ctx context.Context, username, password string, ttl time.D
 		 WHERE u.username=$1 AND t.status='active' AND t.deleted_at IS NULL`, username,
 	).Scan(&userID, &actualUsername, &storedHash)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !auth.VerifyPassword(password, storedHash)) {
-		return "", "", apierror.New("INVALID_CREDENTIALS", "用户名或密码错误", 400)
+		return "", "", apierror.New("INVALID_CREDENTIALS", "用户名或密码错误", 401)
 	}
 	if err != nil {
 		return "", "", err

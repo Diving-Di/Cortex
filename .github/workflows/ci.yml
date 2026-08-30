@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -33,7 +34,7 @@ jobs:
             exit 1
           fi
       - run: go vet ./...
-      - run: go test ./...
+      - run: pwsh ./scripts/check_go_coverage.ps1 -Minimum 18
       - run: go run ./cmd/rag-regression-check
       - run: go build ./cmd/server
       - run: go build ./cmd/migrate
@@ -53,8 +54,31 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run format:check
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run build
+
+  browser-e2e:
+    name: Browser E2E
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
 
   compose:
     name: Docker Compose
@@ -63,17 +87,135 @@ jobs:
       POSTGRES_MIGRATOR_PASSWORD: ci-migrator-password
       POSTGRES_APP_PASSWORD: ci-app-password
       LITELLM_DB_PASSWORD: ci-litellm-db-password
-      LITELLM_MASTER_KEY: sk-ci-master-key
-      LITELLM_VIRTUAL_KEY: sk-ci-virtual-key
-      OPENAI_API_KEY: sk-ci-openai-key
-      KIMI_API_KEY: sk-ci-kimi-key
-      DEEPSEEK_API_KEY: sk-ci-deepseek-key
+      LITELLM_MASTER_KEY: ci-master-key
+      LITELLM_VIRTUAL_KEY: ci-virtual-key
+      OPENAI_API_KEY: ci-openai-key
+      KIMI_API_KEY: ci-kimi-key
+      DEEPSEEK_API_KEY: ci-deepseek-key
       MINIO_ROOT_USER: ci-minio-root
       MINIO_ROOT_PASSWORD: ci-minio-root-password
       MINIO_ACCESS_KEY: ci-minio-app
       MINIO_SECRET_KEY: ci-minio-app-password
       ELASTICSEARCH_PASSWORD: ci-elasticsearch-password
+      GRAFANA_ADMIN_PASSWORD: ci-grafana-password
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet
       - run: pwsh ./backend/scripts/validate_prometheus_rules.ps1
+
+  integration:
+    name: External infrastructure integration
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://cortex_app:ci-app-password@127.0.0.1:55432/cortex
+      MIGRATION_DATABASE_URL: postgresql://cortex_migrator:ci-migrator-password@127.0.0.1:55432/cortex
+      REDIS_TEST_URL: redis://default:ci-redis-password@127.0.0.1:56379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Start isolated dependencies
+        run: |
+          docker compose -f docker-compose.ci.yml up -d --wait db redis minio kafka elasticsearch
+          docker compose -f docker-compose.ci.yml run --rm minio-init
+          docker compose -f docker-compose.ci.yml run --rm kafka-init
+      - name: Apply every pending migration
+        working-directory: backend
+        run: go run ./cmd/migrate -steps 0 up
+      - name: Verify MinIO, Kafka, and Elasticsearch
+        run: pwsh ./backend/scripts/ci_dependencies_smoke.ps1
+      - name: Run database and Redis integration tests
+        working-directory: backend
+        run: go test -count=1 ./internal/store ./internal/rediscoord
+      - name: Build restore-verification backend image
+        run: docker build -t cortex-backend ./backend
+      - name: Verify joint backup and isolated restore
+        shell: pwsh
+        run: |
+          docker volume create cortex_ci_app_data | Out-Null
+          $backup = Join-Path $env:RUNNER_TEMP "cortex-joint-backup"
+          ./backend/scripts/backup.ps1 -OutputDirectory $backup -ComposeProject cortex-ci -ComposeFile ./docker-compose.ci.yml -DatabaseVolume cortex_ci_db_data -AppDataVolume cortex_ci_app_data -MinIODataVolume cortex_ci_minio_data -MetricsVolume cortex_ci_metrics_data
+          ./backend/scripts/restore_verify.ps1 -BackupDirectory $backup -SkipSmoke -MetricsVolume cortex_ci_metrics_data
+      - name: Show dependency logs after failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs --no-color
+      - name: Remove isolated dependencies
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
+  parser:
+    name: Isolated document parser
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: document-parser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: document-parser/requirements.txt
+      - run: sudo apt-get update && sudo apt-get install -y antiword tesseract-ocr tesseract-ocr-chi-sim fonts-dejavu-core
+      - run: pip install -r requirements.txt
+      - run: python smoke_test.py
+
+  supply-chain:
+    name: Dependency and source security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Go vulnerability database
+        working-directory: backend
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: Production npm audit
+        working-directory: frontend
+        run: npm ci && npm audit --omit=dev --audit-level=high
+      - name: Python dependency audit
+        run: |
+          pip install pip-audit
+          pip-audit -r document-parser/requirements.txt
+          pip-audit -r local-embedding/requirements.txt
+          pip-audit -r local-reranker/requirements.txt
+      - name: Python syntax validation
+        run: python -m compileall -q document-parser local-embedding local-reranker
+      - name: Secret scan
+        run: docker run --rm -v "$PWD:/workspace" zricethezav/gitleaks:v8.28.0 detect --source /workspace --no-git --config /workspace/.gitleaks.toml --redact --exit-code 1
+      - name: Filesystem vulnerability scan and SBOM
+        run: |
+          docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.65.0 fs --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed /workspace
+          docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.65.0 fs --format cyclonedx --output /workspace/cortex-sbom.json /workspace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cortex-sbom
+          path: cortex-sbom.json
+          retention-days: 30
+
+  container-build:
+    name: Production container builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t cortex-backend:ci backend
+      - run: docker build -t cortex-frontend:ci frontend
+      - run: docker build -t cortex-document-parser:ci document-parser
+      - name: Scan built runtime images
+        run: |
+          for image in cortex-backend:ci cortex-frontend:ci cortex-document-parser:ci; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.65.0 image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$image"
+          done

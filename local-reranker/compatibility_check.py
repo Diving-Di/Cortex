@@ -3,12 +3,12 @@ import os
 import sys
 import time
 
-from app import MODEL_ID, MODEL_REVISION, QwenReranker
+from app import DEVICE, MODEL_ID, RecipeReranker
 
 
 def main() -> int:
     started = time.perf_counter()
-    model = QwenReranker()
+    model = RecipeReranker()
     query = "苍穹计划的发布口令是什么？"
     documents = [
         "项目记录：苍穹计划的发布口令是青竹七号。",
@@ -18,8 +18,7 @@ def main() -> int:
     values = model.score(query, documents)
     result = {
         "model": MODEL_ID,
-        "revision": MODEL_REVISION,
-        "device": model.device,
+        "device": DEVICE,
         "scores": values,
         "best_index": max(range(len(values)), key=values.__getitem__),
         "elapsed_seconds": round(time.perf_counter() - started, 3),

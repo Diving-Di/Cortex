@@ -128,6 +128,7 @@ Browser
 ### 前置条件
 
 - Docker Engine 和 Docker Compose
+- NVIDIA Container Toolkit 和支持 CUDA 13 的驱动（默认 GPU Reranker）
 - 可用的上游生成模型配置
 - 首次构建内部 `embedding-service` / `reranker-service` 需要访问模型仓库并预留足够内存和磁盘
 
@@ -265,6 +266,21 @@ go run ./cmd/migrate up
 实测恢复与容量边界见 `docs/operations/`，发布前逐项检查 `docs/RELEASE_CHECKLIST.md`。备份不包含 `.env`
 或供应商 Key；若数据库引用文件缺失、checksum 或双向一致性不通过，恢复会失败退出。
 Prometheus 告警规则和 Grafana dashboard 分别位于 `deploy/prometheus/` 与 `deploy/grafana/`。
+默认 Compose 会启动 Prometheus、Alertmanager、Grafana 以及 PostgreSQL、Redis、Kafka、Elasticsearch、
+MinIO 和宿主/数据卷 exporter；Grafana 仅绑定 `127.0.0.1:3000`。生产环境必须通过
+`ALERTMANAGER_CONFIG_FILE` 注入真实通知接收器并完成送达演练，SLO 与值班契约见 `docs/SLO.md`。
+
+打 `v*` tag 会在 CI 全部通过后发布带 SBOM、provenance 和 GitHub attestation 的 backend/frontend
+不可变镜像。部署只接受 digest 引用，执行前自动联合备份，迁移或验收失败会回退应用镜像：
+
+```powershell
+.\backend\scripts\deploy_release.ps1 `
+  -BackendImage ghcr.io/<owner>/cortex-backend@sha256:<digest> `
+  -FrontendImage ghcr.io/<owner>/cortex-frontend@sha256:<digest>
+```
+
+人工回滚使用部署证据中的上一组镜像；数据库迁移必须遵守 expand/migrate/switch/contract，脚本不会用旧备份覆盖
+在线数据：`./backend/scripts/rollback_release.ps1 -DeploymentEvidence <deployment.json>`。
 
 后端：
 
@@ -272,7 +288,7 @@ Prometheus 告警规则和 Grafana dashboard 分别位于 `deploy/prometheus/` �
 Set-Location backend
 gofmt -l .
 go vet ./...
-go test ./...
+pwsh ./scripts/check_go_coverage.ps1 -Minimum 18
 go build ./cmd/server
 go build ./cmd/migrate
 ```
@@ -282,7 +298,8 @@ go build ./cmd/migrate
 ```powershell
 Set-Location frontend
 npm run format:check
-npm test
+npm run test:coverage
+npm run test:e2e
 npm run build
 ```
 
@@ -290,6 +307,7 @@ npm run build
 
 ```powershell
 docker compose config --quiet
+docker compose -f docker-compose.ci.yml config --quiet
 .\backend\scripts\non_ai_smoke.ps1
 .\backend\scripts\ai_acceptance.ps1
 .\backend\scripts\research_acceptance.ps1
@@ -304,6 +322,7 @@ docker compose config --quiet
 - [工程基线](docs/BASELINE.md)：当前技术与安全基线
 - [软件设计说明书](docs/SDD.md)：当前已实现的系统架构、数据、知识库、RAG、AI 工作流和部署设计
 - [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)：未实现、部分实现、待验证事项和发布阻断
+- [生产 SLO 与值班契约](docs/SLO.md)：SLI、错误预算、告警责任角色和送达门禁
 - [大模型网关规范](docs/LLM_GATEWAY.md)：LiteLLM 路由、密钥、隐私和用量治理
 - [个人知识库页](docs/page/KNOWLEDGE_PAGE_ARCHITECTURE.md)：上传、配额、文档管理与降级说明
 - [模板广场页](docs/page/TEMPLATES_PAGE_ARCHITECTURE.md)：私有模板、公开快照、榜单与使用流程

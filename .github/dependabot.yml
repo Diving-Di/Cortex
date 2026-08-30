@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule: { interval: weekly }
+    groups:
+      go-dependencies: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly }
+    groups:
+      frontend-dependencies: { patterns: ["*"] }
+  - package-ecosystem: pip
+    directory: /document-parser
+    schedule: { interval: weekly }
+  - package-ecosystem: pip
+    directory: /local-embedding
+    schedule: { interval: weekly }
+  - package-ecosystem: pip
+    directory: /local-reranker
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

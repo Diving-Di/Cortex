@@ -13,6 +13,7 @@
 | [RAG 链路](RAG.md) | 当前双检索 backend、证据门控与已冻结质量基线 |
 | [LLM 网关](LLM_GATEWAY.md) | LiteLLM 接入、安全、缓存与可靠性规范 |
 | [发布检查清单](RELEASE_CHECKLIST.md) | 发布门禁的唯一汇总入口 |
+| [生产 SLO 与值班契约](SLO.md) | API、数据库与灾备目标，错误预算和告警升级责任 |
 | [未完成事项](IMPLEMENTATION_GAPS.md) | 已确认的架构偏差、生产风险与不可承诺事项 |
 
 ## 架构演进与运维

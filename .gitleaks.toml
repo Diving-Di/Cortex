@@ -1,0 +1,8 @@
+[allowlist]
+description = "Documented placeholders and isolated CI-only credentials"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)docker-compose\.ci\.yml$''',
+  '''(^|/)\.github/workflows/ci\.yml$''',
+  '''(^|/)node_modules/''',
+]

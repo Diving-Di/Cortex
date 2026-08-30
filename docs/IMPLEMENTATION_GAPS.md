@@ -7,7 +7,8 @@
 ## P0：发布前必须关闭
 
 - 在目标部署环境运行完整非 AI、AI、研究、模板和活动验收；本地通过不能代替目标环境结果。
-- 用新 PostgreSQL 空库验证迁移版本 41、63 张 public 表、全部迁移、FORCE RLS、低权限 `cortex_app`、ready、注册和登录。
+- 用新 PostgreSQL 空库验证迁移版本 41、63 张业务表（连同 `schema_migrations` 共 64 张 public 表）、
+  全部迁移、FORCE RLS、低权限 `cortex_app`、ready、注册和登录。
 - 为迁移 `000035_knowledge_index_progress` 与 `000036_knowledge_clarifications` 补目标数据库验收：
   多 worker 竞争、租约过期接管、进度不倒退，以及澄清正常/重复/过期/跨租户恢复。
 - 确认联合备份与隔离恢复报告仍适用于当前 schema 和数据卷布局；过期时重新演练。
@@ -24,7 +25,8 @@
   `operations/INFRASTRUCTURE_ACCEPTANCE_20260825.md`。
 - `RAG_PLANNER_ENABLED` 必须保持默认关闭，直到真实冻结的 comparison/trend/cross_period 数据集完成
   单查询对照，并记录 Hit@K、MRR、Context Recall/Precision、引用通过率、拒答准确率、P95、调用次数和成本。
-- Prometheus/Grafana 资产已经提供，但实际采集、告警路由、值班负责人和生产阈值仍由部署环境完成。
+- Compose 已提供 Prometheus/Alertmanager/Grafana 实际采集、基础设施 exporter、HTTP SLI 和默认阈值；
+  生产通知接收器、当期 primary/secondary、目标规格阈值和真实告警送达仍必须由部署环境完成。
 - 真实私人 bad case 不随仓库分发；只有用户主动复核和脱敏后才可晋升评测集，因此持续质量闭环仍需
   在真实使用中积累证据。
 
@@ -45,6 +47,19 @@
   绕过来源、RLS、幂等、配额或引用核验。
 
 ## 本轮已关闭
+
+- 2026-08-29：第三阶段补齐 HTTP 请求量/5xx/延迟 SLI、Prometheus 记录与告警规则、Alertmanager、
+  Grafana provisioning 及 PostgreSQL/Redis/Kafka/Elasticsearch/MinIO/node 采集；备份和隔离恢复成功会
+  产生 textfile 指标，恢复演练实际恢复 MinIO 卷并核对数据库对象引用。
+- 2026-08-29：第四阶段新增 SLO/错误预算/值班角色契约，以及 tag 触发的不可变镜像发布、SBOM、
+  provenance、attestation、部署前联合备份、digest-only 部署、失败自动应用回退和人工回滚脚本。
+
+- 2026-08-29：CI 新增隔离 PostgreSQL 16 + pgvector、Redis、MinIO、Redpanda 和 Elasticsearch
+  环境；空库基线执行全部迁移后强制运行 schema/RLS、跨租户、租约、Outbox 和 Redis 集成测试。
+- 2026-08-29：后端和前端建立覆盖率下限，新增 Chromium 登录/受保护工作台 E2E、文档解析验收、
+  govulncheck、npm/pip audit、Gitleaks、Trivy、运行镜像扫描、SBOM 和 Dependabot 门禁。
+- 2026-08-29：AI SSE 不再受 30 秒进程级写超时截断；认证增加 IP/账号双限流、12 字符密码策略、
+  统一错误契约，Nginx 增加 CSP、frame、MIME、referrer 和权限策略。
 
 - 2026-08-25：外部基础设施 worker 已迁入 `backend/internal/workers` 并由唯一的 `cmd/server` 托管；
   镜像与 Compose 已停止构建和部署四个额外 worker 二进制。生产环境门禁仍按上方 P0/P1 独立验收。

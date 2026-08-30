@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$BackupDirectory,
     [switch]$KeepEnvironment,
-    [switch]$SkipSmoke
+    [switch]$SkipSmoke,
+    [string]$MetricsVolume = "cortex_metrics_data"
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,23 +25,28 @@ $prefix = "cortex-restore-$suffix"
 $network = "$prefix-net"
 $dbVolume = "$prefix-db"
 $appVolume = "$prefix-app"
+$minioVolume = "$prefix-minio"
 $dbContainer = "$prefix-db"
 $backendContainer = "$prefix-backend"
+$minioContainer = "$prefix-minio"
 $dbPassword = [guid]::NewGuid().ToString("N")
 $appPassword = [guid]::NewGuid().ToString("N")
+$minioUser = "restoreadmin"
+$minioPassword = ([guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"))
 $report = [ordered]@{ environment = $prefix; started_at_utc = [DateTimeOffset]::UtcNow.ToString("o") }
 $total = [Diagnostics.Stopwatch]::StartNew()
 
 function Remove-IsolatedEnvironment {
-    docker rm -f $backendContainer $dbContainer 2>$null | Out-Null
+    docker rm -f $backendContainer $minioContainer $dbContainer 2>$null | Out-Null
     docker network rm $network 2>$null | Out-Null
-    docker volume rm $dbVolume $appVolume 2>$null | Out-Null
+    docker volume rm $dbVolume $appVolume $minioVolume 2>$null | Out-Null
 }
 
 try {
     docker network create $network | Out-Null
     docker volume create $dbVolume | Out-Null
     docker volume create $appVolume | Out-Null
+    docker volume create $minioVolume | Out-Null
     docker run -d --name $dbContainer --network $network --network-alias db `
         -e POSTGRES_DB=cortex -e POSTGRES_USER=cortex_migrator -e "POSTGRES_PASSWORD=$dbPassword" `
         --mount "type=volume,source=$dbVolume,target=/var/lib/postgresql/data" `
@@ -72,6 +78,28 @@ try {
     $dataTimer.Stop()
     $report.app_data_restore_seconds = [Math]::Round($dataTimer.Elapsed.TotalSeconds, 3)
 
+    if ($manifest.minio_data) {
+        $minioTimer = [Diagnostics.Stopwatch]::StartNew()
+        docker run --rm --mount "type=volume,source=$minioVolume,target=/data" `
+            --mount "type=bind,source=$backup,target=/backup,readonly" alpine:3.23 `
+            tar -xzf "/backup/$($manifest.minio_data.file)" -C /data
+        if ($LASTEXITCODE -ne 0) { throw "MinIO data restore failed" }
+        docker run -d --name $minioContainer --network $network --network-alias minio `
+            -e "MINIO_ROOT_USER=$minioUser" -e "MINIO_ROOT_PASSWORD=$minioPassword" `
+            --mount "type=volume,source=$minioVolume,target=/data" `
+            quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z server /data | Out-Null
+        $minioReady = $false
+        foreach ($attempt in 1..60) {
+            docker run --rm --network $network quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z `
+                alias set restored http://minio:9000 $minioUser $minioPassword 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) { $minioReady = $true; break }
+            Start-Sleep -Seconds 1
+        }
+        if (-not $minioReady) { throw "isolated MinIO did not become ready" }
+        $minioTimer.Stop()
+        $report.minio_restore_seconds = [Math]::Round($minioTimer.Elapsed.TotalSeconds, 3)
+    }
+
     $migrationTimer = [Diagnostics.Stopwatch]::StartNew()
     docker run --rm --network $network --entrypoint /app/migrate `
         -e "MIGRATION_DATABASE_URL=postgresql://cortex_migrator:$dbPassword@db:5432/cortex" `
@@ -89,6 +117,29 @@ try {
     docker run --rm --network $network -e "PGPASSWORD=$appPassword" postgres:16.12-bookworm `
         psql -h db -U cortex_app -d cortex -v ON_ERROR_STOP=1 -At -c "SELECT count(*) FROM notes" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "low-privilege connection verification failed" }
+
+    if ($manifest.minio_data) {
+        $objectKeysFile = Join-Path ([IO.Path]::GetTempPath()) "$prefix-object-keys.txt"
+        try {
+            New-Item -ItemType File -Path $objectKeysFile -Force | Out-Null
+            $objectKeys = @(docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
+                -c "SELECT object_key FROM attachments WHERE storage_backend='minio' AND object_key IS NOT NULL UNION SELECT object_key FROM knowledge_documents WHERE storage_backend='minio' AND object_key IS NOT NULL UNION SELECT object_key FROM knowledge_assets WHERE storage_backend='minio' AND object_key IS NOT NULL ORDER BY 1")
+            if ($LASTEXITCODE -ne 0) { throw "MinIO object reference query failed" }
+            if ($objectKeys.Count -gt 0) {
+                $objectKeys | Set-Content -LiteralPath $objectKeysFile -Encoding utf8NoBOM
+            }
+            docker run --rm --network $network --entrypoint /bin/sh `
+                --mount "type=bind,source=$objectKeysFile,target=/object-keys.txt,readonly" `
+                --env "MINIO_USER=$minioUser" --env "MINIO_PASSWORD=$minioPassword" `
+                quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z -c `
+                'mc alias set restored http://minio:9000 "$MINIO_USER" "$MINIO_PASSWORD" >/dev/null || exit 41; cr=$(printf "\r"); while IFS= read -r key; do key=${key%"$cr"}; [ -z "$key" ] || mc stat "restored/cortex-private/$key" >/dev/null || exit 42; done < /object-keys.txt'
+            if ($LASTEXITCODE -eq 42) { throw "database references missing MinIO objects" }
+            if ($LASTEXITCODE -ne 0) { throw "MinIO object consistency verification failed" }
+            $report.minio_objects_verified = @(Get-Content -LiteralPath $objectKeysFile | Where-Object { $_ }).Count
+        } finally {
+            Remove-Item -LiteralPath $objectKeysFile -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     $pathsFile = Join-Path ([IO.Path]::GetTempPath()) "$prefix-paths.txt"
     try {
@@ -140,6 +191,10 @@ try {
     $snapshotTime = [DateTimeOffset]::Parse(($manifest.database_snapshot_utc + "Z").Replace("+00Z", "+00:00"))
     $report.observed_rpo_seconds = [Math]::Max(0, [Math]::Round(([DateTimeOffset]::Parse($report.started_at_utc) - $snapshotTime).TotalSeconds, 3))
     $report.status = "success"
+    $successUnixTime = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    docker run --rm --mount "type=volume,source=$MetricsVolume,target=/metrics" alpine:3.23 `
+        sh -c "printf 'cortex_restore_drill_last_success_unixtime $successUnixTime\ncortex_restore_drill_rto_seconds $($report.rto_seconds)\ncortex_restore_drill_observed_rpo_seconds $($report.observed_rpo_seconds)\n' > /metrics/cortex_restore.prom.tmp && mv /metrics/cortex_restore.prom.tmp /metrics/cortex_restore.prom"
+    if ($LASTEXITCODE -ne 0) { throw "restore drill succeeded but metrics publication failed" }
     $report | ConvertTo-Json -Depth 5
 } finally {
     if (-not $KeepEnvironment) { Remove-IsolatedEnvironment }

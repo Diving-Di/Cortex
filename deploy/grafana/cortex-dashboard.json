@@ -39,6 +39,30 @@
         { "expr": "increase(cortex_scheduled_report_runs_failed_total[15m])", "legendFormat": "scheduler failed", "refId": "C" }
       ],
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 }
+    },
+    {
+      "title": "API availability (5m)",
+      "type": "stat",
+      "targets": [{ "expr": "cortex:sli_availability:ratio_rate5m", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 15 }
+    },
+    {
+      "title": "API P95 latency",
+      "type": "timeseries",
+      "targets": [{ "expr": "cortex:sli_latency_p95:seconds_rate5m", "legendFormat": "P95", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 7, "w": 9, "x": 6, "y": 15 }
+    },
+    {
+      "title": "Backup and restore age",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "time() - cortex_backup_last_success_unixtime", "legendFormat": "backup age", "refId": "A" },
+        { "expr": "time() - cortex_restore_drill_last_success_unixtime", "legendFormat": "restore drill age", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 7, "w": 9, "x": 15, "y": 15 }
     }
   ],
   "schemaVersion": 41,

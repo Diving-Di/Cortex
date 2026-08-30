@@ -41,6 +41,10 @@ backend/media/
 frontend/node_modules/
 frontend/dist/
 frontend/stats.json
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+backend/coverage.out
 release/
 
 # Testing

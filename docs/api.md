@@ -10,7 +10,8 @@
 Authorization: Token <token>
 ```
 
-每个账号自动关联唯一个人空间。租户由服务端根据 Token 解析，业务接口不接受 `tenant_id`。错误响应使用稳定错误码；跨租户资源不会被返回。
+每个账号自动关联唯一个人空间。租户由服务端根据 Token 解析，业务接口不接受 `tenant_id`。错误响应统一为
+`{"code":"...","message":"...","details":null}`；跨租户资源不会被返回。
 
 客户端可以发送由字母、数字及 `._:-` 组成且不超过 128 字符的
 `X-Request-ID`。非法或缺失时服务端生成 UUID，所有响应都通过
@@ -38,7 +39,10 @@ data: [DONE]
 | `POST` | `/api/v1/auth/logout` | 是 | 撤销当前 Token |
 | `GET` | `/api/v1/auth/session` | 是 | 获取当前浏览器会话状态 |
 
-用户名和密码至少 6 个字符，用户名与邮箱唯一。
+用户名为 6～64 个字符，密码为 12～128 个字符并拒绝常见弱密码，用户名与邮箱唯一。
+注册、浏览器登录和 Token 签发同时执行 IP 与账号维度限流；超过限制返回 HTTP 429 和
+`RATE_LIMITED`。反向代理部署只有在代理会覆盖 `X-Forwarded-For` 时才可启用
+`TRUST_PROXY_HEADERS`。
 `/api/v1/auth/token` 拒绝带 `Origin` 的浏览器请求；浏览器必须使用 `/api/v1/auth/login`
 建立 HttpOnly Cookie 会话，响应正文不会包含原始 Token。
 软删除个人空间后，账号登录与既有 Token 认证统一失败，不向客户端暴露租户状态。

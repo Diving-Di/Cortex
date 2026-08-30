@@ -11,7 +11,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs && \
     pip install --no-cache-dir \
-      --index-url https://download.pytorch.org/whl/cu128 torch==2.7.1 && \
+      --index-url https://download.pytorch.org/whl/cu130 torch==2.13.0 && \
     pip install --no-cache-dir -r requirements.txt && \
     git clone https://www.modelscope.cn/BAAI/bge-reranker-v2-m3.git /models/reranker && \
     git -C /models/reranker checkout "${RERANK_MODEL_REVISION}" && \

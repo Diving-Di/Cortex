@@ -199,6 +199,7 @@ func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger
 	s.authRedis = deps.Redis
 	s.claimRedis = deps.Redis
 	router := gin.New()
+	router.Use(s.observeHTTP())
 	router.Use(gin.Recovery())
 	router.Use(s.requestTracing())
 	router.Use(s.cors())
@@ -410,9 +411,8 @@ func (s *Server) authenticate() gin.HandlerFunc {
 			}
 		}
 		if strings.TrimSpace(token) == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"detail": "Authentication credentials were not provided.",
-			})
+			httpx.WriteError(c.Writer, s.logger, apierror.New("AUTHENTICATION_REQUIRED", "Authentication credentials were not provided.", http.StatusUnauthorized))
+			c.Abort()
 			return
 		}
 		principal, err := s.resolvePrincipal(c.Request.Context(), strings.TrimSpace(token))
@@ -422,9 +422,8 @@ func (s *Server) authenticate() gin.HandlerFunc {
 				if usedCookie {
 					s.clearAuthCookie(c.Writer, c.Request)
 				}
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-					"detail": "Invalid or expired token.",
-				})
+				httpx.WriteError(c.Writer, s.logger, apierror.New("AUTHENTICATION_REQUIRED", "Invalid or expired token.", http.StatusUnauthorized))
+				c.Abort()
 				return
 			}
 			httpx.WriteError(c.Writer, s.logger, err)
@@ -491,7 +490,8 @@ func (s *Server) resolvePrincipal(ctx context.Context, raw string) (domain.Princ
 func (s *Server) preAuthClaimIPLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !s.allowIPRequest(c.Request, "ai-event-claim-anonymous", s.cfg.AIEventClaimIPLimit, time.Minute) {
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"code": "RATE_LIMITED", "message": "请求过于频繁"})
+			httpx.WriteError(c.Writer, s.logger, apierror.New("RATE_LIMITED", "请求过于频繁", http.StatusTooManyRequests))
+			c.Abort()
 			return
 		}
 		c.Next()
@@ -501,9 +501,8 @@ func (s *Server) preAuthClaimIPLimit() gin.HandlerFunc {
 func (s *Server) requireActiveTenant() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !principalFrom(c.Request.Context()).TenantActive {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"detail": "Personal tenant is unavailable.",
-			})
+			httpx.WriteError(c.Writer, s.logger, apierror.New("TENANT_UNAVAILABLE", "Personal tenant is unavailable.", http.StatusForbidden))
+			c.Abort()
 			return
 		}
 		c.Next()

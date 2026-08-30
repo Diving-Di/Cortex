@@ -10,7 +10,7 @@ ENV HF_HUB_OFFLINE=1 \
 WORKDIR /app
 COPY requirements.txt .
 RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs \
-    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.7.1 \
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.13.0 \
     && pip install --no-cache-dir -r requirements.txt \
     && git clone https://www.modelscope.cn/iic/nlp_gte_sentence-embedding_chinese-small.git /models/embedding \
     && git -C /models/embedding checkout "${MODEL_REVISION}" \

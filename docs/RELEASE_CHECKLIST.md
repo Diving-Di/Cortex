@@ -19,7 +19,7 @@
 Set-Location backend
 gofmt -l .
 go vet ./...
-go test ./...
+pwsh ./scripts/check_go_coverage.ps1 -Minimum 18
 go build ./cmd/server
 go build ./cmd/migrate
 ```
@@ -33,7 +33,8 @@ go build ./cmd/migrate
 ```powershell
 Set-Location frontend
 npm run format:check
-npm test
+npm run test:coverage
+npm run test:e2e
 npm run build
 
 Set-Location ..
@@ -42,10 +43,14 @@ docker compose config --quiet
 
 - [ ] 前端格式检查、测试、生产构建和 Compose 配置校验均通过。
 - [ ] Prometheus 规则通过 `promtool` 校验，指标和告警保持低基数。
+- [ ] Prometheus 所有必需 target 为 up；Alertmanager 使用生产 receiver，测试告警的 primary/secondary 升级与恢复通知送达有证据。
+- [ ] 空库 PostgreSQL/Redis/MinIO/Kafka/Elasticsearch 集成 Job 通过，集成测试没有因缺少环境变量跳过。
+- [ ] govulncheck、生产 npm audit、pip-audit、Gitleaks、Trivy 文件系统/运行镜像扫描通过并生成 SBOM。
 
 ## 3. 数据库、租户与文件安全
 
-- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 41、63 张 public 表，迁移记录和 schema 基线一致。
+- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 41、63 张业务表（连同 `schema_migrations`
+  共 64 张 public 表），迁移记录和 schema 基线一致。
 - [ ] 租户业务表启用并强制 RLS；`cortex_app` 使用低权限连接，跨租户资源访问表现为 404。
 - [ ] 注册、登录、Token 过期/撤销、软删除租户拒绝认证通过验收。
 - [ ] 乐观锁、revision、软删除和来源有效性检查没有被绕过。
@@ -93,6 +98,8 @@ docker compose config --quiet
 ## 7. 发布与回滚
 
 - [ ] 镜像使用不可变版本；配置、迁移、应用切换和回滚顺序已经演练。
+- [ ] 发布镜像具有 SBOM、provenance、attestation 和 digest 证据；部署输入不是可变 tag。
 - [ ] 发布后重新运行 ready、认证、非 AI smoke 和本次变更的最小验收。
 - [ ] 数据结构按 expand → migrate/backfill → switch → contract 演进；回滚不依赖删除用户数据。
 - [ ] 发布观察窗口、负责人和停止条件明确；错误率、P95、队列或租约指标越界时停止并回滚。
+- [ ] `docs/SLO.md` 的责任角色已映射到当期 primary/secondary，自动回退和人工回滚证据可定位且不包含密钥。

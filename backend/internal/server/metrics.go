@@ -3,9 +3,26 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
+
+var httpDurationBounds = [...]float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30}
+
+type httpRouteMetrics struct {
+	count   atomic.Uint64
+	errors  atomic.Uint64
+	sumNano atomic.Uint64
+	buckets [len(httpDurationBounds)]atomic.Uint64
+}
+
+var httpMetrics sync.Map
 
 var researchJobsCompleted atomic.Uint64
 var researchJobsFailed atomic.Uint64
@@ -56,6 +73,7 @@ var scheduledReportRunsFailed atomic.Uint64
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	writeHTTPMetrics(w)
 	_, _ = fmt.Fprintf(w, "cortex_research_jobs_completed_total %d\n", researchJobsCompleted.Load())
 	_, _ = fmt.Fprintf(w, "cortex_research_jobs_failed_total %d\n", researchJobsFailed.Load())
 	_, _ = fmt.Fprintf(w, "cortex_research_jobs_created_total %d\n", researchJobsCreated.Load())
@@ -149,6 +167,66 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 			_, _ = fmt.Fprintf(w, "cortex_ai_event_slot_records_drifted %d\n", m.EventSlotDrifted)
 			_, _ = fmt.Fprintf(w, "cortex_ai_event_succeeded_claims_invalid %d\n", m.SucceededClaimsInvalid)
 		}
+	}
+}
+
+func (s *Server) observeHTTP() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.URL.Path == "/metrics" {
+			c.Next()
+			return
+		}
+		started := time.Now()
+		c.Next()
+		route := c.FullPath()
+		if route == "" {
+			route = "unmatched"
+		}
+		key := c.Request.Method + "\x00" + route
+		value, _ := httpMetrics.LoadOrStore(key, &httpRouteMetrics{})
+		metric := value.(*httpRouteMetrics)
+		duration := time.Since(started)
+		metric.count.Add(1)
+		metric.sumNano.Add(uint64(duration))
+		if c.Writer.Status() >= http.StatusInternalServerError {
+			metric.errors.Add(1)
+		}
+		seconds := duration.Seconds()
+		for index, bound := range httpDurationBounds {
+			if seconds <= bound {
+				metric.buckets[index].Add(1)
+			}
+		}
+	}
+}
+
+func writeHTTPMetrics(w http.ResponseWriter) {
+	_, _ = fmt.Fprintln(w, "# HELP cortex_http_requests_total Completed HTTP requests grouped by method and route template.")
+	_, _ = fmt.Fprintln(w, "# TYPE cortex_http_requests_total counter")
+	_, _ = fmt.Fprintln(w, "# HELP cortex_http_request_errors_total Completed HTTP requests with a 5xx response.")
+	_, _ = fmt.Fprintln(w, "# TYPE cortex_http_request_errors_total counter")
+	_, _ = fmt.Fprintln(w, "# HELP cortex_http_request_duration_seconds HTTP request duration grouped by method and route template.")
+	_, _ = fmt.Fprintln(w, "# TYPE cortex_http_request_duration_seconds histogram")
+	keys := make([]string, 0)
+	httpMetrics.Range(func(key, _ any) bool {
+		keys = append(keys, key.(string))
+		return true
+	})
+	sort.Strings(keys)
+	for _, key := range keys {
+		value, _ := httpMetrics.Load(key)
+		metric := value.(*httpRouteMetrics)
+		parts := strings.SplitN(key, "\x00", 2)
+		labels := fmt.Sprintf("method=%q,route=%q", parts[0], parts[1])
+		count := metric.count.Load()
+		_, _ = fmt.Fprintf(w, "cortex_http_requests_total{%s} %d\n", labels, count)
+		_, _ = fmt.Fprintf(w, "cortex_http_request_errors_total{%s} %d\n", labels, metric.errors.Load())
+		for index, bound := range httpDurationBounds {
+			_, _ = fmt.Fprintf(w, "cortex_http_request_duration_seconds_bucket{%s,le=%q} %d\n", labels, strconv.FormatFloat(bound, 'f', -1, 64), metric.buckets[index].Load())
+		}
+		_, _ = fmt.Fprintf(w, "cortex_http_request_duration_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, count)
+		_, _ = fmt.Fprintf(w, "cortex_http_request_duration_seconds_sum{%s} %.6f\n", labels, float64(metric.sumNano.Load())/float64(time.Second))
+		_, _ = fmt.Fprintf(w, "cortex_http_request_duration_seconds_count{%s} %d\n", labels, count)
 	}
 }
 

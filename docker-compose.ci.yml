@@ -1,0 +1,110 @@
+name: cortex-ci
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.1-pg16-bookworm@sha256:33198da2828a14c30348d2ccb4750833d5ed9a44c88d840a0e523d7417120337
+    environment:
+      POSTGRES_DB: cortex
+      POSTGRES_USER: cortex_migrator
+      POSTGRES_PASSWORD: ci-migrator-password
+      POSTGRES_APP_PASSWORD: ci-app-password
+      LITELLM_DB_PASSWORD: ci-litellm-password
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./backend/scripts/init-db-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/20-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cortex_migrator -d cortex"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7.4.2-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "ci-redis-password"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=ci-redis-password redis-cli ping | grep PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ci-minio-root
+      MINIO_ROOT_PASSWORD: ci-minio-password
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    ports:
+      - "127.0.0.1:59000:9000"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set cortex http://minio:9000 ci-minio-root ci-minio-password &&
+        mc mb --ignore-existing cortex/cortex-private &&
+        mc anonymous set none cortex/cortex-private
+    depends_on:
+      minio: { condition: service_healthy }
+
+  kafka:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.2.5
+    command: ["redpanda", "start", "--mode", "dev-container", "--smp", "1", "--memory", "768M", "--reserve-memory", "0M", "--node-id", "0", "--kafka-addr", "internal://0.0.0.0:9092", "--advertise-kafka-addr", "internal://kafka:9092", "--pandaproxy-addr", "0.0.0.0:8082", "--advertise-pandaproxy-addr", "kafka:8082"]
+    ports:
+      - "127.0.0.1:58082:8082"
+    tmpfs:
+      - /var/lib/redpanda/data:uid=101,gid=101,mode=0750
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health --exit-when-healthy"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  kafka-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.2.5
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        rpk topic create cortex.integration.v1 --brokers kafka:9092 --partitions 3 --replicas 1
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.2
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      ELASTIC_PASSWORD: ci-elasticsearch-password
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "127.0.0.1:59200:9200"
+    tmpfs:
+      - /usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u elastic:ci-elasticsearch-password http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+volumes:
+  db_data:
+    name: cortex_ci_db_data
+  app_data:
+    name: cortex_ci_app_data
+  minio_data:
+    name: cortex_ci_minio_data
+  metrics_data:
+    name: cortex_ci_metrics_data

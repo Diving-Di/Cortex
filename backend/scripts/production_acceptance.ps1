@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 Push-Location $ComposeProjectDirectory
 try {
     docker compose config --quiet
-    $required = @("db", "llm-gateway", "backend")
+    $required = @("db", "redis", "minio", "kafka", "elasticsearch", "llm-gateway", "backend", "prometheus")
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds(90)
     do {
         $rows = docker compose ps --format json | ForEach-Object { $_ | ConvertFrom-Json }
@@ -45,6 +45,7 @@ try {
 
     $metrics = Invoke-WebRequest "http://127.0.0.1:8000/metrics"
     foreach ($name in @(
+        "cortex_http_requests_total",
         "cortex_knowledge_index_jobs{status=`"queued`"}",
         "cortex_research_jobs_created_total",
         "cortex_research_collector_available",
@@ -54,6 +55,21 @@ try {
             throw "missing metric $name"
         }
     }
+
+    docker compose exec -T prometheus wget -qO- http://alertmanager:9093/-/ready | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Alertmanager is not ready" }
+    docker compose exec -T prometheus wget -qO- http://grafana:3000/api/health | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Grafana is not healthy" }
+    $targetsReady = $false
+    foreach ($attempt in 1..12) {
+        $targets = docker compose exec -T prometheus wget -qO- http://127.0.0.1:9090/api/v1/targets
+        if ($targets) {
+            $downTargets = @(($targets | ConvertFrom-Json).data.activeTargets | Where-Object health -ne "up")
+            if ($downTargets.Count -eq 0) { $targetsReady = $true; break }
+        }
+        Start-Sleep -Seconds 5
+    }
+    if (-not $targetsReady) { throw "one or more Prometheus targets are down" }
 
     $logs = docker compose logs --no-color --tail $LogTail backend llm-gateway
     $forbidden = @(

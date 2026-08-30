@@ -1,9 +1,11 @@
 param(
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
     [string]$ComposeProject = "cortex",
+    [string]$ComposeFile,
     [string]$DatabaseVolume = "cortex_db_data_v2",
     [string]$AppDataVolume = "cortex_app_data_v2",
-    [string]$MinIODataVolume = "cortex_minio_data"
+    [string]$MinIODataVolume = "cortex_minio_data",
+    [string]$MetricsVolume = "cortex_metrics_data"
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,7 +19,11 @@ if (Test-Path -LiteralPath $target) {
     New-Item -ItemType Directory -Path $target | Out-Null
 }
 
-$dbContainer = docker compose -p $ComposeProject ps -q db
+$composeArgs = @()
+if ($ComposeFile) {
+    $composeArgs += @("-f", (Resolve-Path -LiteralPath $ComposeFile).Path)
+}
+$dbContainer = docker compose @composeArgs -p $ComposeProject ps -q db
 if (-not $dbContainer) { throw "source database container is not running" }
 $network = docker inspect $dbContainer --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}'
 $dbAlias = docker inspect $dbContainer --format '{{.Name}}'
@@ -34,11 +40,16 @@ if ($LASTEXITCODE -ne 0) { throw "database backup failed" }
 
 $pathList = Join-Path $target ".referenced-paths.txt"
 try {
-    docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
-        -c "SELECT stored_path FROM attachments WHERE storage_backend='local' UNION SELECT stored_path FROM knowledge_documents WHERE storage_backend='local' AND stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets WHERE storage_backend='local' UNION SELECT storage_path FROM research_assets ORDER BY 1" | Set-Content -LiteralPath $pathList -Encoding utf8NoBOM
+    New-Item -ItemType File -Path $pathList -Force | Out-Null
+    $referencedPaths = @(docker exec -e "PGPASSWORD=$dbPassword" $dbContainer psql -U cortex_migrator -d cortex -At `
+        -c "SELECT stored_path FROM attachments WHERE storage_backend='local' UNION SELECT stored_path FROM knowledge_documents WHERE storage_backend='local' AND stored_path IS NOT NULL UNION SELECT stored_path FROM knowledge_assets WHERE storage_backend='local' UNION SELECT storage_path FROM research_assets ORDER BY 1")
+    if ($LASTEXITCODE -ne 0) { throw "application data reference query failed" }
+    if ($referencedPaths.Count -gt 0) {
+        $referencedPaths | Set-Content -LiteralPath $pathList -Encoding utf8NoBOM
+    }
     docker run --rm --mount "type=volume,source=$AppDataVolume,target=/data,readonly" `
         --mount "type=bind,source=$target,target=/backup" alpine:3.23 `
-        sh -c 'sed -i "s/\r$//" /backup/.referenced-paths.txt; missing=0; while IFS= read -r p; do [ -z "$p" ] || [ -f "/data/$p" ] || missing=$((missing+1)); done < /backup/.referenced-paths.txt; [ "$missing" -eq 0 ] || exit 42; tar -czf /backup/app-data.tar.gz -C /data -T /backup/.referenced-paths.txt'
+        sh -c 'sed -i "s/\r$//" /backup/.referenced-paths.txt; missing=0; while IFS= read -r p; do [ -z "$p" ] || [ -f "/data/$p" ] || missing=$((missing+1)); done < /backup/.referenced-paths.txt; [ "$missing" -eq 0 ] || exit 42; if [ -s /backup/.referenced-paths.txt ]; then tar -czf /backup/app-data.tar.gz -C /data -T /backup/.referenced-paths.txt; else mkdir -p /tmp/empty; tar -czf /backup/app-data.tar.gz -C /tmp/empty .; fi'
     if ($LASTEXITCODE -eq 42) { throw "database references missing application files" }
     if ($LASTEXITCODE -ne 0) { throw "application data backup failed" }
 } finally {
@@ -75,6 +86,10 @@ $manifest = [ordered]@{
 $timer.Stop()
 $manifest.backup_duration_seconds = [Math]::Round($timer.Elapsed.TotalSeconds, 3)
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $target "manifest.json") -Encoding utf8NoBOM
+$successUnixTime = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+docker run --rm --mount "type=volume,source=$MetricsVolume,target=/metrics" alpine:3.23 `
+    sh -c "printf 'cortex_backup_last_success_unixtime $successUnixTime\ncortex_backup_duration_seconds $($manifest.backup_duration_seconds)\n' > /metrics/cortex_backup.prom.tmp && mv /metrics/cortex_backup.prom.tmp /metrics/cortex_backup.prom"
+if ($LASTEXITCODE -ne 0) { throw "backup succeeded but metrics publication failed" }
 [pscustomobject]@{
     BackupDirectory = $target
     MigrationVersion = $manifest.migration_version

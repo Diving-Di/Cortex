@@ -10,6 +10,13 @@ interface AuthProps {
   onLogin: (username: string) => void;
 }
 
+type APIErrorBody = { code?: string; message?: string; details?: unknown };
+
+function apiErrorMessage(error: unknown, fallback: string) {
+  const value = error as AxiosError<APIErrorBody>;
+  return value.response?.data?.message || fallback;
+}
+
 export default function Auth({ onLogin }: AuthProps) {
   const [view, setView] = useState('login');
   const [username, setUsername] = useState('');
@@ -28,8 +35,7 @@ export default function Auth({ onLogin }: AuthProps) {
       onLogin(res.username);
       message.success('登录成功');
     } catch (e) {
-      const err = e as AxiosError<{ detail?: string }>;
-      message.error(`登录失败：${err.response?.data?.detail || '用户名或密码错误'}`);
+      message.error(`登录失败：${apiErrorMessage(e, '用户名或密码错误')}`);
     } finally {
       setLoading(false);
     }
@@ -46,8 +52,7 @@ export default function Auth({ onLogin }: AuthProps) {
       message.success('注册成功，请登录');
       setView('login');
     } catch (e) {
-      const err = e as AxiosError<{ detail?: string }>;
-      message.error(`注册失败：${err.response?.data?.detail || err.message}`);
+      message.error(`注册失败：${apiErrorMessage(e, '请检查注册信息')}`);
     } finally {
       setLoading(false);
     }
@@ -114,7 +119,7 @@ export default function Auth({ onLogin }: AuthProps) {
                       prefix={<MailOutlined />}
                     />
                   </Form.Item>
-                  <Form.Item label="密码" extra="至少 6 个字符">
+                  <Form.Item label="密码" extra="至少 12 个字符，避免使用常见密码">
                     <Input.Password
                       value={password}
                       onChange={(e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
