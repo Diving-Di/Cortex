@@ -16,7 +16,6 @@ func TestObjectGCReclaimsExpiredLeaseAndPurgesAttachment(t *testing.T) {
 	_, admin := gcTestPools(t)
 	ctx := context.Background()
 	userID, tenantID, noteID := gcTestTenant(t, ctx, admin, 1024)
-	defer admin.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
 
 	key, version := "tenants/"+tenantID.String()+"/attachments/deleted", "version-7"
 	var attachmentID int32
@@ -66,7 +65,6 @@ func TestAttachmentQuotaExcludesSoftDeletedRows(t *testing.T) {
 	app, admin := gcTestPools(t)
 	ctx := context.Background()
 	userID, tenantID, noteID := gcTestTenant(t, ctx, admin, 10)
-	defer admin.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
 	oldPath := "tenants/" + tenantID.String() + "/quota-old"
 	newPath := "tenants/" + tenantID.String() + "/quota-new"
 	if _, err := admin.Exec(ctx, `INSERT INTO attachments(tenant_id,uploaded_by,note_id,original_name,stored_path,mime_type,size,sha256,deleted_at) VALUES($1,$2,$3,'old.txt',$4,'text/plain',10,$5,now())`, tenantID, userID, noteID, oldPath, strings.Repeat("0", 64)); err != nil {
@@ -114,5 +112,14 @@ func gcTestTenant(t *testing.T, ctx context.Context, admin *pgxpool.Pool, quota 
 	if err := admin.QueryRow(ctx, `INSERT INTO notes(tenant_id,created_by,updated_by,title) VALUES($1,$2,$2,'GC test') RETURNING id`, tenantID, userID).Scan(&noteID); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if _, err := admin.Exec(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID); err != nil {
+			t.Errorf("delete GC test tenant: %v", err)
+			return
+		}
+		if _, err := admin.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID); err != nil {
+			t.Errorf("delete GC test user: %v", err)
+		}
+	})
 	return userID, tenantID, noteID
 }

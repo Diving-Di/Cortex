@@ -93,6 +93,7 @@ func assertCrossTenantNoteIsHidden(t *testing.T, ctx context.Context, app, admin
 	if _, err := admin.Exec(ctx, `INSERT INTO tenants(id,user_id,name) VALUES($1,$2,'A'),($3,$4,'B')`, tenantA, userA, tenantB, userB); err != nil {
 		t.Fatal(err)
 	}
+	defer admin.Exec(ctx, `DELETE FROM tenants WHERE id IN($1,$2)`, tenantA, tenantB)
 	if err := admin.QueryRow(ctx, `INSERT INTO notes(tenant_id,created_by,updated_by,title) VALUES($1,$2,$2,'private') RETURNING id`, tenantA, userA).Scan(&noteID); err != nil {
 		t.Fatal(err)
 	}
