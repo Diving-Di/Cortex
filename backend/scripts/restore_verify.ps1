@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory = $true)][string]$BackupDirectory,
     [switch]$KeepEnvironment,
     [switch]$SkipSmoke,
+    [string]$BackendImage = $(if ($env:BACKEND_IMAGE) { $env:BACKEND_IMAGE } else { "cortex-backend" }),
     [string]$MetricsVolume = "cortex_metrics_data"
 )
 
@@ -12,6 +13,8 @@ $manifestPath = Join-Path $backup "manifest.json"
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "manifest.json is missing" }
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
 if ($manifest.format_version -ne 1) { throw "unsupported backup format" }
+docker image inspect $BackendImage 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "restore backend image is not available: $BackendImage" }
 $assets = @($manifest.database, $manifest.app_data)
 if ($manifest.minio_data) { $assets += $manifest.minio_data }
 foreach ($asset in $assets) {
@@ -103,7 +106,7 @@ try {
     $migrationTimer = [Diagnostics.Stopwatch]::StartNew()
     docker run --rm --network $network --entrypoint /app/migrate `
         -e "MIGRATION_DATABASE_URL=postgresql://cortex_migrator:$dbPassword@db:5432/cortex" `
-        cortex-backend -steps 0 up
+        $BackendImage -steps 0 up
     if ($LASTEXITCODE -ne 0) { throw "migration failed" }
     $migrationTimer.Stop()
     $report.migration_seconds = [Math]::Round($migrationTimer.Elapsed.TotalSeconds, 3)
@@ -173,7 +176,7 @@ try {
             -e "DATABASE_URL=postgresql://cortex_app:$appPassword@db:5432/cortex" `
             -e "MIGRATION_DATABASE_URL=postgresql://cortex_migrator:$dbPassword@db:5432/cortex" `
             -e CORTEX_DATA_DIR=/app/data -e SCHEDULED_REPORTS_ENABLED=false `
-            -e REDIS_URL=redis://invalid:6379/0 --mount "type=volume,source=$appVolume,target=/app/data" cortex-backend | Out-Null
+            -e REDIS_URL=redis://invalid:6379/0 --mount "type=volume,source=$appVolume,target=/app/data" $BackendImage | Out-Null
         $port = $null
         foreach ($attempt in 1..60) {
             $mapping = docker port $backendContainer 8000/tcp 2>$null

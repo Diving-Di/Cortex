@@ -31,8 +31,8 @@ func TestProductionSchemaAndRLSContract(t *testing.T) {
 	if err := admin.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 41 {
-		t.Fatalf("migration version = %d, want 41", version)
+	if version != 42 {
+		t.Fatalf("migration version = %d, want 42", version)
 	}
 	if err := admin.QueryRow(ctx, `
 		SELECT count(*), count(*) FILTER (WHERE tablename <> 'schema_migrations')

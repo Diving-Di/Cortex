@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -22,8 +23,8 @@ const projectionConsumerGroup = "cortex-search-projection-v1"
 // Run starts the infrastructure workers owned by the server process. Every
 // worker shares the server cancellation context so deployments have one Go
 // entrypoint and one graceful-shutdown boundary.
-func Run(ctx context.Context, cfg config.Config, db *store.Store, blobs, localBlobs blobstore.BlobStore, logger *slog.Logger) {
-	go runObjectGC(ctx, db, blobs, logger)
+func Run(ctx context.Context, cfg config.Config, db *store.Store, blobs, localBlobs, minioBlobs blobstore.BlobStore, logger *slog.Logger) {
+	go runObjectGC(ctx, db, localBlobs, minioBlobs, logger)
 	if cfg.EventBus != "kafka" {
 		server.RunKnowledgeIndexer(ctx, cfg, db, blobs, localBlobs, logger)
 		return
@@ -77,18 +78,22 @@ func topicFor(eventType string) string {
 	}
 }
 
-func runObjectGC(ctx context.Context, db *store.Store, blobs blobstore.BlobStore, logger *slog.Logger) {
+func runObjectGC(ctx context.Context, db *store.Store, localBlobs, minioBlobs blobstore.BlobStore, logger *slog.Logger) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for ctx.Err() == nil {
-		job, err := db.ClaimObjectGC(ctx)
+		job, err := db.ClaimObjectGC(ctx, 2*time.Minute)
 		if err != nil {
 			if ctx.Err() == nil {
 				logger.Error("claim object gc", "code", "OBJECT_GC_CLAIM_FAILED")
 			}
 		} else if job != nil {
-			deleteErr := blobs.Delete(ctx, job.Key)
-			_ = db.FinishObjectGC(ctx, job.ID, deleteErr == nil)
+			backend, resolveErr := objectGCBackend(job.Backend, localBlobs, minioBlobs)
+			deleteErr := resolveErr
+			if deleteErr == nil {
+				deleteErr = backend.Delete(ctx, job.Key, job.ObjectVersion)
+			}
+			_ = db.FinishObjectGC(ctx, *job, deleteErr == nil)
 		}
 		select {
 		case <-ctx.Done():
@@ -96,6 +101,22 @@ func runObjectGC(ctx context.Context, db *store.Store, blobs blobstore.BlobStore
 		case <-ticker.C:
 		}
 	}
+}
+
+func objectGCBackend(name string, localBlobs, minioBlobs blobstore.BlobStore) (blobstore.BlobStore, error) {
+	switch name {
+	case "local":
+		if localBlobs != nil {
+			return localBlobs, nil
+		}
+	case "minio":
+		if minioBlobs != nil {
+			return minioBlobs, nil
+		}
+	default:
+		return nil, fmt.Errorf("unsupported object storage backend")
+	}
+	return nil, fmt.Errorf("object storage backend is not configured")
 }
 
 func runProjectionConsumer(ctx context.Context, cfg config.Config, db *store.Store, logger *slog.Logger) {

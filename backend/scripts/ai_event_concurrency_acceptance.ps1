@@ -23,11 +23,14 @@ function Wait-ServiceHealthy([string]$service) {
 
 $participantRecords = 0..($Participants - 1) | ForEach-Object -Parallel {
     $username = "flash-$using:suffix-$_"
-    Invoke-RestMethod -Method Post -Uri "$using:BaseUrl/api/v1/auth/register" -ContentType "application/json" `
+    $addressOffset = [math]::Floor($_ / 254)
+    $clientIP = "198.$(18 + [math]::Floor($addressOffset / 256)).$($addressOffset % 256).$(($_ % 254) + 1)"
+    $headers = @{ "X-Forwarded-For" = $clientIP }
+    Invoke-RestMethod -Method Post -Uri "$using:BaseUrl/api/v1/auth/register" -Headers $headers -ContentType "application/json" `
         -Body (@{ username = $username; email = "$username@example.invalid"; password = $using:password } | ConvertTo-Json) | Out-Null
-    $token = (Invoke-RestMethod -Method Post -Uri "$using:BaseUrl/api/v1/auth/token" -ContentType "application/json" `
+    $token = (Invoke-RestMethod -Method Post -Uri "$using:BaseUrl/api/v1/auth/token" -Headers $headers -ContentType "application/json" `
         -Body (@{ username = $username; password = $using:password } | ConvertTo-Json)).token
-    $headers = @{ Authorization = "Token $token" }
+    $headers["Authorization"] = "Token $token"
     $event = Invoke-RestMethod -Uri "$using:BaseUrl/api/v1/ai-events/current" -Headers $headers
     $eventDate = ([datetime]$event.event_date).Date
     for ($day = 0; $day -lt $event.required_streak_days; $day++) {
@@ -40,14 +43,14 @@ $participantRecords = 0..($Participants - 1) | ForEach-Object -Parallel {
                 note_date = $noteDate
             } | ConvertTo-Json) | Out-Null
     }
-    [pscustomobject]@{ Username = $username; Token = $token; EventID = $event.id }
+    [pscustomobject]@{ Username = $username; Token = $token; EventID = $event.id; ClientIP = $clientIP }
 } -ThrottleLimit $PrepareConcurrency
 
 if (@($participantRecords | Select-Object -ExpandProperty EventID -Unique).Count -ne 1) {
     throw "participants resolved different events"
 }
 $eventState = Invoke-RestMethod -Uri "$BaseUrl/api/v1/ai-events/current" `
-    -Headers @{ Authorization = "Token $($participantRecords[0].Token)" }
+    -Headers @{ Authorization = "Token $($participantRecords[0].Token)"; "X-Forwarded-For" = $participantRecords[0].ClientIP }
 if ($eventState.remaining_slots -ne $eventState.total_slots) {
     throw "acceptance event is not empty"
 }
@@ -78,6 +81,7 @@ try {
         $headers = @{
             Authorization = "Token $($_.Token)"
             "Idempotency-Key" = [guid]::NewGuid().ToString()
+            "X-Forwarded-For" = $_.ClientIP
         }
         try {
             $response = Invoke-WebRequest -Method Post -Uri "$using:BaseUrl/api/v1/ai-events/$($_.EventID)/claims" `

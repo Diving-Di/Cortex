@@ -97,7 +97,7 @@ func (s *Local) Stat(_ context.Context, key string) (ObjectInfo, error) {
 	digest := hex.EncodeToString(h.Sum(nil))
 	return ObjectInfo{Key: key, Size: st.Size(), SHA256: digest, ETag: digest, Modified: st.ModTime()}, nil
 }
-func (s *Local) Delete(_ context.Context, key string) error {
+func (s *Local) Delete(_ context.Context, key, _ string) error {
 	p, err := s.path(key)
 	if err != nil {
 		return err

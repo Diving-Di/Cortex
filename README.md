@@ -261,13 +261,18 @@ Prometheus 告警规则和 Grafana dashboard 分别位于 `deploy/prometheus/` �
 MinIO 和宿主/数据卷 exporter；Grafana 仅绑定 `127.0.0.1:3000`。生产环境必须通过
 `ALERTMANAGER_CONFIG_FILE` 注入真实通知接收器并完成送达演练，SLO 与值班契约见 `docs/SLO.md`。
 
-打 `v*` tag 会在 CI 全部通过后发布带 SBOM、provenance 和 GitHub attestation 的 backend/frontend
-不可变镜像。部署只接受 digest 引用，执行前自动联合备份，迁移或验收失败会回退应用镜像：
+打 `v*` tag 会在 CI 全部通过后发布带 SBOM、provenance 和 GitHub attestation 的 backend、frontend、
+document-parser、embedding 和 reranker 五个不可变镜像。生产 Compose 必须叠加
+`docker-compose.production.yml`；配置检查会拒绝可变 tag、本地 build context、非 HTTPS 公网地址和本地告警接收器。
+部署执行前自动联合备份，迁移或验收失败会回退五个应用镜像：
 
 ```powershell
 .\backend\scripts\deploy_release.ps1 `
   -BackendImage ghcr.io/<owner>/cortex-backend@sha256:<digest> `
-  -FrontendImage ghcr.io/<owner>/cortex-frontend@sha256:<digest>
+  -FrontendImage ghcr.io/<owner>/cortex-frontend@sha256:<digest> `
+  -DocumentParserImage ghcr.io/<owner>/cortex-document-parser@sha256:<digest> `
+  -EmbeddingImage ghcr.io/<owner>/cortex-embedding@sha256:<digest> `
+  -RerankerImage ghcr.io/<owner>/cortex-reranker@sha256:<digest>
 ```
 
 人工回滚使用部署证据中的上一组镜像；数据库迁移必须遵守 expand/migrate/switch/contract，脚本不会用旧备份覆盖
@@ -299,9 +304,14 @@ npm run build
 ```powershell
 docker compose config --quiet
 docker compose -f docker-compose.ci.yml config --quiet
+.\backend\scripts\production_config_check.ps1
+.\backend\scripts\production_acceptance.ps1
 .\backend\scripts\non_ai_smoke.ps1
 .\backend\scripts\ai_acceptance.ps1
 .\backend\scripts\template_ai_event_acceptance.ps1
+.\backend\scripts\template_ai_event_redis_failure_acceptance.ps1
+.\backend\scripts\ai_event_concurrency_acceptance.ps1
+.\backend\scripts\validate_prometheus_rules.ps1
 ```
 
 知识库验收覆盖上传、索引、混合问答、来源保存与 3 GiB 配额；模板验收覆盖私有模板、公开快照与 AI 活动流程。
@@ -318,5 +328,6 @@ docker compose -f docker-compose.ci.yml config --quiet
 - [模板广场页](docs/page/TEMPLATES_PAGE_ARCHITECTURE.md)：私有模板、公开快照、榜单与使用流程
 - [AI 限量活动页](docs/page/AI_EVENTS_PAGE_ARCHITECTURE.md)：活动倒计时、资格、点数与领取
 - [2026-08-25 基础设施验收](docs/operations/INFRASTRUCTURE_ACCEPTANCE_20260825.md)：当前 Compose 主路径、故障注入、备份恢复和可观测性证据
+- [2026-08-31 上线整改验收](docs/operations/PRODUCTION_REMEDIATION_ACCEPTANCE_20260831.md)：本轮生产配置、五镜像发布、恢复、真实浏览器和完整栈证据与外部边界
 - [2026-08-25 RAG 与负载复验](docs/operations/RAG_AND_K6_RERUN_20260825.md)：当前 RAG 质量和 AI 活动负载结果
 - [RAG 与基础设施演进技术方案](docs/INFRASTRUCTURE_EVOLUTION.md)：MinIO/Redis 大文件上传、Kafka 多格式文档处理、Elasticsearch 检索及生产验收方案

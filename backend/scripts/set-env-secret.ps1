@@ -2,12 +2,23 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^[A-Z][A-Z0-9_]*$")]
     [string]$Name,
-    [Parameter(Mandatory = $true)]
     [string]$Value,
+    [string]$ValueFile,
     [string]$EnvironmentFile = (Join-Path $PSScriptRoot "..\..\.env")
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($Value) -eq [string]::IsNullOrWhiteSpace($ValueFile)) {
+    throw "Provide exactly one of -Value or -ValueFile."
+}
+if (-not [string]::IsNullOrWhiteSpace($ValueFile)) {
+    $valuePath = [System.IO.Path]::GetFullPath($ValueFile)
+    if (-not [System.IO.File]::Exists($valuePath)) {
+        throw "Secret value file does not exist."
+    }
+    $Value = [System.IO.File]::ReadAllText($valuePath).Trim()
+}
 
 if ([string]::IsNullOrWhiteSpace($Value) -or $Value.Contains("`r") -or $Value.Contains("`n")) {
     throw "Secret value must be non-empty and must not contain newlines."

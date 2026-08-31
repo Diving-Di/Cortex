@@ -83,7 +83,7 @@ docker compose up -d --build
 ```
 
 前端 CI 运行 Vitest 覆盖率门禁和 Chromium Playwright 登录/受保护路由 E2E；隔离 CI Compose
-从空 PostgreSQL 基线执行到迁移 41，并强制运行 RLS、租约、Outbox、Redis、MinIO、Kafka 和
+从空 PostgreSQL 基线执行到迁移 42，并强制运行 RLS、租约、Outbox、Redis、MinIO、Kafka 和
 Elasticsearch 验收。依赖与镜像还需通过 govulncheck、npm audit、pip-audit、Gitleaks、Trivy 和 SBOM 门禁。
 生产发布还必须完成真实 Alertmanager receiver 送达、当期 primary/secondary 映射、联合恢复和目标容量验收；
 默认本地 receiver 与本地 RPO/RTO 不构成生产证据。

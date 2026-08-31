@@ -44,15 +44,17 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
-	var blobs blobstore.BlobStore
-	if cfg.StorageBackend == "minio" {
-		blobs, err = blobstore.NewS3(cfg.MinIOEndpoint, cfg.MinIOBucket, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOSecure)
-	} else {
-		blobs, err = blobstore.NewLocal(cfg.DataDir)
+	var minioBlobs blobstore.BlobStore
+	if cfg.StorageBackend == "minio" || (cfg.MinIOEndpoint != "" && cfg.MinIOBucket != "" && cfg.MinIOAccessKey != "" && cfg.MinIOSecretKey != "") {
+		minioBlobs, err = blobstore.NewS3(cfg.MinIOEndpoint, cfg.MinIOBucket, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOSecure)
 	}
 	if err != nil {
 		logger.Error("open object store", "error", err)
 		os.Exit(1)
+	}
+	var blobs blobstore.BlobStore = localBlobs
+	if cfg.StorageBackend == "minio" {
+		blobs = minioBlobs
 	}
 
 	redis, err := rediscoord.New(cfg.RedisURL)
@@ -64,7 +66,7 @@ func main() {
 		search = searchindex.New(cfg.ElasticsearchURLs, cfg.ElasticsearchUsername, cfg.ElasticsearchPassword, cfg.ElasticsearchIndexAlias)
 	}
 	if cfg.RuntimeRole != "api" {
-		workers.Run(ctx, cfg, db, blobs, localBlobs, logger)
+		workers.Run(ctx, cfg, db, blobs, localBlobs, minioBlobs, logger)
 		go server.RunScheduler(ctx, cfg, db, logger)
 		server.RunAIEventWorkers(ctx, cfg, db, logger)
 		server.RunMarketplaceWorker(ctx, db, redis, logger)

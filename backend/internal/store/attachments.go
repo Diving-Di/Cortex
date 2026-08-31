@@ -22,7 +22,7 @@ func (s *Store) AddAttachment(ctx context.Context, principal domain.Principal, i
 		if err := tx.QueryRow(ctx, `SELECT attachment_quota_bytes FROM tenants WHERE id=$1 FOR UPDATE`, principal.TenantID).Scan(&quota); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `SELECT COALESCE(sum(size),0) FROM attachments WHERE tenant_id=$1`, principal.TenantID).Scan(&used); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(sum(size),0) FROM attachments WHERE tenant_id=$1 AND deleted_at IS NULL`, principal.TenantID).Scan(&used); err != nil {
 			return err
 		}
 		if used+item.Size > quota {
@@ -30,7 +30,7 @@ func (s *Store) AddAttachment(ctx context.Context, principal domain.Principal, i
 		}
 		return tx.QueryRow(ctx, `INSERT INTO attachments
 			(tenant_id,uploaded_by,note_id,original_name,stored_path,storage_backend,object_key,object_version,etag,mime_type,size,sha256)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			VALUES ($1,$2,$3,$4,$5,$6,nullif($7,''),nullif($8,''),nullif($9,''),$10,$11,$12)
 			RETURNING id,note_id,original_name,stored_path,storage_backend,coalesce(object_key,''),coalesce(object_version,''),coalesce(etag,''),mime_type,size,sha256,created_at`,
 			principal.TenantID, principal.UserID, item.NoteID, item.OriginalName,
 			item.StoredPath, item.StorageBackend, item.ObjectKey, item.ObjectVersion, item.ETag, item.MIMEType, item.Size, item.SHA256,

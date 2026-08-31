@@ -1,0 +1,37 @@
+# Production deployment guard layer. Always combine this file with
+# docker-compose.yml. It intentionally refuses mutable or omitted application
+# images and local-only operational defaults.
+services:
+  backend:
+    image: ${BACKEND_IMAGE:?set immutable BACKEND_IMAGE digest}
+    build: !reset null
+    environment:
+      APP_ENV: production
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set the public https URL}
+      CORS_ORIGINS: ${CORS_ORIGINS:?set explicit trusted https origins}
+      REDIS_URL: redis://default:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?set immutable FRONTEND_IMAGE digest}
+    build: !reset null
+
+  document-parser:
+    image: ${DOCUMENT_PARSER_IMAGE:?set immutable DOCUMENT_PARSER_IMAGE digest}
+    build: !reset null
+
+  embedding-service:
+    image: ${EMBEDDING_IMAGE:?set immutable EMBEDDING_IMAGE digest}
+    build: !reset null
+
+  reranker-service:
+    image: ${RERANKER_IMAGE:?set immutable RERANKER_IMAGE digest}
+    build: !reset null
+
+  alertmanager:
+    volumes:
+      - ${ALERTMANAGER_CONFIG_FILE:?set reviewed production alert receiver config}:/etc/alertmanager/alertmanager.yml:ro
+
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?set GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}

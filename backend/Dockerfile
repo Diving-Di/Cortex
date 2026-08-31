@@ -1,4 +1,6 @@
-FROM golang:1.26.6-alpine AS builder
+ARG GO_BUILDER_IMAGE=golang:1.26.6-alpine
+ARG ALPINE_RUNTIME_IMAGE=alpine:3.23
+FROM ${GO_BUILDER_IMAGE} AS builder
 
 WORKDIR /src
 
@@ -24,7 +26,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /out/rag-eval ./cmd/rag-eval
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/blob-migrate ./cmd/blob-migrate
 
-FROM alpine:3.23
+FROM ${ALPINE_RUNTIME_IMAGE}
 
 LABEL org.opencontainers.image.title="Cortex Backend" \
       org.opencontainers.image.description="Personal notes and knowledge service"

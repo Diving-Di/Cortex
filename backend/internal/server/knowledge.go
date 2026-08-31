@@ -69,7 +69,7 @@ func (s *Server) uploadKnowledge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	finalRel := filepath.ToSlash(filepath.Join("tenants", p.TenantID.String(), "knowledge", uploadID.String(), "source"))
-	uploaded := make([]string, 0, len(prepared.Documents)+len(prepared.Assets))
+	uploaded := make([]struct{ key, version string }, 0, len(prepared.Documents)+len(prepared.Assets))
 	all := append(append([]knowledge.Document(nil), prepared.Documents...), func() []knowledge.Document {
 		x := make([]knowledge.Document, len(prepared.Assets))
 		for i, a := range prepared.Assets {
@@ -84,32 +84,32 @@ func (s *Server) uploadKnowledge(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		key := finalRel + "/" + item.RelativePath
-		_, putErr := s.blobs.Put(r.Context(), key, f, item.Size, item.Hash)
+		object, putErr := s.blobs.Put(r.Context(), key, f, item.Size, item.Hash)
 		f.Close()
 		if putErr != nil {
 			err = putErr
 			break
 		}
-		uploaded = append(uploaded, key)
+		uploaded = append(uploaded, struct{ key, version string }{key: key, version: object.VersionID})
 	}
 	if err != nil {
-		for _, key := range uploaded {
-			_ = s.blobs.Delete(r.Context(), key)
+		for _, object := range uploaded {
+			_ = s.blobs.Delete(r.Context(), object.key, object.version)
 		}
 		httpx.WriteError(w, s.logger, apierror.New("KNOWLEDGE_STORAGE_UNAVAILABLE", "知识文件存储暂不可用", 503))
 		return
 	}
 	created, err := s.knowledgeService.CreateUpload(r.Context(), p, uploadID, strings.TrimSpace(r.Header.Get("Idempotency-Key")), header.Filename, finalRel, s.cfg.StorageBackend, prepared)
 	if err != nil {
-		for _, key := range uploaded {
-			_ = s.blobs.Delete(r.Context(), key)
+		for _, object := range uploaded {
+			_ = s.blobs.Delete(r.Context(), object.key, object.version)
 		}
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
 	if created.ID != uploadID {
-		for _, key := range uploaded {
-			_ = s.blobs.Delete(r.Context(), key)
+		for _, object := range uploaded {
+			_ = s.blobs.Delete(r.Context(), object.key, object.version)
 		}
 	}
 	httpx.JSON(w, http.StatusAccepted, created)

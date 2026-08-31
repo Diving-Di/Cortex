@@ -19,6 +19,6 @@ type BlobStore interface {
 	Put(context.Context, string, io.Reader, int64, string) (ObjectInfo, error)
 	Open(context.Context, string) (io.ReadCloser, ObjectInfo, error)
 	Stat(context.Context, string) (ObjectInfo, error)
-	Delete(context.Context, string) error
+	Delete(ctx context.Context, key, version string) error
 	Ready(context.Context) error
 }

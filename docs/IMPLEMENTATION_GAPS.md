@@ -1,13 +1,13 @@
 # 未完成事项与生产风险
 
-> 更新日期：2026-08-30
+> 更新日期：2026-08-31
 > 本文只记录真实缺口和不能对外承诺的事项。已实现能力见 `README.md`、`docs/BASELINE.md`、
 > `docs/SDD.md` 和 `docs/RAG.md`；发布门禁统一见 `docs/RELEASE_CHECKLIST.md`。
 
 ## P0：发布前必须关闭
 
 - 在目标部署环境运行完整非 AI、AI、模板和活动验收；本地通过不能代替目标环境结果。
-- 用新 PostgreSQL 空库验证迁移版本 41、56 张业务表（连同 `schema_migrations` 共 57 张 public 表）、
+- 用目标环境的新 PostgreSQL 空库验证迁移版本 42、56 张业务表（连同 `schema_migrations` 共 57 张 public 表）、
   全部迁移、FORCE RLS、低权限 `cortex_app`、ready、注册和登录。
 - 为迁移 `000035_knowledge_index_progress` 与 `000036_knowledge_clarifications` 补目标数据库验收：
   多 worker 竞争、租约过期接管、进度不倒退，以及澄清正常/重复/过期/跨租户恢复。
@@ -37,7 +37,7 @@
 - Excel 与演示文稿摄取尚未实现。若未来纳入，必须沿用隔离解析 worker、文件/页数/解压比/超时
   限制、表格与页码溯源、解析器/chunker 版本和配额回滚，不能只开放扩展名。
 - 团队知识库、云盘同步、计费、桌面组件以及数据库与 Markdown 双向同步不在当前产品范围。
-- Excel 与演示文稿的知识库摄取尚未实现。PDF、DOC/DOCX、PNG/JPG/WebP 已通过隔离解析/OCR 服务接入；页码当前作为生成的 Markdown 分节保留，结构化页码引用字段仍属于后续增强。
+- PDF、DOC/DOCX、PNG/JPG/WebP 已通过隔离解析/OCR 服务接入；页码当前作为生成的 Markdown 分节保留，结构化页码引用字段仍属于后续增强。
 
 ## 已知运维边界
 
@@ -47,6 +47,10 @@
   绕过来源、RLS、幂等、配额或引用核验。
 
 ## 本轮已关闭
+
+- 2026-08-31：生产配置改为 fail-closed，新增五镜像 digest-only overlay 与检查脚本；release 对五个应用镜像生成 SBOM、provenance、attestation、digest 和 Trivy 证据，并纳入自动/人工回滚。
+- 2026-08-31：完整 Compose 14 个必需服务健康验收、非 AI/AI/模板/Redis 故障降级、1000 路活动并发、真实生产镜像浏览器 E2E 和 Prometheus/Alertmanager 规则在本地目标栈通过；证据与不可外推边界见 `operations/PRODUCTION_REMEDIATION_ACCEPTANCE_20260831.md`。
+- 2026-08-31：迁移 42 为对象 GC 增加有限租约和旧 worker fencing；隔离 PostgreSQL 上 schema/RLS、租约接管、附件清理和软删除配额测试连续两轮通过。
 
 - 2026-08-29：第三阶段补齐 HTTP 请求量/5xx/延迟 SLI、Prometheus 记录与告警规则、Alertmanager、
   Grafana provisioning 及 PostgreSQL/Redis/Kafka/Elasticsearch/MinIO/node 采集；备份和隔离恢复成功会

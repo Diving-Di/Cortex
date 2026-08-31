@@ -27,6 +27,9 @@ func TestLocalRoundTripAndTraversal(t *testing.T) {
 	if !bytes.Equal(got, data) {
 		t.Fatal("content mismatch")
 	}
+	if err = s.Delete(context.Background(), "tenants/t/attachments/a", "ignored-local-version"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.Stat(context.Background(), "../escape"); err == nil {
 		t.Fatal("traversal accepted")
 	}

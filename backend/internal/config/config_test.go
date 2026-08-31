@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -123,5 +124,48 @@ func TestExternalInfrastructureFailFast(t *testing.T) {
 	t.Setenv("ELASTICSEARCH_URLS", "http://elasticsearch:9200")
 	if _, err := Load(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestProductionConfigurationFailsClosed(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgresql://cortex_app:test@localhost/cortex")
+	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://cortex_migrator:test@localhost/cortex")
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REDIS_URL", "redis://default:strong-secret@redis:6379/0")
+
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "PUBLIC_BASE_URL") {
+		t.Fatalf("missing public URL error = %v", err)
+	}
+	t.Setenv("PUBLIC_BASE_URL", "http://cortex.example.com")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "PUBLIC_BASE_URL") {
+		t.Fatalf("insecure public URL error = %v", err)
+	}
+	t.Setenv("PUBLIC_BASE_URL", "https://cortex.example.com")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "CORS_ORIGINS") {
+		t.Fatalf("missing explicit CORS error = %v", err)
+	}
+	t.Setenv("CORS_ORIGINS", "http://cortex.example.com")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "https origins") {
+		t.Fatalf("insecure CORS error = %v", err)
+	}
+	t.Setenv("CORS_ORIGINS", "https://cortex.example.com")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PublicBaseURL != "https://cortex.example.com" || cfg.Environment != "production" {
+		t.Fatalf("production config = %#v", cfg)
+	}
+}
+
+func TestProductionRejectsDefaultRedisPassword(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgresql://cortex_app:test@localhost/cortex")
+	t.Setenv("MIGRATION_DATABASE_URL", "postgresql://cortex_migrator:test@localhost/cortex")
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("PUBLIC_BASE_URL", "https://cortex.example.com")
+	t.Setenv("CORS_ORIGINS", "https://cortex.example.com")
+	t.Setenv("REDIS_URL", "redis://default:change-me@redis:6379/0")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "REDIS_URL") {
+		t.Fatalf("default Redis password error = %v", err)
 	}
 }

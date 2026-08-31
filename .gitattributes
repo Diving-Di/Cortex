@@ -1,3 +1,4 @@
 *.go text eol=lf
 *.sh text eol=lf
 backend/internal/migrations/sql/*.sql text eol=lf
+backend/db/*.sql text eol=lf

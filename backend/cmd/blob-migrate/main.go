@@ -112,7 +112,7 @@ func migrateOne(ctx context.Context, db *store.Store, local, remote blobstore.Bl
 	}
 	verified, err := verifyRemote(ctx, remote, key, value.size, value.digest)
 	if err != nil || !verified {
-		_ = remote.Delete(ctx, key)
+		_ = remote.Delete(ctx, key, remoteInfo.VersionID)
 		if err != nil {
 			return err
 		}
@@ -120,7 +120,7 @@ func migrateOne(ctx context.Context, db *store.Store, local, remote blobstore.Bl
 	}
 	tx, err := db.AdminPool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		_ = remote.Delete(ctx, key)
+		_ = remote.Delete(ctx, key, remoteInfo.VersionID)
 		return err
 	}
 	defer tx.Rollback(ctx)
@@ -134,14 +134,14 @@ func migrateOne(ctx context.Context, db *store.Store, local, remote blobstore.Bl
 		tag, err = execTag(ctx, tx, `UPDATE knowledge_assets SET storage_backend='minio',object_key=$2,object_version=nullif($3,''),etag=nullif($4,'') WHERE id=$1::uuid AND storage_backend='local' AND stored_path=$5`, value.id, key, remoteInfo.VersionID, remoteInfo.ETag, value.storedPath)
 	}
 	if err != nil || tag.rows != 1 {
-		_ = remote.Delete(ctx, key)
+		_ = remote.Delete(ctx, key, remoteInfo.VersionID)
 		if err != nil {
 			return err
 		}
 		return errors.New("row changed during migration")
 	}
 	if err = tx.Commit(ctx); err != nil {
-		_ = remote.Delete(ctx, key)
+		_ = remote.Delete(ctx, key, remoteInfo.VersionID)
 		return err
 	}
 	return nil

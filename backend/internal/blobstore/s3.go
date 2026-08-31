@@ -70,11 +70,17 @@ func (s *S3) sign(req *http.Request, payloadHash string, now time.Time) {
 	key := hmacSum(kService, "aws4_request")
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+s.accessKey+"/"+scope+", SignedHeaders="+signedHeaders+", Signature="+hex.EncodeToString(hmacSum(key, toSign)))
 }
-func (s *S3) do(ctx context.Context, method, key string, body io.Reader, size int64, payloadHash string) (*http.Response, error) {
+func (s *S3) do(ctx context.Context, method, key, version string, body io.Reader, size int64, payloadHash string) (*http.Response, error) {
 	if key != "" && (strings.HasPrefix(key, "/") || strings.Contains("/"+key+"/", "/../") || strings.Contains(key, "\\")) {
 		return nil, fmt.Errorf("invalid object key")
 	}
-	req, err := http.NewRequestWithContext(ctx, method, s.objectURL(key).String(), body)
+	objectURL := s.objectURL(key)
+	if version != "" {
+		query := objectURL.Query()
+		query.Set("versionId", version)
+		objectURL.RawQuery = query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, method, objectURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +113,7 @@ func (s *S3) Put(ctx context.Context, key string, body io.Reader, size int64, di
 	if hex.EncodeToString(actual[:]) != digest {
 		return ObjectInfo{}, fmt.Errorf("object checksum mismatch")
 	}
-	resp, err := s.do(ctx, http.MethodPut, key, bytes.NewReader(data), size, digest)
+	resp, err := s.do(ctx, http.MethodPut, key, "", bytes.NewReader(data), size, digest)
 	if err != nil {
 		return ObjectInfo{}, err
 	}
@@ -115,7 +121,7 @@ func (s *S3) Put(ctx context.Context, key string, body io.Reader, size int64, di
 	return ObjectInfo{Key: key, Size: size, SHA256: digest, ETag: strings.Trim(resp.Header.Get("ETag"), "\""), VersionID: resp.Header.Get("x-amz-version-id"), Modified: time.Now().UTC()}, nil
 }
 func (s *S3) Open(ctx context.Context, key string) (io.ReadCloser, ObjectInfo, error) {
-	resp, err := s.do(ctx, http.MethodGet, key, nil, -1, emptySHA256)
+	resp, err := s.do(ctx, http.MethodGet, key, "", nil, -1, emptySHA256)
 	if err != nil {
 		return nil, ObjectInfo{}, err
 	}
@@ -125,22 +131,22 @@ func responseInfo(key string, r *http.Response) ObjectInfo {
 	return ObjectInfo{Key: key, Size: r.ContentLength, ETag: strings.Trim(r.Header.Get("ETag"), "\""), VersionID: r.Header.Get("x-amz-version-id"), Modified: time.Now().UTC()}
 }
 func (s *S3) Stat(ctx context.Context, key string) (ObjectInfo, error) {
-	resp, err := s.do(ctx, http.MethodHead, key, nil, -1, emptySHA256)
+	resp, err := s.do(ctx, http.MethodHead, key, "", nil, -1, emptySHA256)
 	if err != nil {
 		return ObjectInfo{}, err
 	}
 	defer resp.Body.Close()
 	return responseInfo(key, resp), nil
 }
-func (s *S3) Delete(ctx context.Context, key string) error {
-	resp, err := s.do(ctx, http.MethodDelete, key, nil, -1, emptySHA256)
+func (s *S3) Delete(ctx context.Context, key, version string) error {
+	resp, err := s.do(ctx, http.MethodDelete, key, version, nil, -1, emptySHA256)
 	if resp != nil {
 		resp.Body.Close()
 	}
 	return err
 }
 func (s *S3) Ready(ctx context.Context) error {
-	resp, err := s.do(ctx, http.MethodHead, "", nil, -1, emptySHA256)
+	resp, err := s.do(ctx, http.MethodHead, "", "", nil, -1, emptySHA256)
 	if resp != nil {
 		resp.Body.Close()
 	}

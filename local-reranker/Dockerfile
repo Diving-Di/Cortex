@@ -1,6 +1,8 @@
-FROM python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
+ARG PYTHON_RUNTIME_IMAGE=python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
+FROM ${PYTHON_RUNTIME_IMAGE}
 
 ARG RERANK_MODEL_REVISION=e099d4b9cdbd291b1569d416f19aaa6523570bc3
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 
 ENV HF_HUB_OFFLINE=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -11,7 +13,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs && \
     pip install --no-cache-dir \
-      --index-url https://download.pytorch.org/whl/cu130 torch==2.13.0 && \
+      --index-url "${TORCH_INDEX_URL}" torch==2.13.0 && \
     pip install --no-cache-dir -r requirements.txt && \
     git clone https://www.modelscope.cn/BAAI/bge-reranker-v2-m3.git /models/reranker && \
     git -C /models/reranker checkout "${RERANK_MODEL_REVISION}" && \

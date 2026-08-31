@@ -1,12 +1,23 @@
 param(
     [Parameter(Mandatory = $true)][string]$BackendImage,
     [Parameter(Mandatory = $true)][string]$FrontendImage,
+    [Parameter(Mandatory = $true)][string]$DocumentParserImage,
+    [Parameter(Mandatory = $true)][string]$EmbeddingImage,
+    [Parameter(Mandatory = $true)][string]$RerankerImage,
     [string]$ComposeProjectDirectory = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path,
     [string]$EvidenceDirectory = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path ".runtime\releases")
 )
 
 $ErrorActionPreference = "Stop"
-foreach ($image in @($BackendImage, $FrontendImage)) {
+$targetImages = [ordered]@{
+    backend = $BackendImage
+    frontend = $FrontendImage
+    "document-parser" = $DocumentParserImage
+    "embedding-service" = $EmbeddingImage
+    "reranker-service" = $RerankerImage
+}
+$releaseServices = @($targetImages.Keys)
+foreach ($image in $targetImages.Values) {
     if ($image -notmatch '^[^\s]+@sha256:[a-f0-9]{64}$') { throw "release images must be immutable digest references" }
 }
 
@@ -15,21 +26,20 @@ $evidence = Join-Path ([IO.Path]::GetFullPath($EvidenceDirectory)) $releaseID
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
 $backupDirectory = Join-Path $evidence "backup"
 $state = $null
-$previousBackend = $null
-$previousFrontend = $null
+$previousImages = [ordered]@{}
 
 Push-Location $ComposeProjectDirectory
 try {
-    $previousBackendContainer = docker compose ps -q backend
-    $previousFrontendContainer = docker compose ps -q frontend
-    if (-not $previousBackendContainer -or -not $previousFrontendContainer) { throw "backend and frontend must be running before deployment" }
-    $previousBackend = (docker inspect $previousBackendContainer --format '{{.Config.Image}}').Trim()
-    $previousFrontend = (docker inspect $previousFrontendContainer --format '{{.Config.Image}}').Trim()
+    foreach ($service in $targetImages.Keys) {
+        $container = docker compose ps -q $service
+        if (-not $container) { throw "$service must be running before deployment" }
+        $previousImages[$service] = (docker inspect $container --format '{{.Config.Image}}').Trim()
+    }
     $state = [ordered]@{
         release_id = $releaseID
         started_at_utc = [DateTimeOffset]::UtcNow.ToString("o")
-        previous = @{ backend = $previousBackend; frontend = $previousFrontend }
-        target = @{ backend = $BackendImage; frontend = $FrontendImage }
+        previous = $previousImages
+        target = $targetImages
         status = "deploying"
     }
     $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidence "deployment.json") -Encoding utf8NoBOM
@@ -38,11 +48,14 @@ try {
 
     $env:BACKEND_IMAGE = $BackendImage
     $env:FRONTEND_IMAGE = $FrontendImage
-    docker compose pull backend frontend
+    $env:DOCUMENT_PARSER_IMAGE = $DocumentParserImage
+    $env:EMBEDDING_IMAGE = $EmbeddingImage
+    $env:RERANKER_IMAGE = $RerankerImage
+    docker compose pull $releaseServices
     if ($LASTEXITCODE -ne 0) { throw "release image pull failed" }
     docker compose run --rm --no-deps --entrypoint /app/migrate backend -steps 0 up
     if ($LASTEXITCODE -ne 0) { throw "forward migration failed" }
-    docker compose up -d --no-build --wait backend frontend
+    docker compose up -d --no-build --wait $releaseServices
     if ($LASTEXITCODE -ne 0) { throw "release services did not become healthy" }
     & (Join-Path $PSScriptRoot "production_acceptance.ps1") -ComposeProjectDirectory $ComposeProjectDirectory | Set-Content -LiteralPath (Join-Path $evidence "acceptance.json") -Encoding utf8NoBOM
 
@@ -52,10 +65,13 @@ try {
     $state | ConvertTo-Json -Depth 5
 } catch {
     $failure = $_
-    if ($previousBackend -and $previousFrontend) {
-        $env:BACKEND_IMAGE = $previousBackend
-        $env:FRONTEND_IMAGE = $previousFrontend
-        docker compose up -d --no-build --wait backend frontend 2>&1 | Set-Content -LiteralPath (Join-Path $evidence "automatic-rollback.log") -Encoding utf8NoBOM
+    if ($previousImages.Count -eq $targetImages.Count) {
+        $env:BACKEND_IMAGE = $previousImages.backend
+        $env:FRONTEND_IMAGE = $previousImages.frontend
+        $env:DOCUMENT_PARSER_IMAGE = $previousImages."document-parser"
+        $env:EMBEDDING_IMAGE = $previousImages."embedding-service"
+        $env:RERANKER_IMAGE = $previousImages."reranker-service"
+        docker compose up -d --no-build --wait $releaseServices 2>&1 | Set-Content -LiteralPath (Join-Path $evidence "automatic-rollback.log") -Encoding utf8NoBOM
         $rollbackSucceeded = $LASTEXITCODE -eq 0
     }
     if ($state) {
@@ -68,5 +84,8 @@ try {
 } finally {
     Remove-Item Env:BACKEND_IMAGE -ErrorAction SilentlyContinue
     Remove-Item Env:FRONTEND_IMAGE -ErrorAction SilentlyContinue
+    Remove-Item Env:DOCUMENT_PARSER_IMAGE -ErrorAction SilentlyContinue
+    Remove-Item Env:EMBEDDING_IMAGE -ErrorAction SilentlyContinue
+    Remove-Item Env:RERANKER_IMAGE -ErrorAction SilentlyContinue
     Pop-Location
 }

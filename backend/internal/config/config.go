@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -65,6 +66,7 @@ type Config struct {
 	AIModel                      string
 	AISystemPrompt               string
 	Environment                  string
+	PublicBaseURL                string
 	ScheduledReportsEnabled      bool
 	ScheduledReportPoll          time.Duration
 	KnowledgeIndexBatchSize      int
@@ -285,7 +287,7 @@ func Load() (Config, error) {
 	if err != nil || plannerMaxSubqueries > 4 {
 		return Config{}, fmt.Errorf("RAG_PLANNER_MAX_SUBQUERIES must be between 1 and 4")
 	}
-	return Config{
+	cfg := Config{
 		RuntimeRole:           runtimeRole,
 		DatabaseURL:           databaseURL,
 		MigrationDatabaseURL:  migrationDatabaseURL,
@@ -325,7 +327,8 @@ func Load() (Config, error) {
 		AIBaseURL:                    valueOrDefault("AI_BASE_URL", "https://api.openai.com/v1"),
 		AIModel:                      valueOrDefault("AI_MODEL", "gpt-5.6"),
 		AISystemPrompt:               valueOrDefault("AI_SYSTEM_PROMPT", "你是一个温暖、贴心的 AI 助手。"),
-		Environment:                  valueOrDefault("APP_ENV", "development"),
+		Environment:                  strings.ToLower(valueOrDefault("APP_ENV", "development")),
+		PublicBaseURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"),
 		ScheduledReportsEnabled:      parseBool(valueOrDefault("SCHEDULED_REPORTS_ENABLED", "true")),
 		ScheduledReportPoll:          time.Duration(max(10, pollSeconds)) * time.Second,
 		KnowledgeIndexBatchSize:      knowledgeIndexBatchSize,
@@ -344,7 +347,43 @@ func Load() (Config, error) {
 		AIEventClaimIPLimit:          aiEventClaimIPLimit,
 		AIEventClaimConcurrency:      aiEventClaimConcurrency,
 		AIEventClaimQueueTimeout:     time.Duration(aiEventClaimQueueTimeoutMS) * time.Millisecond,
-	}, nil
+	}
+	if err := validateEnvironment(cfg); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+func validateEnvironment(cfg Config) error {
+	if cfg.Environment != "development" && cfg.Environment != "test" && cfg.Environment != "production" {
+		return fmt.Errorf("APP_ENV must be development, test, or production")
+	}
+	if cfg.Environment != "production" {
+		return nil
+	}
+	publicURL, err := url.Parse(cfg.PublicBaseURL)
+	if err != nil || publicURL.Scheme != "https" || publicURL.Host == "" || publicURL.User != nil {
+		return fmt.Errorf("PUBLIC_BASE_URL must be an absolute https URL in production")
+	}
+	if strings.TrimSpace(os.Getenv("CORS_ORIGINS")) == "" {
+		return fmt.Errorf("CORS_ORIGINS must be explicitly configured in production")
+	}
+	for _, origin := range cfg.CORSOrigins {
+		parsed, parseErr := url.Parse(origin)
+		if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Path != "" {
+			return fmt.Errorf("CORS_ORIGINS must contain only absolute https origins in production")
+		}
+	}
+	if !strings.Contains(cfg.RedisURL, "@") || strings.Contains(strings.ToLower(cfg.RedisURL), "change-me") {
+		return fmt.Errorf("REDIS_URL must contain a non-default password in production")
+	}
+	if cfg.StorageBackend == "minio" && cfg.MinIOSecretKey == "change-me" {
+		return fmt.Errorf("MINIO_SECRET_KEY must not use a default value in production")
+	}
+	if cfg.RAGRetrievalBackend == "elasticsearch" && strings.TrimSpace(cfg.ElasticsearchPassword) == "" {
+		return fmt.Errorf("ELASTICSEARCH_PASSWORD is required in production")
+	}
+	return nil
 }
 
 func parseBool(value string) bool {

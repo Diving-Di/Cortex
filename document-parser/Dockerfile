@@ -1,4 +1,5 @@
-FROM python:3.12-slim-bookworm
+ARG PYTHON_RUNTIME_IMAGE=python:3.12-slim-bookworm
+FROM ${PYTHON_RUNTIME_IMAGE}
 
 RUN apt-get update && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \

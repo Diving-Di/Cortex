@@ -107,7 +107,7 @@ tenants/<tenant_uuid>/attachments/<attachment_uuid>/<content_hash>
 3. complete 请求校验全部分片、合并对象并计算完整摘要，在 PostgreSQL 事务中写入对象元数据、结算配额和 Outbox。
 4. 数据库提交失败时产生受控清理任务；不得在请求线程中无限重试删除。
 5. 上传完成后的解析、OCR、分块、Embedding 和 ES 投影全部由 Kafka 消费者异步执行。
-6. 删除先软删除数据库记录并写 Outbox，再由 GC Worker 删除对象；下载始终先检查 PostgreSQL 权限和删除状态。
+6. 删除先软删除数据库记录并写 GC 任务，再由 Worker 按任务记录的 `storage_backend` 和 `object_version` 删除对象；任务使用可回收租约，物理删除成功后清理附件记录，下载始终先检查 PostgreSQL 权限和删除状态。
 
 不采用无条件双写本地卷和 MinIO。迁移期使用“单对象单后端”，通过 `storage_backend` 决定读取位置，避免两个副本都被误认为权威。
 

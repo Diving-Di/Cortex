@@ -1,6 +1,6 @@
 # Cortex 发布检查清单
 
-> 更新日期：2026-08-30
+> 更新日期：2026-08-31
 > 本文是发布门禁的唯一汇总入口。功能设计见 `README.md`、`docs/SDD.md`、`docs/RAG.md` 和
 > `docs/api.md`；历史容量、故障与恢复证据保存在 `docs/operations/`。
 
@@ -39,6 +39,7 @@ npm run build
 
 Set-Location ..
 docker compose config --quiet
+.\backend\scripts\production_config_check.ps1
 ```
 
 - [ ] 前端格式检查、测试、生产构建和 Compose 配置校验均通过。
@@ -49,7 +50,7 @@ docker compose config --quiet
 
 ## 3. 数据库、租户与文件安全
 
-- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 41、56 张业务表（连同 `schema_migrations`
+- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 42、56 张业务表（连同 `schema_migrations`
   共 57 张 public 表），迁移记录和 schema 基线一致。
 - [ ] 租户业务表启用并强制 RLS；`cortex_app` 使用低权限连接，跨租户资源访问表现为 404。
 - [ ] 注册、登录、Token 过期/撤销、软删除租户拒绝认证通过验收。
@@ -96,7 +97,7 @@ docker compose config --quiet
 
 ## 7. 发布与回滚
 
-- [ ] 镜像使用不可变版本；配置、迁移、应用切换和回滚顺序已经演练。
+- [ ] 生产部署叠加 `docker-compose.production.yml`，`production_config_check.ps1` 通过；五个应用镜像均使用不可变 digest，配置、迁移、应用切换和回滚顺序已经演练。
 - [ ] 发布镜像具有 SBOM、provenance、attestation 和 digest 证据；部署输入不是可变 tag。
 - [ ] 发布后重新运行 ready、认证、非 AI smoke 和本次变更的最小验收。
 - [ ] 数据结构按 expand → migrate/backfill → switch → contract 演进；回滚不依赖删除用户数据。

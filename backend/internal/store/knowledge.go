@@ -225,8 +225,8 @@ func (s *Store) DeleteKnowledgeDocument(ctx context.Context, p domain.Principal,
 			return err
 		}
 		var uploadID *uuid.UUID
-		var backend string
-		err := tx.QueryRow(ctx, `UPDATE knowledge_documents SET status='deleting',deleted_at=now(),updated_at=now() WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING coalesce(object_key,stored_path,''),storage_backend,size_bytes,upload_id`, p.TenantID, id).Scan(&stored, &backend, &size, &uploadID)
+		var backend, objectVersion string
+		err := tx.QueryRow(ctx, `UPDATE knowledge_documents SET status='deleting',deleted_at=now(),updated_at=now() WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING coalesce(object_key,stored_path,''),storage_backend,coalesce(object_version,''),size_bytes,upload_id`, p.TenantID, id).Scan(&stored, &backend, &objectVersion, &size, &uploadID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierror.New("KNOWLEDGE_SCOPE_NOT_FOUND", "知识库资源不存在", 404)
 		}
@@ -234,11 +234,11 @@ func (s *Store) DeleteKnowledgeDocument(ctx context.Context, p domain.Principal,
 			return err
 		}
 		if stored != "" {
-			if _, err = tx.Exec(ctx, `INSERT INTO object_gc_jobs(tenant_id,storage_backend,object_key) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, p.TenantID, backend, stored); err != nil {
+			if _, err = tx.Exec(ctx, `INSERT INTO object_gc_jobs(tenant_id,storage_backend,object_key,object_version) VALUES($1,$2,$3,nullif($4,'')) ON CONFLICT DO NOTHING`, p.TenantID, backend, stored, objectVersion); err != nil {
 				return err
 			}
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO object_gc_jobs(tenant_id,storage_backend,object_key) SELECT tenant_id,storage_backend,coalesce(object_key,stored_path) FROM knowledge_assets WHERE tenant_id=$1 AND document_id=$2 ON CONFLICT DO NOTHING`, p.TenantID, id)
+		_, err = tx.Exec(ctx, `INSERT INTO object_gc_jobs(tenant_id,storage_backend,object_key,object_version) SELECT tenant_id,storage_backend,coalesce(object_key,stored_path),object_version FROM knowledge_assets WHERE tenant_id=$1 AND document_id=$2 ON CONFLICT DO NOTHING`, p.TenantID, id)
 		return err
 	})
 	return stored, size, err

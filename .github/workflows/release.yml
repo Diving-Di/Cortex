@@ -29,6 +29,12 @@ jobs:
             context: backend
           - component: frontend
             context: frontend
+          - component: document-parser
+            context: document-parser
+          - component: embedding
+            context: local-embedding
+          - component: reranker
+            context: local-reranker
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -58,6 +64,11 @@ jobs:
           subject-name: ghcr.io/${{ github.repository_owner }}/cortex-${{ matrix.component }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+      - name: Scan published immutable image
+        run: |
+          image='ghcr.io/${{ github.repository_owner }}/cortex-${{ matrix.component }}@${{ steps.build.outputs.digest }}'
+          docker pull "$image"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.65.0 image --scanners vuln --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$image"
       - name: Record deployable digest
         run: printf '%s@%s\n' 'ghcr.io/${{ github.repository_owner }}/cortex-${{ matrix.component }}' '${{ steps.build.outputs.digest }}' > '${{ matrix.component }}-image.txt'
       - uses: actions/upload-artifact@v4

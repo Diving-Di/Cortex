@@ -57,7 +57,7 @@ func (s *Service) Upload(ctx context.Context, p domain.Principal, noteID int32, 
 		ObjectKey: key, ObjectVersion: object.VersionID, ETag: object.ETag, MIMEType: mimeType,
 		Size: int64(len(data)), SHA256: digestText})
 	if err != nil {
-		_ = s.blobs.Delete(ctx, key)
+		_ = s.blobs.Delete(ctx, key, object.VersionID)
 	}
 	return item, err
 }

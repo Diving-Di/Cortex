@@ -7,7 +7,11 @@ $ErrorActionPreference = "Stop"
 Push-Location $ComposeProjectDirectory
 try {
     docker compose config --quiet
-    $required = @("db", "redis", "minio", "kafka", "elasticsearch", "llm-gateway", "backend", "prometheus")
+    $required = @(
+        "db", "redis", "minio", "kafka", "elasticsearch", "llm-gateway",
+        "document-parser", "embedding-service", "reranker-service",
+        "backend", "frontend", "prometheus", "alertmanager", "grafana"
+    )
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds(90)
     do {
         $rows = docker compose ps --format json | ForEach-Object { $_ | ConvertFrom-Json }
@@ -25,7 +29,7 @@ try {
         throw "services are not healthy: $($unhealthy -join ', ')"
     }
 
-    foreach ($service in @("backend", "reranker-service")) {
+    foreach ($service in @("backend", "document-parser", "embedding-service", "reranker-service", "frontend")) {
         $containerID = docker compose ps -q $service
         if (-not $containerID) {
             continue
@@ -36,7 +40,7 @@ try {
         }
     }
 
-    foreach ($service in @("db", "llm-gateway", "reranker-service")) {
+    foreach ($service in @("db", "redis", "minio", "kafka", "elasticsearch", "llm-gateway", "document-parser", "embedding-service", "reranker-service")) {
         $row = $rows | Where-Object Service -eq $service | Select-Object -First 1
         if ($row.Publishers | Where-Object { $_.PublishedPort -gt 0 }) {
             throw "$service exposes a host port"
@@ -48,7 +52,8 @@ try {
         "cortex_http_requests_total",
         "cortex_knowledge_index_jobs{status=`"queued`"}"
     )) {
-        if ($metrics.Content -notmatch "(?m)^$([regex]::Escape($name)) ") {
+        $suffix = if ($name.Contains("{")) { " " } else { "(?:\{| )" }
+        if ($metrics.Content -notmatch "(?m)^$([regex]::Escape($name))$suffix") {
             throw "missing metric $name"
         }
     }

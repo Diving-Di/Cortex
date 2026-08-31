@@ -4,6 +4,7 @@ $ErrorActionPreference = "Stop"
 $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 $user = "redis-failure-$suffix"
 $password = "Redis-Failure-9z!"
+$clientHeaders = @{ "X-Forwarded-For" = "198.51.100.$(Get-Random -Minimum 1 -Maximum 255)" }
 
 function Wait-ServiceHealthy([string]$service) {
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
@@ -14,12 +15,26 @@ function Wait-ServiceHealthy([string]$service) {
     throw "$service did not become healthy"
 }
 
+function Invoke-RateLimitAwarePost([string]$uri, [string]$body) {
+    for ($attempt = 0; $attempt -lt 45; $attempt++) {
+        try {
+            return Invoke-RestMethod -Method Post -Uri $uri -Headers $clientHeaders -ContentType "application/json" -Body $body
+        }
+        catch {
+            if ([int]$_.Exception.Response.StatusCode -ne 429) { throw }
+            Start-Sleep -Seconds 2
+        }
+    }
+    throw "rate limit window did not clear for $uri"
+}
+
 try {
-    Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/register" -ContentType "application/json" `
-        -Body (@{ username = $user; email = "$user@example.invalid"; password = $password } | ConvertTo-Json) | Out-Null
-    $login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/token" -ContentType "application/json" `
-        -Body (@{ username = $user; password = $password } | ConvertTo-Json)
-    $headers = @{ Authorization = "Token $($login.token)" }
+    Invoke-RateLimitAwarePost "$BaseUrl/api/v1/auth/register" `
+        (@{ username = $user; email = "$user@example.invalid"; password = $password } | ConvertTo-Json) | Out-Null
+    $login = Invoke-RateLimitAwarePost "$BaseUrl/api/v1/auth/token" `
+        (@{ username = $user; password = $password } | ConvertTo-Json)
+    $headers = $clientHeaders.Clone()
+    $headers["Authorization"] = "Token $($login.token)"
     $event = Invoke-RestMethod -Uri "$BaseUrl/api/v1/ai-events/current" -Headers $headers
 
     docker compose stop redis | Out-Null

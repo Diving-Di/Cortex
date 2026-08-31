@@ -1,0 +1,30 @@
+{
+  "format_version": 1,
+  "created_at_utc": "2026-08-30T12:13:20.0069790+00:00",
+  "database_snapshot_utc": "2026-08-30 12:13:24.487291",
+  "git_commit": "6e8b3cf935005632df962f33bb0a0d3183771033",
+  "git_dirty": true,
+  "migration_version": 41,
+  "public_table_count": 57,
+  "database": {
+    "sha256": "e8902bbf5427a6e6a9039573cd04d14ada043bf52b35a3d11487119ff39c0a98",
+    "bytes": 239625,
+    "file": "database.dump"
+  },
+  "app_data": {
+    "sha256": "3097a7c2e8bfee0d167721ae472af5f8abe7dd34e6b46096e527ab3298cab8a7",
+    "bytes": 87,
+    "file": "app-data.tar.gz"
+  },
+  "minio_data": {
+    "sha256": "37bc93adcd86a08e983bd456868007cd800ef3960a2fe045aa4d03913f9e5d1b",
+    "bytes": 7344,
+    "file": "minio-data.tar.gz"
+  },
+  "source": {
+    "app_data_volume": "cortex_ci_app_data",
+    "minio_data_volume": "cortex_ci_minio_data",
+    "database_volume": "cortex_ci_db_data"
+  },
+  "backup_duration_seconds": 5.415
+}
