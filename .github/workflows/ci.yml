@@ -87,7 +87,6 @@ jobs:
       DATABASE_URL: postgresql://cortex_app:ci-app-password@127.0.0.1:55432/cortex
       MIGRATION_DATABASE_URL: postgresql://cortex_migrator:ci-migrator-password@127.0.0.1:55432/cortex
       APP_ENV: test
-      CORTEX_DATA_DIR: ${{ runner.temp }}/cortex-e2e-data
       E2E_REAL_BACKEND: "1"
     steps:
       - uses: actions/checkout@v4
@@ -105,10 +104,12 @@ jobs:
       - name: Apply migrations and start backend
         working-directory: backend
         shell: bash
+        env:
+          CORTEX_DATA_DIR: ${{ runner.temp }}/cortex-e2e-data
         run: |
           go run ./cmd/migrate -steps 0 up
           nohup go run ./cmd/server >"$RUNNER_TEMP/cortex-e2e-backend.log" 2>&1 &
-          for attempt in {1..60}; do
+          for _ in {1..60}; do
             curl -fsS http://127.0.0.1:8000/readyz && exit 0
             sleep 1
           done
