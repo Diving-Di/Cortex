@@ -73,7 +73,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
@@ -246,7 +246,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.65.0 fs --scanners vuln --skip-dirs /workspace/frontend/node_modules --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed /workspace
           docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.65.0 fs --scanners vuln --skip-dirs /workspace/frontend/node_modules --format cyclonedx --output /workspace/cortex-sbom.json /workspace
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cortex-sbom
           path: cortex-sbom.json
