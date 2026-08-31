@@ -51,9 +51,6 @@ if (@($participantRecords | Select-Object -ExpandProperty EventID -Unique).Count
 }
 $eventState = Invoke-RestMethod -Uri "$BaseUrl/api/v1/ai-events/current" `
     -Headers @{ Authorization = "Token $($participantRecords[0].Token)"; "X-Forwarded-For" = $participantRecords[0].ClientIP }
-if ($eventState.remaining_slots -ne $eventState.total_slots) {
-    throw "acceptance event is not empty"
-}
 if ($TokenOutputFile) {
     $tokenOutput = [IO.Path]::GetFullPath($TokenOutputFile)
     $tokenOutputDirectory = [IO.Path]::GetDirectoryName($tokenOutput)
@@ -64,8 +61,19 @@ if ($TokenOutputFile) {
 }
 
 $eventID = $participantRecords[0].EventID
+$baselineFacts = docker compose exec -T db psql -U cortex_migrator -d cortex -At -F ',' -c `
+    "SELECT e.claimed_slots,count(DISTINCT c.tenant_id),count(DISTINCT j.id),(SELECT count(*) FROM ai_point_ledger l WHERE l.entry_type='grant' AND l.reference_type='ai_flash_event_reward' AND l.reference_id=e.public_id::text) FROM ai_flash_events e LEFT JOIN ai_flash_claims c ON c.event_id=e.id LEFT JOIN ai_event_jobs j ON j.claim_id=c.id WHERE e.public_id='$eventID'::uuid GROUP BY e.id,e.public_id,e.claimed_slots"
+$baselineParts = $baselineFacts.Trim().Split(',')
+if ($baselineParts.Count -ne 4 -or [int]$baselineParts[0] -ne [int]$baselineParts[1]) {
+    throw "baseline database facts are inconsistent: $baselineFacts"
+}
+$baselineClaimed = [int]$baselineParts[0]
+$baselineClaims = [int]$baselineParts[1]
+$baselineJobs = [int]$baselineParts[2]
+$baselineRewards = [int]$baselineParts[3]
+$targetTotalSlots = $baselineClaimed + $Slots
 docker compose exec -T db psql -U cortex_migrator -d cortex -v ON_ERROR_STOP=1 `
-    -c "UPDATE ai_flash_events SET total_slots=$Slots,opens_at=now()+interval '5 seconds',closes_at=now()+interval '10 minutes',status='scheduled' WHERE public_id='$eventID'::uuid AND claimed_slots=0" | Out-Null
+    -c "UPDATE ai_flash_events SET total_slots=$targetTotalSlots,opens_at=now()+interval '5 seconds',closes_at=now()+interval '10 minutes',status='scheduled' WHERE public_id='$eventID'::uuid AND claimed_slots=$baselineClaimed" | Out-Null
 # Acceptance runs are repeatable: discard only this event's rebuildable Redis projection.
 $redisPassword = if ($env:REDIS_PASSWORD) { $env:REDIS_PASSWORD } else { "change-me" }
 docker compose exec -T -e REDISCLI_AUTH=$redisPassword redis sh -c `
@@ -111,7 +119,7 @@ $claimDurationMs = ([DateTimeOffset]::UtcNow - $claimStarted).TotalMilliseconds
 $facts = docker compose exec -T db psql -U cortex_migrator -d cortex -At -F ',' -c `
     "SELECT e.claimed_slots,count(DISTINCT c.tenant_id),count(DISTINCT j.id),(SELECT count(*) FROM ai_point_ledger l WHERE l.entry_type='grant' AND l.reference_type='ai_flash_event_reward' AND l.reference_id=e.public_id::text) FROM ai_flash_events e LEFT JOIN ai_flash_claims c ON c.event_id=e.id LEFT JOIN ai_event_jobs j ON j.claim_id=c.id WHERE e.public_id='$eventID'::uuid GROUP BY e.id,e.public_id,e.claimed_slots"
 $parts = $facts.Trim().Split(',')
-if ($parts.Count -ne 4 -or [int]$parts[0] -ne $Slots -or [int]$parts[1] -ne $Slots -or [int]$parts[2] -ne 0 -or [int]$parts[3] -ne $Slots) {
+if ($parts.Count -ne 4 -or [int]$parts[0] -ne $targetTotalSlots -or [int]$parts[1] -ne ($baselineClaims + $Slots) -or [int]$parts[2] -ne $baselineJobs -or [int]$parts[3] -ne ($baselineRewards + $Slots)) {
     throw "database facts are inconsistent: $facts"
 }
 
@@ -120,8 +128,8 @@ if ($parts.Count -ne 4 -or [int]$parts[0] -ne $Slots -or [int]$parts[1] -ne $Slo
     ConcurrentRequests = $Participants
     Accepted = $accepted
     SoldOut = $rejected
-    Claims = [int]$parts[1]
-    Jobs = [int]$parts[2]
-    RewardGrants = [int]$parts[3]
+    Claims = [int]$parts[1] - $baselineClaims
+    Jobs = [int]$parts[2] - $baselineJobs
+    RewardGrants = [int]$parts[3] - $baselineRewards
     ClaimDurationMs = [math]::Round($claimDurationMs, 2)
 } | ConvertTo-Json -Compress

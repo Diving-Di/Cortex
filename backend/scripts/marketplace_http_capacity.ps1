@@ -13,11 +13,13 @@ $started = [Diagnostics.Stopwatch]::StartNew()
 
 1..$Requests | ForEach-Object -Parallel {
     $watch = [Diagnostics.Stopwatch]::StartNew()
+    $sampleBag = $using:samples
+    $failureBag = $using:failures
     try {
         Invoke-WebRequest -UseBasicParsing -Uri $using:uri -Headers @{ Authorization = "Bearer $using:Token" } | Out-Null
-        $using:samples.Add($watch.Elapsed.TotalMilliseconds)
+        $sampleBag.Add($watch.Elapsed.TotalMilliseconds)
     } catch {
-        $using:failures.Add($_.Exception.Message)
+        $failureBag.Add($_.Exception.Message)
     }
 } -ThrottleLimit $Concurrency
 

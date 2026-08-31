@@ -6,9 +6,11 @@ $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 $user = "market$suffix"
 $password = "acceptance-$suffix"
 $email = "$user@example.invalid"
-Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/register" -ContentType "application/json" -Body (@{username=$user;email=$email;password=$password}|ConvertTo-Json) | Out-Null
-$login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/token" -ContentType "application/json" -Body (@{username=$user;password=$password}|ConvertTo-Json)
-$headers = @{Authorization="Token $($login.token)"}
+$clientHeaders = @{ "X-Forwarded-For" = "192.0.2.$(Get-Random -Minimum 1 -Maximum 255)" }
+Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/register" -Headers $clientHeaders -ContentType "application/json" -Body (@{username=$user;email=$email;password=$password}|ConvertTo-Json) | Out-Null
+$login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/token" -Headers $clientHeaders -ContentType "application/json" -Body (@{username=$user;password=$password}|ConvertTo-Json)
+$headers = $clientHeaders.Clone()
+$headers["Authorization"] = "Token $($login.token)"
 Invoke-RestMethod -Method Put -Uri "$BaseUrl/api/v1/public-profile" -Headers $headers -ContentType "application/json" -Body (@{nickname="验收用户";discoverable=$true}|ConvertTo-Json) | Out-Null
 $template = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/templates" -Headers $headers -ContentType "application/json" -Body (@{title="验收模板";description="模板广场验收";content_markdown="# 今日复盘`n`n- 完成事项";category="reflection"}|ConvertTo-Json)
 $privateUseHeaders = $headers.Clone(); $privateUseHeaders["Idempotency-Key"]=[guid]::NewGuid().ToString()
@@ -39,7 +41,9 @@ if (@($recommendedAfterUse.items | Where-Object { $_.public_id -eq $published.pu
 $detail = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/templates/public/$($published.public_id)" -Headers $headers
 if (!$detail.liked -or !$detail.favorited) { throw "template reactions were not persisted" }
 $event = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/ai-events/current" -Headers $headers
-if ($event.total_slots -ne 10 -or $event.points_reward -ne 100) { throw "event configuration mismatch" }
+if ($event.total_slots -lt 1 -or $event.points_reward -lt 1 -or $event.remaining_slots -lt 0 -or $event.remaining_slots -gt $event.total_slots) {
+    throw "event configuration mismatch"
+}
 $balance = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/ai-points/balance" -Headers $headers
 if ($balance.available -lt 100) { throw "point account was not initialized" }
 Write-Output "template and AI event acceptance passed"

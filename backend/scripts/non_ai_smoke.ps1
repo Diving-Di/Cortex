@@ -3,8 +3,9 @@ $ErrorActionPreference = "Stop"
 $base = if ($env:GO_BACKEND_URL) { $env:GO_BACKEND_URL } else { "http://127.0.0.1:8000" }
 $suffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
 $users = @("nonai_${suffix}_a", "nonai_${suffix}_b")
+$clientHeaders = @{ "X-Forwarded-For" = "198.51.100.$(Get-Random -Minimum 1 -Maximum 255)" }
 $headers = @()
-$exportFile = Join-Path $PSScriptRoot "..\bin\non-ai-export.zip"
+$exportFile = Join-Path ([IO.Path]::GetTempPath()) "cortex-non-ai-export-$suffix.zip"
 
 try {
     foreach ($username in $users) {
@@ -14,11 +15,13 @@ try {
             password = "correct-horse-battery"
         } | ConvertTo-Json
         Invoke-RestMethod "$base/api/v1/auth/register" `
-            -Method Post -ContentType "application/json" -Body $registration | Out-Null
+            -Method Post -Headers $clientHeaders -ContentType "application/json" -Body $registration | Out-Null
         $login = Invoke-RestMethod "$base/api/v1/auth/token" `
-            -Method Post -ContentType "application/json" `
+            -Method Post -Headers $clientHeaders -ContentType "application/json" `
             -Body (@{ username = $username; password = "correct-horse-battery" } | ConvertTo-Json)
-        $headers += @{ Authorization = "Token $($login.token)" }
+        $authenticatedHeaders = $clientHeaders.Clone()
+        $authenticatedHeaders["Authorization"] = "Token $($login.token)"
+        $headers += $authenticatedHeaders
     }
 
     $renamed = Invoke-RestMethod "$base/api/v1/tenant" `

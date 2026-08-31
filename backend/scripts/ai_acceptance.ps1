@@ -23,6 +23,7 @@ function Invoke-AIStream {
             "Token",
             $Token
         )
+        $request.Headers.Add("X-Forwarded-For", $clientIP)
         $json = $Body | ConvertTo-Json -Depth 8 -Compress
         $request.Content = [System.Net.Http.StringContent]::new(
             $json,
@@ -65,17 +66,20 @@ function Invoke-AIStream {
 $suffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
 $username = "realai_$suffix"
 $password = "correct-horse-battery"
+$clientIP = "203.0.113.$(Get-Random -Minimum 1 -Maximum 255)"
+$clientHeaders = @{ "X-Forwarded-For" = $clientIP }
 $registration = @{
     username = $username
     email = "$username@example.invalid"
     password = $password
 } | ConvertTo-Json
 Invoke-RestMethod "$BaseURL/api/v1/auth/register" `
-    -Method Post -ContentType "application/json" -Body $registration | Out-Null
+    -Method Post -Headers $clientHeaders -ContentType "application/json" -Body $registration | Out-Null
 $login = Invoke-RestMethod "$BaseURL/api/v1/auth/token" `
-    -Method Post -ContentType "application/json" `
+    -Method Post -Headers $clientHeaders -ContentType "application/json" `
     -Body (@{ username = $username; password = $password } | ConvertTo-Json)
-$headers = @{ Authorization = "Token $($login.token)" }
+$headers = $clientHeaders.Clone()
+$headers["Authorization"] = "Token $($login.token)"
 
 $settings = Invoke-RestMethod "$BaseURL/api/v1/settings/ai" -Headers $headers
 if (-not $settings.configured) {
