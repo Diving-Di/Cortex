@@ -238,7 +238,7 @@ services:
       context: ./local-embedding
       args:
         MODEL_REVISION: 3c386e2c2c38680eaa38977bbf69c60d72fbf24f
-        PYTHON_RUNTIME_IMAGE: ${PYTHON_311_IMAGE:-python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93}
+        PYTHON_RUNTIME_IMAGE: ${PYTHON_311_IMAGE:-python:3.11-slim@sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72}
     cpus: 2.0
     mem_limit: 3g
     pids_limit: 256
@@ -258,7 +258,7 @@ services:
       context: ./local-reranker
       args:
         RERANK_MODEL_REVISION: e099d4b9cdbd291b1569d416f19aaa6523570bc3
-        PYTHON_RUNTIME_IMAGE: ${PYTHON_311_IMAGE:-python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93}
+        PYTHON_RUNTIME_IMAGE: ${PYTHON_311_IMAGE:-python:3.11-slim@sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72}
         TORCH_INDEX_URL: ${RERANK_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}
     gpus: all
     cpus: 4.0
