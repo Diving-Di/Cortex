@@ -25,7 +25,7 @@ test('registers, logs in, loads the dashboard, and logs out through the real sta
   await activeForm.getByRole('button', { name: /登\s*录/ }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByText(username)).toBeVisible();
-  await expect(page.getByText('工作台', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '工作台', exact: true })).toBeVisible();
 
   const eventDialog = page.getByRole('dialog');
   try {
