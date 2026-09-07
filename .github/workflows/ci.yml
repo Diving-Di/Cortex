@@ -158,6 +158,9 @@ jobs:
       DATABASE_URL: postgresql://cortex_app:ci-app-password@127.0.0.1:55432/cortex
       MIGRATION_DATABASE_URL: postgresql://cortex_migrator:ci-migrator-password@127.0.0.1:55432/cortex
       REDIS_TEST_URL: redis://default:ci-redis-password@127.0.0.1:56379/0
+      MINIO_TEST_ENDPOINT: http://127.0.0.1:59000
+      MINIO_TEST_ACCESS_KEY: ci-minio-root
+      MINIO_TEST_SECRET_KEY: ci-minio-password
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -174,9 +177,9 @@ jobs:
         run: go run ./cmd/migrate -steps 0 up
       - name: Verify MinIO, Kafka, and Elasticsearch
         run: pwsh ./backend/scripts/ci_dependencies_smoke.ps1
-      - name: Run database and Redis integration tests
+      - name: Run database, Redis, and versioned object integration tests
         working-directory: backend
-        run: go test -count=1 ./internal/store ./internal/rediscoord
+        run: go test -count=1 ./internal/store ./internal/rediscoord ./internal/blobstore
       - name: Build restore-verification backend image
         run: docker build -t cortex-backend ./backend
       - name: Verify joint backup and isolated restore

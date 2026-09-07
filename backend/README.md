@@ -139,6 +139,22 @@ Compose 环境使用固定 revision 的
 完整环境就绪后运行 `scripts/non_ai_smoke.ps1` 与 `scripts/ai_acceptance.ps1` 验证
 知识库上传、索引、问答与降级。
 
+## 本机数据库集成验收
+
+Docker Desktop 启动后，在仓库根目录执行：
+
+```powershell
+.\backend\scripts\local_integration_test.ps1
+```
+
+脚本使用 `docker-compose.ci.yml` 的隔离 PostgreSQL 16、Redis、MinIO、Kafka 和 Elasticsearch，
+配置 `DATABASE_URL`（`cortex_app`）、`MIGRATION_DATABASE_URL`（`cortex_migrator`）和
+`REDIS_TEST_URL` 与 `MINIO_TEST_*`，执行全部迁移、依赖检查、`go vet`、不使用缓存的全量 Go 测试与构建。
+连接凭据仅用于本机 CI 测试服务；测试数据卷保留以便复查，业务 Compose 数据卷不受影响。
+仅需在当前 PowerShell 加载测试连接时，可 dot-source `backend/scripts/local_test_env.ps1`。
+新空库应迁移到版本 42，验证 57 张 public 表、RLS、GC/索引/定时任务租约与附件配额。
+MinIO 集成测试创建独立版本化测试桶，验证旧版本删除与重复删除均保留最新版本，并清理测试对象和桶。
+
 ## RAG 离线评测
 
 个人知识库 v2 提供离线入口 `cmd/rag-eval`。它固定解析用户 `Diving` 的服务端 Principal，

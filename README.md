@@ -318,6 +318,11 @@ docker compose -f docker-compose.ci.yml config --quiet
 
 ## 文档
 
+完整分类入口见 [文档导航](docs/README.md)。当前实现、待办规划和日期验收分别维护；历史报告不替代目标环境发布门禁。
+
+- [本机开发与数据库集成验收](docs/guides/LOCAL_DEVELOPMENT.md)：隔离依赖、测试连接、无跳过全量测试与浏览器验收
+- [2026-09-07 本机验收](docs/operations/LOCAL_INTEGRATION_ACCEPTANCE_20260907.md)：迁移 42、GC/版本删除及功能回归结果
+
 - [API 概览](docs/api.md)：认证、笔记、AI、知识库、调度和导出接口
 - [工程基线](docs/BASELINE.md)：当前技术与安全基线
 - [软件设计说明书](docs/SDD.md)：当前已实现的系统架构、数据、知识库、RAG、AI 工作流和部署设计
@@ -330,4 +335,5 @@ docker compose -f docker-compose.ci.yml config --quiet
 - [2026-08-25 基础设施验收](docs/operations/INFRASTRUCTURE_ACCEPTANCE_20260825.md)：当前 Compose 主路径、故障注入、备份恢复和可观测性证据
 - [2026-08-31 上线整改验收](docs/operations/PRODUCTION_REMEDIATION_ACCEPTANCE_20260831.md)：本轮生产配置、五镜像发布、恢复、真实浏览器和完整栈证据与外部边界
 - [2026-08-25 RAG 与负载复验](docs/operations/RAG_AND_K6_RERUN_20260825.md)：当前 RAG 质量和 AI 活动负载结果
-- [RAG 与基础设施演进技术方案](docs/INFRASTRUCTURE_EVOLUTION.md)：MinIO/Redis 大文件上传、Kafka 多格式文档处理、Elasticsearch 检索及生产验收方案
+- [基础设施当前实现](docs/INFRASTRUCTURE_EVOLUTION.md)：MinIO/Local、GC 租约、Kafka 知识摄取与 ES 检索边界
+- [候选规划](docs/plans/INFRASTRUCTURE_ROADMAP.md)：尚未实现的分片续传、自动检索降级和生产收敛

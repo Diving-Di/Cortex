@@ -1,5 +1,7 @@
 # Cortex 软件设计说明书
 
+> 校对日期：2026-09-07。专项实现见 [RAG](RAG.md) 与 [基础设施](INFRASTRUCTURE_EVOLUTION.md)，规划与历史证据见 [文档导航](README.md)。
+
 ## 1. 产品边界
 
 Cortex 是个人记录与回顾工作台，提供笔记、日报/周报/月报、标签、附件、历史版本、
@@ -123,7 +125,7 @@ Excel 与演示文稿不属于当前知识库摄取范围；新增格式必须�
 
 Compose 下数据库、Redis、MinIO、Kafka/Redpanda、Elasticsearch、LiteLLM、Embedding 和 Reranker
 服务不暴露宿主机公共端口。`/healthz` 只反映 API 进程存活，`/readyz` 只验证 PostgreSQL；`/health/dependencies` 独立报告对象存储、Redis、搜索和 AI 能力，避免可选依赖故障摘除核心笔记流量。`CORTEX_RUNTIME_ROLE` 支持 `all`、`api`、`worker`，其中 API 角色不建立 migrator 管理连接。新实例由 `backend/db/schema.sql`
-基线加版本化迁移初始化（当前迁移版本 41，共 56 张业务表；连同 `schema_migrations` 为 57 张 public 表）。
+基线加版本化迁移初始化（当前迁移版本 42，共 56 张业务表；连同 `schema_migrations` 为 57 张 public 表）。
 
 ```powershell
 Set-Location backend

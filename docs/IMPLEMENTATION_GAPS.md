@@ -1,6 +1,6 @@
 # 未完成事项与生产风险
 
-> 更新日期：2026-08-31
+> 更新日期：2026-09-07
 > 本文只记录真实缺口和不能对外承诺的事项。已实现能力见 `README.md`、`docs/BASELINE.md`、
 > `docs/SDD.md` 和 `docs/RAG.md`；发布门禁统一见 `docs/RELEASE_CHECKLIST.md`。
 
@@ -32,6 +32,9 @@
 
 ## P2：候选实验，不直接上线
 
+- 分片上传、Redis Bitmap 续传状态、ES 故障自动切换 pgvector 尚未实现；现有上传与检索行为见 [基础设施实现](INFRASTRUCTURE_EVOLUTION.md)，候选方案见 [规划](plans/INFRASTRUCTURE_ROADMAP.md)。
+- GC 已使用任务对象版本删除，但知识上传常规入库尚未保存每个 Put 返回的版本；版本化桶中的知识文件需要补齐全链路元数据持久化与验收。
+
 - Step-back、HyDE、三级分块和 Auto-merging 只允许在冻结集进行离线消融；没有可解释增益时保持现有
   child 召回、parent 聚合和查询改写，不替换线上数据模型。
 - Excel 与演示文稿摄取尚未实现。若未来纳入，必须沿用隔离解析 worker、文件/页数/解压比/超时
@@ -47,6 +50,8 @@
   绕过来源、RLS、幂等、配额或引用核验。
 
 ## 本轮已关闭
+
+- 2026-09-07：配置本机隔离 PostgreSQL/Redis/MinIO 集成环境，170 项 Go 测试无跳过通过；真实 MinIO 旧版本删除及幂等重删、前端与浏览器、HTTP/AI、解析和隔离恢复验收通过。范围和限制见 [本机验收记录](operations/LOCAL_INTEGRATION_ACCEPTANCE_20260907.md)。
 
 - 2026-08-31：生产配置改为 fail-closed，新增五镜像 digest-only overlay 与检查脚本；release 对五个应用镜像生成 SBOM、provenance、attestation、digest 和 Trivy 证据，并纳入自动/人工回滚。
 - 2026-08-31：完整 Compose 14 个必需服务健康验收、非 AI/AI/模板/Redis 故障降级、1000 路活动并发、真实生产镜像浏览器 E2E 和 Prometheus/Alertmanager 规则在本地目标栈通过；证据与不可外推边界见 `operations/PRODUCTION_REMEDIATION_ACCEPTANCE_20260831.md`。

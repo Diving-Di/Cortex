@@ -46,6 +46,7 @@ docker compose config --quiet
 - [ ] Prometheus 规则通过 `promtool` 校验，指标和告警保持低基数。
 - [ ] Prometheus 所有必需 target 为 up；Alertmanager 使用生产 receiver，测试告警的 primary/secondary 升级与恢复通知送达有证据。
 - [ ] 空库 PostgreSQL/Redis/MinIO/Kafka/Elasticsearch 集成 Job 通过，集成测试没有因缺少环境变量跳过。
+  本机复现入口为 `backend/scripts/local_integration_test.ps1`，步骤见 [本机验收指南](guides/LOCAL_DEVELOPMENT.md)。
 - [ ] govulncheck、生产 npm audit、pip-audit、Gitleaks、Trivy 文件系统/运行镜像扫描通过并生成 SBOM。
 
 ## 3. 数据库、租户与文件安全

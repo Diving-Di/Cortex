@@ -69,3 +69,6 @@ backend/testdata/rag/diving_existing_notes.jsonl
 /.codex/
 # Local infrastructure acceptance backups (may contain private application data).
 artifacts/infra-final-backup-*/
+# Runtime artifacts are local outputs, never source-controlled data.
+/artifacts/*
+!/artifacts/README.md
