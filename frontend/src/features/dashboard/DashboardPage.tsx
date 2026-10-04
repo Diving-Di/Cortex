@@ -7,7 +7,6 @@ import {
   Empty,
   Input,
   List,
-  Modal,
   Row,
   Space,
   Statistic,
@@ -21,6 +20,10 @@ import { confirmOrganize, streamPost } from '../../api/m2';
 import { getCurrentAIEvent } from '../../api/aiEvents';
 import SafeMarkdown from '../../components/SafeMarkdown';
 import './Dashboard.css';
+import PendingWork from './PendingWork';
+import ContentDiff from '../../components/ContentDiff';
+import { useDraftScope, readDraft, writeDraft, removeDraft } from '../../app/drafts';
+import { createNote } from '../../api/notes';
 
 function OfflineStatus() {
   const [online, setOnline] = useState(navigator.onLine);
@@ -46,26 +49,44 @@ function OfflineStatus() {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const scope = useDraftScope();
+  const initialDraft = useMemo(
+    () =>
+      readDraft<{
+        raw: string;
+        preview: { title: string; content: string; summary?: string } | null;
+        sourceRaw: string;
+      }>(scope, 'organize'),
+    [scope],
+  );
+  const [sourceRaw, setSourceRaw] = useState(initialDraft?.value.sourceRaw || '');
+  const [saving, setSaving] = useState(false);
+  const [storageFailed, setStorageFailed] = useState(false);
   const dashboard = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => getDashboard(),
     retry: navigator.onLine ? 1 : false,
   });
   const aiEvent = useQuery({ queryKey: ['ai-event'], queryFn: () => getCurrentAIEvent() });
-  const [eventOpen, setEventOpen] = useState(false);
-  useEffect(() => {
-    if (!aiEvent.data) return;
-    const key = `ai-event-modal-dismissed:${aiEvent.data.id}`;
-    if (aiEvent.data.show_dashboard_prompt && !localStorage.getItem(key)) setEventOpen(true);
-  }, [aiEvent.data]);
-  const [raw, setRaw] = useState('');
+  const [raw, setRaw] = useState(initialDraft?.value.raw || '');
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<{
     title: string;
     summary?: string;
     content: string;
-  } | null>(null);
+  } | null>(initialDraft?.value.preview || null);
+  useEffect(() => {
+    if (!raw && !preview) return;
+    setStorageFailed(
+      !writeDraft(scope, {
+        key: 'organize',
+        label: '快速记录 / AI 整理草稿',
+        path: '/',
+        value: { raw, preview, sourceRaw },
+      }),
+    );
+  }, [raw, preview, sourceRaw, scope]);
 
   const activity = useMemo(() => {
     const counts = new Map(dashboard.data?.activity.map((item) => [item.date, item.count]));
@@ -84,14 +105,17 @@ export default function DashboardPage() {
   async function organize() {
     setLoading(true);
     setDraft('');
-    setPreview(null);
     let out = '';
     try {
       await streamPost('/ai/organize', { content: raw }, (content) => {
         out += content;
         setDraft(out);
       });
-      setPreview(JSON.parse(out.replace(/^```json\s*|\s*```$/g, '')));
+      const parsed = JSON.parse(out.replace(/^```json\s*|\s*```$/g, ''));
+      if (typeof parsed.title !== 'string' || typeof parsed.content !== 'string')
+        throw new Error('整理结果格式无效，原草稿已保留');
+      setPreview(parsed);
+      setSourceRaw(raw);
     } catch (error) {
       message.error(error instanceof Error ? error.message : '整理失败');
     } finally {
@@ -100,16 +124,20 @@ export default function DashboardPage() {
   }
 
   async function save() {
-    if (!preview) return;
+    if (!preview || raw !== sourceRaw || saving) return;
+    setSaving(true);
     try {
       const note = await confirmOrganize(preview);
       message.success(`已保存笔记 #${note.id}`);
       setRaw('');
       setDraft('');
       setPreview(null);
+      removeDraft(scope, 'organize');
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存失败');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -131,26 +159,7 @@ export default function DashboardPage() {
   return (
     <div className="feature-page dashboard-page">
       <OfflineStatus />
-      <Modal
-        open={eventOpen}
-        title={eventTime ? `今晚 ${eventTime} 免费点数限量开放` : '免费点数限量开放'}
-        onOk={() => navigate('/ai-events')}
-        okText="查看活动"
-        cancelText="今日不再提醒"
-        onCancel={() => {
-          if (aiEvent.data)
-            localStorage.setItem(`ai-event-modal-dismissed:${aiEvent.data.id}`, '1');
-          setEventOpen(false);
-        }}
-      >
-        {aiEvent.data && (
-          <p>
-            持续 {eventDuration} 分钟，共 {aiEvent.data.total_slots} 个名额，成功领取可获得{' '}
-            {aiEvent.data.points_reward} 点。连续记录 {aiEvent.data.required_streak_days}{' '}
-            天（含活动当天）即可参与。
-          </p>
-        )}
-      </Modal>
+      {storageFailed && <Alert type="warning" message="浏览器草稿保存失败，请及时保存或复制记录" />}
       <div className="dashboard-heading">
         <div>
           <h1>工作台</h1>
@@ -179,7 +188,11 @@ export default function DashboardPage() {
         </Col>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title="AI 用量" value={data?.statistics.ai_tokens || 0} suffix="tokens" />
+            <Statistic
+              title="AI 估算用量"
+              value={data?.statistics.ai_tokens || 0}
+              suffix="tokens"
+            />
           </Card>
         </Col>
       </Row>
@@ -187,6 +200,7 @@ export default function DashboardPage() {
         <Col xs={24} lg={15}>
           <Card title="快速记录">
             <Input.TextArea
+              disabled={loading || saving}
               value={raw}
               onChange={(event) => setRaw(event.target.value)}
               rows={6}
@@ -196,7 +210,37 @@ export default function DashboardPage() {
               <Button type="primary" loading={loading} disabled={!raw.trim()} onClick={organize}>
                 AI 整理
               </Button>
-              {preview && <Button onClick={save}>确认保存</Button>}
+              <Button
+                loading={saving}
+                disabled={!raw.trim() || loading}
+                onClick={async () => {
+                  setSaving(true);
+                  try {
+                    await createNote({
+                      type: 'normal',
+                      title: raw.trim().split('\n')[0].slice(0, 80) || '快速记录',
+                      content: raw,
+                      note_date: new Date().toLocaleDateString('sv-SE'),
+                    });
+                    setRaw('');
+                    setPreview(null);
+                    removeDraft(scope, 'organize');
+                    await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+                    message.success('原文已保存');
+                  } catch {
+                    message.error('保存失败，原文仍保留');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              >
+                保存原文
+              </Button>
+              {preview && (
+                <Button disabled={loading || raw !== sourceRaw} loading={saving} onClick={save}>
+                  确认保存整理稿
+                </Button>
+              )}
             </Space>
           </Card>
           {draft && (
@@ -213,6 +257,7 @@ export default function DashboardPage() {
                     value={preview.content}
                     onChange={(event) => setPreview({ ...preview, content: event.target.value })}
                   />
+                  <ContentDiff before={sourceRaw} after={preview.content} />
                   <SafeMarkdown>{preview.content}</SafeMarkdown>
                 </>
               ) : (
@@ -225,6 +270,7 @@ export default function DashboardPage() {
           )}
         </Col>
         <Col xs={24} lg={9}>
+          <PendingWork />
           <Card title="最近笔记" extra={<Link to="/notes">查看全部</Link>}>
             <List
               dataSource={data?.recent_notes || []}
@@ -263,6 +309,20 @@ export default function DashboardPage() {
           </Card>
         </Col>
       </Row>
+      <Card
+        title="免费 AI 点数活动"
+        style={{ marginTop: 16 }}
+        extra={<Link to="/ai-events">查看活动</Link>}
+      >
+        {aiEvent.data ? (
+          <span>
+            {eventTime} 开放 · {eventDuration} 分钟 · {aiEvent.data.total_slots} 个名额 ·{' '}
+            {aiEvent.data.points_reward} 点
+          </span>
+        ) : (
+          <span>活动信息暂不可用，记录和整理入口仍可使用。</span>
+        )}
+      </Card>
       <Card
         title="近 12 周记录活跃度"
         style={{ marginTop: 16 }}

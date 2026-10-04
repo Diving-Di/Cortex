@@ -239,6 +239,8 @@ func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger
 			active.GET("/api/v1/knowledge/collections", gin.WrapF(s.listKnowledgeCollections))
 			active.POST("/api/v1/knowledge/collections", gin.WrapF(s.createKnowledgeCollection))
 			active.POST("/api/v1/knowledge/chat/stream", gin.WrapF(s.knowledgeChat))
+			active.POST("/api/v1/knowledge/messages/:messageID/note", gin.WrapF(s.saveKnowledgeNote))
+			active.GET("/api/v1/knowledge/messages/:messageID/sources", gin.WrapF(s.knowledgeMessageSources))
 			active.POST("/api/v1/knowledge/requests/:requestID/feedback", gin.WrapF(s.createKnowledgeFeedback))
 			active.POST("/api/v1/knowledge/feedback/:feedbackID/promote", gin.WrapF(s.promoteKnowledgeFeedback))
 			active.POST("/api/v1/knowledge/eval-datasets/:datasetID/freeze", gin.WrapF(s.freezeKnowledgeEvalDataset))

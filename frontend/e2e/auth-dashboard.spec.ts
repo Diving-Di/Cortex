@@ -72,5 +72,5 @@ test('logs in through the browser contract and reaches the protected dashboard',
 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByText('e2e-user')).toBeVisible();
-  await expect(page.getByText('工作台', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '工作台', exact: true })).toBeVisible();
 });

@@ -4,14 +4,11 @@ import NoteEditor from './NoteEditor';
 import TemplatesPage from '../templates/TemplatesPage';
 
 export default function NotesPage() {
-  const preferred = localStorage.getItem('cortex:notes-section');
   return (
     <Routes>
-      <Route
-        index
-        element={preferred === 'list' ? <Navigate to="list" replace /> : <TemplatesPage />}
-      />
+      <Route index element={<Navigate to="list" replace />} />
       <Route path="list" element={<NoteList />} />
+      <Route path="templates" element={<TemplatesPage />} />
       <Route path=":id" element={<NoteEditor />} />
     </Routes>
   );

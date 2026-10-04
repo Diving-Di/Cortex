@@ -43,3 +43,23 @@ describe('streamPost', () => {
     vi.unstubAllGlobals();
   });
 });
+
+it('delivers generation sources separately from text and forwards cancellation', async () => {
+  const fetchMock = vi.fn(async () =>
+    streamResponse([
+      'event: sources\ndata: {"items":[{"id":3,"title":"来源"}]}\n\ndata: {"content":"报告"}\n\ndata: [DONE]\n\n',
+    ]),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const onSources = vi.fn(),
+    onChunk = vi.fn(),
+    controller = new AbortController();
+  await streamPost('/reports/generate', {}, onChunk, { signal: controller.signal, onSources });
+  expect(onSources).toHaveBeenCalledWith([{ id: 3, title: '来源' }]);
+  expect(onChunk).toHaveBeenCalledOnce();
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/v1/reports/generate',
+    expect.objectContaining({ signal: controller.signal }),
+  );
+  vi.unstubAllGlobals();
+});

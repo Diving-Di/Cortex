@@ -1,14 +1,17 @@
 # 本机开发与验收
 
+校对日期：2026-10-05。命令未特别说明时从仓库根目录执行。
+
 ## 环境与启动
 
 需要 Docker Desktop（Linux containers）、与 `backend/go.mod` 匹配的 Go，以及 Node.js 20 或以上。
 完整应用启动与配置见[项目 README](../../README.md)。真实 AI 使用 Compose 内 LiteLLM，供应商 Key 仅配置在网关。
 
-项目提供两套不同用途的 Compose：
+项目提供以下不同用途的 Compose：
 
 | 文件 | 用途 |
 | --- | --- |
+| `docker-compose.light.yml` | 个人轻量核心，可选 AI/知识 profile，独立数据卷 |
 | `docker-compose.yml` | 完整本地产品栈，数据库等内部服务不发布宿主机端口 |
 | `docker-compose.ci.yml` | 隔离测试依赖，通过本机回环端口供 Go 集成测试连接 |
 | `docker-compose.production.yml` | 生产配置约束与不可变镜像 overlay |
@@ -45,6 +48,7 @@ Windows 用户环境变量修改仅对新进程生效；已有终端应使用上
 Set-Location frontend
 npm ci
 npm run format:check
+npm test
 npm run test:coverage
 npm run build
 npx playwright install chromium
@@ -54,6 +58,8 @@ npm run test:e2e
 
 真实 E2E 需要后端已在 `127.0.0.1:8000` 就绪；默认 Playwright 启动 4173 端口的开发前端。
 若使用本机已有 Chrome，可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 为实际绝对路径。
+验证已启动的 Nginx 生产产物时，设置 `E2E_BASE_URL=http://127.0.0.1:5173`；这会跳过开发前端启动。
+资源有限的本机可用 `npm run test:e2e -- --workers=1`。未设置 `E2E_REAL_BACKEND=1` 时，真实后端用例会跳过，不能报告为全流程通过。
 
 ## HTTP、AI 与恢复
 
@@ -67,10 +73,17 @@ npm run test:e2e
 
 AI 验收需要已配置的真实 LiteLLM；以上脚本通过不等于完成全部生产发布门禁。
 模板/活动、恢复、容量、安全扫描的要求见[发布检查清单](../RELEASE_CHECKLIST.md)。
-最近已执行范围见[本机验收记录](../operations/LOCAL_INTEGRATION_ACCEPTANCE_20260907.md)。
+最新工作流与轻量栈结果见[2026-10-05 验收](../operations/PRODUCT_WORKFLOW_ACCEPTANCE_20261005.md)；
+完整栈、真实 AI 和恢复的历史结果见[证据索引](../operations/README.md)，以各报告注明的范围为准。
 
 ## 产物与清理
 
-`artifacts/`、`frontend/dist/coverage/test-results/`、`backend/*.exe` 是本地产物，不应提交。
+`artifacts/`、`frontend/dist/`、`frontend/coverage/`、`frontend/test-results/` 和 `backend/*.exe` 是本地产物，不应提交。
 保留需要复查的原始产物时先归档到项目外；文档仅保存脱敏摘要与运行条件。
 `.env`、依赖环境、公开评测夹具和 Docker 数据卷不是自动清理对象。
+
+## 文档与轻量配置回归
+
+在仓库根目录运行 `python scripts/check_docs.py` 与 `./backend/scripts/check_light_compose.ps1`。
+后者仅输出检查结论，不显示解析后的凭据。开发使用与 frontend/package.json 匹配的 Node，当前要求至少 20；
+若本机默认仍为 Node 18，请先使用已安装的受支持版本再运行 npm test/build，避免 Vite 模块加载错误。

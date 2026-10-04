@@ -192,7 +192,24 @@ func (s *Server) restoreRevision(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, err)
 		return
 	}
-	note, err := s.notes.Restore(r.Context(), principalFrom(r.Context()), noteID, revisionID)
+	var request struct {
+		ExpectedUpdatedAt string `json:"expected_updated_at"`
+	}
+	// Empty bodies from older clients remain compatible; new clients pass a version.
+	var expected *time.Time
+	if r.ContentLength != 0 {
+		if err := httpx.DecodeJSON(r, &request); err != nil {
+			httpx.WriteError(w, s.logger, err)
+			return
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, request.ExpectedUpdatedAt)
+		if err != nil {
+			httpx.WriteError(w, s.logger, apierror.Validation(nil))
+			return
+		}
+		expected = &parsed
+	}
+	note, err := s.notes.Restore(r.Context(), principalFrom(r.Context()), noteID, revisionID, expected)
 	if err != nil {
 		httpx.WriteError(w, s.logger, err)
 		return

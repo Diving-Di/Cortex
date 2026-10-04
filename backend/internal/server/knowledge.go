@@ -451,7 +451,7 @@ func (s *Server) knowledgeChat(w http.ResponseWriter, r *http.Request) {
 		candidates[i].Rank = i + 1
 		citation := fmt.Sprintf("K%d", i+1)
 		evidence[i] = ai.KnowledgeEvidence{Citation: citation, Title: candidates[i].Title, Kind: candidates[i].SourceType, Content: candidates[i].Content, Heading: strings.Join(candidates[i].Heading, " / ")}
-		sources[i] = map[string]any{"citation": citation, "document_id": candidates[i].DocumentID, "note_id": candidates[i].NoteID, "source_type": candidates[i].SourceType, "title": candidates[i].Title, "heading": candidates[i].Heading, "rank": i + 1}
+		sources[i] = map[string]any{"citation": citation, "document_id": candidates[i].DocumentID, "note_id": candidates[i].NoteID, "source_type": candidates[i].SourceType, "title": candidates[i].Title, "heading": candidates[i].Heading, "rank": i + 1, "snippet": truncateRunes(candidates[i].Content, 1200), "index_version": candidates[i].IndexVersion}
 	}
 	workflow.VerifierModel = s.cfg.RAGVerifierModel
 	events, err := workflow.AnswerKnowledgeGrounded(s.aiContext(r.Context(), "knowledge_chat", p), ai.KnowledgeInput{Question: req.Question, ConversationContext: conversationContext, Evidence: evidence})
@@ -732,4 +732,32 @@ func writeNamedSSE(w http.ResponseWriter, event string, value any) error {
 	}
 	_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload)
 	return err
+}
+
+func (s *Server) saveKnowledgeNote(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "messageID")
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	note, err := s.knowledgeService.SaveNote(r.Context(), principalFrom(r.Context()), id)
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, note.Response())
+}
+
+func (s *Server) knowledgeMessageSources(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "messageID")
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	items, err := s.knowledgeService.MessageSources(r.Context(), principalFrom(r.Context()), id)
+	if err != nil {
+		httpx.WriteError(w, s.logger, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, items)
 }

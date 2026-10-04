@@ -6,7 +6,6 @@ import {
   EditOutlined,
   LogoutOutlined,
   MessageOutlined,
-  ThunderboltOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
 import {
@@ -20,6 +19,8 @@ import {
 import ProtectedRoute, { type AuthenticatedOutletContext } from './routes/ProtectedRoute';
 import { logoutUser } from './api/auth';
 import './App.css';
+import { DraftScope } from './app/drafts';
+import { queryClient } from './app/queryClient';
 
 const LoginPage = lazy(() => import('./features/auth/LoginPage'));
 const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'));
@@ -36,9 +37,11 @@ function AppLayout() {
   const username = session.username;
 
   async function logout() {
+    if (!window.dispatchEvent(new Event('cortex:before-navigate', { cancelable: true }))) return;
     try {
       await logoutUser();
     } finally {
+      queryClient.clear();
       navigate('/login', { replace: true });
     }
   }
@@ -60,7 +63,6 @@ function AppLayout() {
             { key: '/', icon: <MessageOutlined />, label: '工作台' },
             { key: '/notes', icon: <EditOutlined />, label: '笔记本' },
             { key: '/knowledge', icon: <BookOutlined />, label: '个人知识库' },
-            { key: '/ai-events', icon: <ThunderboltOutlined />, label: 'AI 限量活动' },
             { key: '/reports', icon: <BarChartOutlined />, label: '周期报告' },
             { key: '/settings', icon: <SettingOutlined />, label: '设置' },
           ]}
@@ -73,19 +75,21 @@ function AppLayout() {
         </div>
       </nav>
       <main className="app-content">
-        <Suspense fallback={<Spin />}>
-          <Routes>
-            <Route index element={<DashboardPage />} />
-            <Route path="notes/*" element={<NotesPage />} />
-            <Route path="knowledge" element={<KnowledgePage />} />
-            <Route path="recipes" element={<Navigate to="/knowledge" replace />} />
-            <Route path="assistant" element={<Navigate to="/knowledge" replace />} />
-            <Route path="ai-events" element={<AIEventsPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
+        <DraftScope.Provider value={username}>
+          <Suspense fallback={<Spin />}>
+            <Routes>
+              <Route index element={<DashboardPage />} />
+              <Route path="notes/*" element={<NotesPage />} />
+              <Route path="knowledge" element={<KnowledgePage />} />
+              <Route path="recipes" element={<Navigate to="/knowledge" replace />} />
+              <Route path="assistant" element={<Navigate to="/knowledge" replace />} />
+              <Route path="ai-events" element={<AIEventsPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </DraftScope.Provider>
       </main>
     </div>
   );

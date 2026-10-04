@@ -1,6 +1,7 @@
 # Cortex API 概览
 
-后端基于 Go/Gin，产品业务接口统一使用 `/api/v1`。
+校对日期：2026-10-05。以 `backend/internal/server/server.go`、`backend/internal/server/routes.go` 的路由注册及对应 handler 为依据。
+后端基于 Go/Gin，产品业务接口统一使用 `/api/v1`；除系统与认证表标明“否”的接口外，本文接口均要求认证。
 
 ## 通用约定
 
@@ -70,6 +71,17 @@ data: [DONE]
 | `GET` | `/api/v1/notes/{note_id}/revisions` | 获取版本历史 |
 | `POST` | `/api/v1/notes/{note_id}/revisions/{revision_id}/restore` | 恢复指定版本 |
 
+`GET /api/v1/notes` 支持 `page`（默认 1）、`page_size`（默认 20，最多 100）、`type`、`start_date`、`end_date` 和 `tag_id`。
+关键词使用 `/api/v1/search`，不是 notes 列表的参数。
+
+### 正文历史恢复
+
+`POST /api/v1/notes/{note_id}/revisions/{revision_id}/restore` 新客户端提交 `{ "expected_updated_at": "RFC3339Nano" }`。
+  store 在 RLS 事务锁定笔记并比较版本，冲突返回 `NOTE_VERSION_CONFLICT`（409），保留现有正文；恢复前创建 revision。
+  空请求体保留旧客户端兼容，但新版界面始终传版本。只恢复正文，标题/日期不从 revision 恢复。
+
+浏览器草稿在 sessionStorage 中按账号隔离，没有对应同步 API；详见 [使用流程](page/README.md)。
+
 ## 标签、附件与搜索
 
 | 方法 | 路径 | 说明 |
@@ -103,6 +115,12 @@ data: [DONE]
 
 无报告来源时返回 `REPORT_NO_SOURCES`，不会无依据调用 AI。
 
+### 报告流与确认
+
+`POST /api/v1/reports/generate` SSE 在正文前发送 `event: sources`，载荷 `{ "items": [SourceNote...] }`。
+  包含本次生成实际使用的来源 ID/标题/日期及最多 160 字符 snippet；确认使用这些 ID，服务端继续复核租户和周期。
+  报告未收到 `[DONE]` 或缺少来源不可标记为完整。已输出内容后不自动重试。
+
 ## AI 配置与通用流式生成
 
 | 方法 | 路径 | 说明 |
@@ -118,7 +136,7 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 ## 个人知识库
 
 知识问答只检索当前租户主动上传的 Markdown/ZIP、PDF、DOC/DOCX、PNG/JPG/WebP 和明确开启知识问答的个人笔记。
-历史内置语料已一次性迁移到用户 `Diving` 的运行时私有知识库，不再作为系统级全局语料或应用种子分发。
+系统不分发全局内置语料；运行时私人资料不属于公共 API 契约。
 
 | 方法与路径 | 说明 |
 | --- | --- |
@@ -132,7 +150,21 @@ Compose 将 LiteLLM 虚拟密钥注入 `AI_API_KEY`；供应商 Key 与网关 ma
 | `POST /api/v1/knowledge/collections` | 创建知识集合 |
 | `PATCH /api/v1/notes/{id}/knowledge` | 开启或关闭笔记知识索引 |
 | `POST /api/v1/knowledge/chat/stream` | 在服务端验证的范围内混合检索、精排并 SSE 回答 |
+| `GET /api/v1/knowledge/messages/{message_id}/sources` | 查询当前用户知识回答的有效来源快照 |
+| `POST /api/v1/knowledge/messages/{message_id}/note` | 将完整回答与经复核的来源保存为普通笔记 |
 | `POST /api/v1/knowledge/requests/{request_id}/feedback` | 对已保存的知识问答提交或更新质量反馈 |
+
+### 历史来源与回答保存
+
+`GET /api/v1/knowledge/messages/{message_id}/sources` 返回当前用户知识会话的有效引用数组，字段为 citation、document_id、note_id、source_type、title、heading、rank、snippet、index_version。
+  历史片段来自已保存快照（最多 500 字符），失效/删除/禁用来源不返回；跨账号或非知识回答返回 `MESSAGE_NOT_FOUND`（404）。
+
+`POST /api/v1/knowledge/messages/{message_id}/note` 无需正文参数；服务器复制拥有的完整知识回答及经复核的来源快照到普通笔记。
+  成功返回 NoteResponse（201）。同一回答重复保存返回既有有效笔记，租户锁保护并发去重和配额检查，审计只保存回答/笔记标识。
+  不完整返回 `KNOWLEDGE_ANSWER_INCOMPLETE`（409），无来源 `KNOWLEDGE_NO_EVIDENCE`（422），来源失效 `KNOWLEDGE_SOURCE_INVALID`（409），配额满 `NOTE_QUOTA_EXCEEDED`（409），跨账号 `MESSAGE_NOT_FOUND`（404）。
+  客户端不可用自定义正文或来源绕过来源校验；保存后不自动开启知识摄取。
+
+### 质量反馈与评测集
 
 知识问答反馈请求体：
 
@@ -165,13 +197,11 @@ trace 仅保存模型和检索参数、状态、token 数、来源资源 ID、�
 来源版本在保存阶段失效返回 `KNOWLEDGE_SOURCE_INVALID`；其他数据库持久化故障返回
 `KNOWLEDGE_SAVE_FAILED`，不得伪装成来源错误。
 
-AI 限量活动的 Redis 投影使用 `active_version` 指针和版本化数据键。领取在 Lua 中先校验指针；切换并发导致版本变化时最多重试一次，连续变化返回 `AI_EVENT_BUSY`（503）。投影构建使用活动级 owner fencing 租约、分批 Pipeline 和常数复杂度 CAS 切换，不会删除线上 active 版本；旧版本仍有 pending reservation 时禁止清理。
-
 客户端提交的 `tenant_id` 始终被忽略；无当前租户证据时返回 `KNOWLEDGE_NO_EVIDENCE`。
 已有活动索引的文档在重建期间仍返回 `Status: "ready"`；`index_job_status` 单独表示
 `queued`、`running`、`success` 或 `failed`。重建失败通过 `last_index_failure_code` 暴露，旧索引
 继续可查询；只有 `active_index_version=0` 的首次索引最终失败时，文档才进入 `failed`。
-最新索引任务还返回稳定的 `index_stage`（`queued/loading/parsing/embedding/persisting/completed/failed`）、
+最新索引任务还返回稳定的 `index_stage`（`queued/loading/parsing/parsed/embedding/persisting/completed/failed`）、
 `processed_chunks` 和 `total_chunks`。进度由持久化租约 owner 单调更新，不能用它推断正文或内部路径。
 
 ## 用户设置
@@ -186,12 +216,21 @@ AI 限量活动的 Redis 投影使用 `active_version` 指针和版本化数据�
 
 ## 会话
 
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` / `POST` | `/api/v1/conversations` | 查询或创建当前用户会话 |
+| `GET` | `/api/v1/conversations/{conversation_id}` | 获取会话和消息 |
+| `PATCH` | `/api/v1/conversations/{conversation_id}` | 以版本号保护重命名 |
+| `DELETE` | `/api/v1/conversations/{conversation_id}` | 删除当前用户会话 |
+
 会话列表支持 `search`、`source_scope`、`limit` 和 `offset`，响应为
 `{"items":[],"total":0}`。`PATCH /api/v1/conversations/{id}` 使用 `title` 与 `version`
 重命名；版本冲突返回 `CONVERSATION_VERSION_CONFLICT`。超过 20 条消息的会话会保存压缩摘要，
 回答上下文使用摘要与最近 10 条消息，但事实来源仍在每轮重新检索。
 
-知识问答 SSE 事件顺序如下：
+### 知识问答 SSE 与澄清
+
+知识问答 SSE 成功流的主要事件如下；检索进度可能出现多次，失败流不会发送 done：
 
 ```text
 event: retrieval_progress
@@ -222,8 +261,9 @@ data: {"conversation_id":12,"message_id":34}
 恢复原请求并只允许消费一次。过期、重复或跨租户/跨用户恢复统一返回 404。恢复后仍无证据时返回
 `KNOWLEDGE_NO_EVIDENCE`，不会再次澄清。
 
-失败使用 `event: error`，`data` 只包含稳定 `code` 和脱敏 `message`。来源包含
-`source_type`、`source_id`、`title`、`rank`、`source_deleted` 与最小 `snippet`。
+失败使用 `event: error`，载荷至少包含稳定 `code` 和脱敏 `message`；断流可额外携带前述未完成状态与用量字段。
+来源字段为 `citation`、`document_id`、`note_id`、`source_type`、`title`、`heading`、`rank`、`snippet` 和 `index_version`。
+知识 SSE sources 的 `snippet` 最多 1200 字符；`index_version` 表示来源索引版本。这些只来自当前租户有效候选，检索进度事件仍无正文。
 
 ## 定时报告
 
@@ -244,7 +284,7 @@ claim 保证同一到期任务只生成一条运行记录。
 
 ## 模板广场
 
-公开模板作者必须先设置公开昵称。模板由作者自主上架和下架，不经过管理员审核；公开读取只
+公开模板接口也要求认证；“公开”表示可跨租户查看作者发布的快照。作者必须先设置公开昵称。模板由作者自主上架和下架，不经过管理员审核；公开读取只
 访问脱敏快照，不访问其他租户的私有原稿。
 
 | 方法 | 路径 | 说明 |
@@ -269,12 +309,14 @@ claim 保证同一到期任务只生成一条运行记录。
 
 ## 每日限量免费点数活动
 
+AI 限量活动的 Redis 投影使用 `active_version` 指针和版本化数据键。领取在 Lua 中先校验指针；切换并发导致版本变化时最多重试一次，连续变化返回 `AI_EVENT_BUSY`（503）。投影构建使用活动级 owner fencing 租约、分批 Pipeline 和常数复杂度 CAS 切换，不会删除线上 active 版本；旧版本仍有 pending reservation 时禁止清理。
+
 领取接口先执行匿名 IP 摘要限流，再通过独立认证连接池和摘要缓存认证，并执行用户限流。正常领取受独立并发舱壁保护；
 PostgreSQL 使用启用 RLS 的库存槽位行和 `FOR UPDATE SKIP LOCKED` 并行裁决名额，Claim、槽位、点数和 reservation
 在同一事务提交，活动行的 `claimed_slots` 由后台汇总。Redis 投影不可用时进入带独立并发预算、短超时
 和熔断的 PostgreSQL fallback。
 
-活动按数据库配置的 `Asia/Shanghai` 时间每天 20:00 开放、20:10 关闭，共 10 个名额，每次
+活动的默认数据库配置为 `Asia/Shanghai` 时间每天 20:00 开放、20:10 关闭，共 10 个名额，每次
 赠送 100 点。连续 5 天包含活动当天，当天只计算 20:00 前完成的有效笔记。
 
 | 方法 | 路径 | 说明 |
@@ -286,6 +328,7 @@ PostgreSQL 使用启用 RLS 的库存槽位行和 `FOR UPDATE SKIP LOCKED` 并�
 | `GET` | `/api/v1/ai-events/{event_id}` | 查询指定活动及当前用户资格 |
 | `POST` | `/api/v1/ai-events/{event_id}/claims` | 携带 UUID `Idempotency-Key` 领取免费点数并即时到账 |
 | `GET` | `/api/v1/ai-events/{event_id}/claims/me` | 查询当前用户本场点数领取结果 |
+| `GET` | `/api/v1/ai-event-claims/{claim_id}` | 按领取记录标识查询本人结果 |
 
 领取通过 Redis Lua 原子预扣名额，PostgreSQL 唯一约束与点数账本最终裁决。领取成功后点数
 即时到账，不创建 AI 生成任务，也不自动生成报告。

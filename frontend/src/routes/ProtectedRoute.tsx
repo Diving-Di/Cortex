@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Spin } from 'antd';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { queryClient } from '../app/queryClient';
 import { getSession, type SessionResponse } from '../api/auth';
 
 export interface AuthenticatedOutletContext {
@@ -10,6 +11,7 @@ export interface AuthenticatedOutletContext {
 
 export default function ProtectedRoute() {
   const location = useLocation();
+
   const [session, setSession] = useState<SessionResponse | null>();
 
   async function refreshSession() {
@@ -18,7 +20,10 @@ export default function ProtectedRoute() {
 
   useEffect(() => {
     void refreshSession().catch(() => setSession(null));
-    const handleUnauthorized = () => setSession(null);
+    const handleUnauthorized = () => {
+      queryClient.clear();
+      setSession(null);
+    };
     window.addEventListener('auth:unauthorized', handleUnauthorized);
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, []);

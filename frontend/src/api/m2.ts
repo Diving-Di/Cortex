@@ -12,12 +12,18 @@ export class IncompleteStreamError extends Error {
     this.name = 'IncompleteStreamError';
   }
 }
-export async function streamPost(path: string, body: unknown, onChunk: (text: string) => void) {
+export async function streamPost(
+  path: string,
+  body: unknown,
+  onChunk: (text: string) => void,
+  options: { signal?: AbortSignal; onSources?: (sources: Source[]) => void } = {},
+) {
   const response = await fetch(`/api/v1${path}`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
   if (!response.ok) {
     throw await errorFromResponse(response);
@@ -29,6 +35,10 @@ export async function streamPost(path: string, body: unknown, onChunk: (text: st
       return;
     }
     const data = JSON.parse(raw);
+    if (event === 'sources') {
+      options.onSources?.(data.items);
+      return;
+    }
     if (event === 'error') {
       throw new IncompleteStreamError(
         data.message || '生成中断，已保留未完成内容',

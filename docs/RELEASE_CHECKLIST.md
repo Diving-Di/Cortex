@@ -1,8 +1,8 @@
 # Cortex 发布检查清单
 
-> 更新日期：2026-08-31
-> 本文是发布门禁的唯一汇总入口。功能设计见 `README.md`、`docs/SDD.md`、`docs/RAG.md` 和
-> `docs/api.md`；历史容量、故障与恢复证据保存在 `docs/operations/`。
+> 校对日期：2026-10-05。本文是发布门禁的唯一汇总入口，默认针对完整生产栈。
+> 功能和契约见 [系统设计](SDD.md)、[RAG](RAG.md) 和 [API](api.md)；实测范围见 [证据索引](operations/README.md)。
+> 轻量本机部署按末节验收；不能直接套用完整生产 overlay 或把未启动的可选服务记为已验收。
 
 ## 1. 变更与证据
 
@@ -19,6 +19,7 @@
 Set-Location backend
 gofmt -l .
 go vet ./...
+go test ./...
 pwsh ./scripts/check_go_coverage.ps1 -Minimum 18
 go build ./cmd/server
 go build ./cmd/migrate
@@ -31,7 +32,7 @@ go build ./cmd/migrate
 前端与 Compose：
 
 ```powershell
-Set-Location frontend
+Set-Location ..\frontend
 npm run format:check
 npm run test:coverage
 npm run test:e2e
@@ -71,7 +72,7 @@ docker compose config --quiet
 ## 5. 个人知识库与 RAG
 
 - [ ] `.md` / `.zip` 上传、3 GiB 配额、并发预占、恶意路径、删除退出检索和笔记知识开关通过。
-- [ ] 索引任务按 `queued/loading/parsing/embedding/persisting/completed/failed` 持久化阶段，块进度单调；
+- [ ] 索引任务按 `queued/loading/parsing/parsed/embedding/persisting/completed/failed` 持久化阶段，块进度单调；
   lease 丢失的旧 worker 不能切换版本或覆盖新进度。
 - [ ] 已有活动索引在重建成功前持续服务，失败不会清除旧版本。
 - [ ] 知识问答公开 `retrieval_progress` 不包含 prompt、正文块、身份、内部 URL 或上游响应。
@@ -93,8 +94,8 @@ docker compose config --quiet
 - [ ] 联合备份 manifest/checksum 已生成；最近一次隔离恢复演练覆盖 PostgreSQL 和当前引用的数据卷文件，
   DB/文件双向一致。
 - [ ] 容量证据对应当前 commit、配置和目标环境，包含失败率、p50/p95/p99 与原始输出。
-- [ ] 已复核 `docs/operations/` 中相关报告的适用边界。当前已知限制：单实例冷认证和活动库存热点、
-  10,000 文档候选扫描，以及尚未完整测量的 HTTP/Embedding/Reranker/LLM 并发成本。
+- [ ] 已复核 [历史证据](operations/README.md) 的适用边界。单实例冷认证和数据库热点仍需目标规格复测；
+  PostgreSQL 的 10,000 文档历史容量结论不代表 Elasticsearch，HTTP/Embedding/Reranker/LLM 联合并发成本需另测。
 
 ## 7. 发布与回滚
 
@@ -104,3 +105,13 @@ docker compose config --quiet
 - [ ] 数据结构按 expand → migrate/backfill → switch → contract 演进；回滚不依赖删除用户数据。
 - [ ] 发布观察窗口、负责人和停止条件明确；错误率、P95、队列或租约指标越界时停止并回滚。
 - [ ] `docs/SLO.md` 的责任角色已映射到当期 primary/secondary，自动回退和人工回滚证据可定位且不包含密钥。
+
+## 8. 页面、文档与轻量部署回归
+
+- 笔记默认列表，搜索与类型/标签/日期筛选，模板显式路由。
+- 草稿按账号隔离；保存成功清理；409 保留并比较；恢复正文携带期望版本。
+- 报告 actual sources 与周期绑定，旧异步响应失效，失败/取消保留完整草稿，确认覆盖保留 revision。
+- 知识来源可查看；问答保存仅接收 message ID，覆盖跨租户 404、来源失效、不完整、配额及并发去重。
+- 活动不自动弹窗；工作台待处理与索引重试、引导跳过/重开正常。
+- `python scripts/check_docs.py`、`./backend/scripts/check_light_compose.ps1` 通过。
+- 发布轻量版时独立验收其三个核心服务和对应卷，启用 AI/知识 profile 后再做模型链路验收。

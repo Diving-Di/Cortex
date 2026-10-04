@@ -1,0 +1,241 @@
+# Personal deployment. AI and knowledge services are opt-in.
+name: cortex-light
+services:
+  db:
+    image: pgvector/pgvector:0.8.1-pg16-bookworm@sha256:33198da2828a14c30348d2ccb4750833d5ed9a44c88d840a0e523d7417120337
+    environment:
+      POSTGRES_DB: cortex
+      POSTGRES_USER: cortex_migrator
+      POSTGRES_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}
+      LITELLM_DB_PASSWORD: ${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD}
+    volumes:
+    - light_db_data:/var/lib/postgresql/data
+    - ./backend/scripts/init-db-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/20-schema.sql:ro
+    - ./backend/internal/migrations/sql/000014_template_marketplace_ai_events.up.sql:/docker-entrypoint/internal/migrations/sql/000014_template_marketplace_ai_events.up.sql:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U cortex_migrator -d cortex
+      timeout: 20s
+      retries: 10
+  backend:
+    image: ${BACKEND_IMAGE:-cortex-backend:local}
+    build:
+      context: ./backend
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        GO_BUILDER_IMAGE: ${GO_BUILDER_IMAGE:-golang:1.26.6-alpine}
+        ALPINE_RUNTIME_IMAGE: ${ALPINE_RUNTIME_IMAGE:-alpine:3.23}
+    ports:
+    - 127.0.0.1:8000:8000
+    cpus: 2.0
+    mem_limit: 2g
+    pids_limit: 256
+    volumes:
+    - light_app_data:/app/data
+    environment:
+    - DATABASE_URL=postgresql://cortex_app:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD}@db:5432/cortex
+    - MIGRATION_DATABASE_URL=postgresql://cortex_migrator:${POSTGRES_MIGRATOR_PASSWORD:?set POSTGRES_MIGRATOR_PASSWORD}@db:5432/cortex
+    - CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+    - TRUST_PROXY_HEADERS=true
+    - AUTH_LOGIN_IP_LIMIT=${AUTH_LOGIN_IP_LIMIT:-30}
+    - AUTH_LOGIN_ACCOUNT_LIMIT=${AUTH_LOGIN_ACCOUNT_LIMIT:-10}
+    - AUTH_REGISTER_IP_LIMIT=${AUTH_REGISTER_IP_LIMIT:-5}
+    - AUTH_TOKEN_IP_LIMIT=${AUTH_TOKEN_IP_LIMIT:-15}
+    - LISTEN_ADDRESS=0.0.0.0:8000
+    - CORTEX_DATA_DIR=/app/data
+    - MAX_ATTACHMENT_BYTES=${MAX_ATTACHMENT_BYTES:-20971520}
+    - RAG_EMBEDDING_BASE_URL=http://embedding-service:4000/v1
+    - RAG_EMBEDDING_MODEL=iic/nlp_gte_sentence-embedding_chinese-small
+    - RAG_EMBEDDING_DIMENSIONS=512
+    - RAG_EMBEDDING_SEND_DIMENSIONS=${RAG_EMBEDDING_SEND_DIMENSIONS:-false}
+    - RAG_RERANK_BASE_URL=${RAG_RERANK_BASE_URL:-http://reranker-service:8080}
+    - RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
+    - RAG_RERANK_MIN_SCORE=${RAG_RERANK_MIN_SCORE:-0.5038954}
+    - RAG_MIN_QUALIFIED_EVIDENCE=${RAG_MIN_QUALIFIED_EVIDENCE:-1}
+    - RAG_VECTOR_TOP_K=${RAG_VECTOR_TOP_K:-15}
+    - RAG_TITLE_TOP_K=${RAG_TITLE_TOP_K:-10}
+    - RAG_KEYWORD_TOP_K=${RAG_KEYWORD_TOP_K:-5}
+    - RAG_FUSION_TOP_K=${RAG_FUSION_TOP_K:-20}
+    - RAG_CONTEXT_PARENT_TOP_K=${RAG_CONTEXT_PARENT_TOP_K:-4}
+    - KNOWLEDGE_INDEX_BATCH_SIZE=${KNOWLEDGE_INDEX_BATCH_SIZE:-16}
+    - KNOWLEDGE_INDEX_POLL_SECONDS=${KNOWLEDGE_INDEX_POLL_SECONDS:-5}
+    - DOCUMENT_PARSER_URL=http://document-parser:8080
+    - DOCUMENT_PARSER_TIMEOUT_SECONDS=${DOCUMENT_PARSER_TIMEOUT_SECONDS:-120}
+    - AI_BASE_URL=http://llm-gateway:4000/v1
+    - AI_MODEL=cortex-default
+    - AI_SYSTEM_PROMPT=${AI_SYSTEM_PROMPT:-你是一个温暖、贴心的 AI 助手。}
+    - APP_ENV=${APP_ENV:-development}
+    - CORTEX_RUNTIME_ROLE=${CORTEX_RUNTIME_ROLE:-all}
+    - SCHEDULED_REPORTS_ENABLED=${SCHEDULED_REPORTS_ENABLED:-true}
+    - SCHEDULED_REPORT_POLL_SECONDS=${SCHEDULED_REPORT_POLL_SECONDS:-60}
+    - AI_EVENT_CLAIM_IP_LIMIT=${AI_EVENT_CLAIM_IP_LIMIT:-60}
+    - DB_POOL_SIZE=${DB_POOL_SIZE:-20}
+    - AUTH_DB_POOL_SIZE=${AUTH_DB_POOL_SIZE:-32}
+    - AI_EVENT_CLAIM_CONCURRENCY=${AI_EVENT_CLAIM_CONCURRENCY:-16}
+    - AI_EVENT_CLAIM_QUEUE_TIMEOUT_MS=${AI_EVENT_CLAIM_QUEUE_TIMEOUT_MS:-10000}
+    - STORAGE_BACKEND=local
+    - EVENT_BUS=postgres
+    - RAG_RETRIEVAL_BACKEND=postgres
+    - RAG_EMBEDDING_API_KEY=${LITELLM_VIRTUAL_KEY:-}
+    - AI_API_KEY=${LITELLM_VIRTUAL_KEY:-}
+    - REDIS_URL=
+    depends_on:
+      db:
+        condition: service_healthy
+  frontend:
+    image: ${FRONTEND_IMAGE:-cortex-frontend:local}
+    build:
+      context: ./frontend
+      args:
+        NODE_BUILDER_IMAGE: ${NODE_BUILDER_IMAGE:-node:20-alpine}
+        NGINX_RUNTIME_IMAGE: ${NGINX_RUNTIME_IMAGE:-nginx:1.27-alpine}
+    ports:
+    - 127.0.0.1:5173:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /var/cache/nginx:uid=101,gid=101,mode=0750
+    - /var/run:uid=101,gid=101,mode=0755
+    - /tmp:uid=101,gid=101,mode=1777
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://127.0.0.1:8080/
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  llm-gateway:
+    image: ghcr.io/berriai/litellm:main-v1.77.7-stable@sha256:cc6255644a32511355bc53c5d4d0ca7b3c5df45ad881225ff57e8a88e083c563
+    command:
+    - --config
+    - /app/config.yaml
+    - --port
+    - '4000'
+    - --num_workers
+    - '1'
+    volumes:
+    - ./litellm-config.yaml:/app/config.yaml:ro
+    environment:
+    - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+    - DATABASE_URL=postgresql://cortex_litellm:${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD}@db:5432/cortex_litellm
+    - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    - KIMI_API_KEY=${KIMI_API_KEY:-}
+    - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+    - LOCAL_EMBEDDING_BASE_URL=${LOCAL_EMBEDDING_BASE_URL:-http://host.docker.internal:11434/v1}
+    - LOCAL_EMBEDDING_API_KEY=${LOCAL_EMBEDDING_API_KEY:-ollama-local}
+    expose:
+    - '4000'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+    - ai
+  document-parser:
+    image: ${DOCUMENT_PARSER_IMAGE:-cortex-document-parser:local}
+    build:
+      context: ./document-parser
+      args:
+        PYTHON_RUNTIME_IMAGE: ${PYTHON_312_IMAGE:-python:3.12-slim-bookworm}
+    cpus: 1.5
+    mem_limit: 2g
+    pids_limit: 128
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp:size=512m,mode=1777
+    expose:
+    - '8080'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    profiles:
+    - knowledge
+  embedding-service:
+    image: ${EMBEDDING_IMAGE:-cortex-embedding:local}
+    build:
+      context: ./local-embedding
+      args:
+        MODEL_REVISION: 3c386e2c2c38680eaa38977bbf69c60d72fbf24f
+        PYTHON_RUNTIME_IMAGE: ${PYTHON_311_IMAGE:-python:3.11-slim@sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72}
+    cpus: 2.0
+    mem_limit: 3g
+    pids_limit: 256
+    expose:
+    - '4000'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/healthz')
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    profiles:
+    - knowledge
+  reranker-service:
+    image: ${RERANKER_IMAGE:-cortex-reranker:local}
+    build:
+      context: ./local-reranker
+      args:
+        RERANK_MODEL_REVISION: e099d4b9cdbd291b1569d416f19aaa6523570bc3
+        PYTHON_RUNTIME_IMAGE: ${PYTHON_311_IMAGE:-python:3.11-slim@sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72}
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cpu
+    cpus: 4.0
+    mem_limit: 8g
+    pids_limit: 512
+    environment:
+    - RERANK_MODEL_PATH=/models/reranker
+    - RERANK_DEVICE=cpu
+    - RERANK_MAX_DOCUMENTS=20
+    - RERANK_MAX_LENGTH=2048
+    - RERANK_BATCH_SIZE=4
+    - RERANK_CPU_THREADS=4
+    expose:
+    - '8080'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    profiles:
+    - knowledge
+volumes:
+  light_db_data: {}
+  light_app_data: {}

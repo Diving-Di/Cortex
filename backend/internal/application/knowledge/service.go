@@ -11,6 +11,8 @@ import (
 )
 
 type Repository interface {
+	KnowledgeMessageSources(context.Context, domain.Principal, int32) ([]map[string]any, error)
+	SaveKnowledgeNote(context.Context, domain.Principal, int32) (domain.Note, error)
 	CreateKnowledgeUpload(context.Context, domain.Principal, uuid.UUID, string, string, string, string, knowledgecore.Prepared) (store.KnowledgeUpload, error)
 	GetKnowledgeUpload(context.Context, domain.Principal, uuid.UUID) (store.KnowledgeUpload, error)
 	GetKnowledgeAsset(context.Context, domain.Principal, uuid.UUID, uuid.UUID) (store.KnowledgeAsset, error)
@@ -115,4 +117,12 @@ func (s *Service) WriteKnowledgeChunks(c context.Context, j store.KnowledgeIndex
 }
 func (s *Service) FailKnowledgeJob(c context.Context, j store.KnowledgeIndexJob, code string) error {
 	return s.repository.FailKnowledgeJob(c, j, code)
+}
+
+func (s *Service) SaveNote(ctx context.Context, p domain.Principal, messageID int32) (domain.Note, error) {
+	return s.repository.SaveKnowledgeNote(ctx, p, messageID)
+}
+
+func (s *Service) MessageSources(ctx context.Context, p domain.Principal, id int32) ([]map[string]any, error) {
+	return s.repository.KnowledgeMessageSources(ctx, p, id)
 }

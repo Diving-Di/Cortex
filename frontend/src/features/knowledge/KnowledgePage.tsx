@@ -4,6 +4,7 @@ import {
   Alert,
   Button,
   Card,
+  Modal,
   Empty,
   Popconfirm,
   Progress,
@@ -21,6 +22,9 @@ import {
 import { DeleteOutlined, InboxOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
 import {
   deleteKnowledge,
+  retryKnowledge,
+  saveKnowledgeNote,
+  getKnowledgeSources,
   getKnowledgeConversation,
   listKnowledge,
   listKnowledgeConversations,
@@ -32,6 +36,7 @@ import {
   type RetrievalProgress,
 } from '../../api/knowledge';
 import './KnowledgePage.css';
+import UsageGuide from '../../components/UsageGuide';
 
 const statusText: Record<string, string> = {
   uploaded: '已上传',
@@ -66,6 +71,10 @@ export default function KnowledgePage() {
   });
   const quota = query.data?.quota;
   const percent = quota ? Math.min(100, (quota.used_bytes / quota.limit_bytes) * 100) : 0;
+  const [selectedSource, setSelectedSource] = useState<KnowledgeSource>();
+  const [messageID, setMessageID] = useState<number>();
+  const [savedNote, setSavedNote] = useState<number>();
+  const [savingNote, setSavingNote] = useState(false);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
@@ -79,15 +88,20 @@ export default function KnowledgePage() {
     prompt: string;
     value: string;
   }>();
+  const viewEpoch = useRef(0);
   const abortRef = useRef<AbortController>();
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const ask = async (resume?: { id: string; value: string }) => {
     const value = question.trim();
     if (!value || streaming) return;
+    viewEpoch.current++;
     const id = crypto.randomUUID();
     const controller = new AbortController();
     abortRef.current = controller;
+    setMessageID(undefined);
+    setSavedNote(undefined);
+    setClarification(undefined);
     setRequestID(id);
     setAnswer('');
     setSources([]);
@@ -113,6 +127,7 @@ export default function KnowledgePage() {
             setSources(Array.isArray(event.data) ? event.data : event.data.items);
           if (event.type === 'done') {
             setConversationID(event.data.conversation_id);
+            setMessageID(event.data.message_id);
             void queryClient.invalidateQueries({ queryKey: ['knowledge-conversations'] });
           }
           if (event.type === 'error') {
@@ -124,6 +139,7 @@ export default function KnowledgePage() {
         controller.signal,
       );
     } catch (error) {
+      setIncomplete(true);
       if (!controller.signal.aborted) {
         if (
           error instanceof KnowledgeStreamError &&
@@ -147,6 +163,14 @@ export default function KnowledgePage() {
   return (
     <div className="knowledge-page">
       <Typography.Title level={2}>个人知识库</Typography.Title>
+      <UsageGuide
+        id="knowledge"
+        steps={[
+          { title: '上传', description: '上传 Markdown、PDF、Word 或图片，等待索引完成。' },
+          { title: '提问', description: '回答只依据当前账号资料，无有效依据时会拒答。' },
+          { title: '核对与保存', description: '展开引用查看片段，完整回答可以确认保存为笔记。' },
+        ]}
+      />
       <Alert
         showIcon
         type="info"
@@ -157,6 +181,7 @@ export default function KnowledgePage() {
         title="知识问答"
         extra={
           <Select
+            disabled={streaming}
             allowClear
             showSearch
             style={{ width: 220 }}
@@ -167,20 +192,50 @@ export default function KnowledgePage() {
               label: item.title,
             }))}
             onClear={() => {
+              viewEpoch.current++;
               setConversationID(undefined);
               setAnswer('');
               setSources([]);
+              setMessageID(undefined);
+              setSavedNote(undefined);
+              setRequestID('');
+              setIncomplete(false);
+              setStages([]);
+              setClarification(undefined);
             }}
             onChange={(id) => {
+              if (!id) return;
+              const ticket = ++viewEpoch.current;
+              setAnswer('');
+              setSources([]);
+              setMessageID(undefined);
               setConversationID(id);
-              void getKnowledgeConversation(id).then((detail) => {
-                const last = [...detail.messages]
-                  .reverse()
-                  .find((item) => item.role === 'assistant');
-                setAnswer(last?.content ?? '');
-                setSources([]);
-                setIncomplete(last?.status === 'failed');
-              });
+              setRequestID('');
+              setStages([]);
+              setClarification(undefined);
+              setSavedNote(undefined);
+              void getKnowledgeConversation(id)
+                .then((detail) => {
+                  if (ticket !== viewEpoch.current) return;
+                  const last = [...detail.messages]
+                    .reverse()
+                    .find((item) => item.role === 'assistant');
+                  setAnswer(last?.content ?? '');
+                  setMessageID(last?.id);
+                  if (last)
+                    void getKnowledgeSources(last.id)
+                      .then((items) => {
+                        if (ticket === viewEpoch.current) setSources(items);
+                      })
+                      .catch(() => {
+                        if (ticket === viewEpoch.current) setSources([]);
+                      });
+                  else setSources([]);
+                  setIncomplete(last?.status !== 'complete');
+                })
+                .catch(() => {
+                  if (ticket === viewEpoch.current) message.error('历史会话加载失败');
+                });
             }}
           />
         }
@@ -210,18 +265,28 @@ export default function KnowledgePage() {
           )}
         </Space.Compact>
         {stages.length > 0 && (
-          <div className="knowledge-trace" aria-label="检索过程">
-            <Space wrap>
-              {stages.map((stage) => (
-                <Tag
-                  key={stage.stage}
-                  color={stage.status === 'degraded' ? 'warning' : 'processing'}
-                >
-                  {stage.stage} · {stage.elapsed_ms} ms
-                </Tag>
-              ))}
-            </Space>
-          </div>
+          <Collapse
+            items={[
+              {
+                key: 'trace',
+                label: '查看检索过程',
+                children: (
+                  <div className="knowledge-trace" aria-label="检索过程">
+                    <Space wrap>
+                      {stages.map((stage) => (
+                        <Tag
+                          key={stage.stage}
+                          color={stage.status === 'degraded' ? 'warning' : 'processing'}
+                        >
+                          {stage.stage} · {stage.elapsed_ms} ms
+                        </Tag>
+                      ))}
+                    </Space>
+                  </div>
+                ),
+              },
+            ]}
+          />
         )}
         {clarification && (
           <Alert
@@ -280,8 +345,12 @@ export default function KnowledgePage() {
                       <List.Item>
                         <Typography.Text>
                           <Tag>{source.citation}</Tag>
-                          {source.title}
-                          {source.heading.length ? ` · ${source.heading.join(' / ')}` : ''}
+                          <Button type="link" onClick={() => setSelectedSource(source)}>
+                            {source.title}
+                          </Button>
+                          {(source.heading || []).length
+                            ? ` · ${(source.heading || []).join(' / ')}`
+                            : ''}
                         </Typography.Text>
                       </List.Item>
                     )}
@@ -317,6 +386,56 @@ export default function KnowledgePage() {
           </Space>
         )}
       </Card>
+      {messageID && answer && !streaming && !incomplete && (
+        <Space style={{ marginBottom: 16 }}>
+          <Button
+            disabled={Boolean(savedNote)}
+            loading={savingNote}
+            onClick={() =>
+              Modal.confirm({
+                title: '保存为笔记',
+                okText: '确认保存回答',
+                cancelText: '取消',
+                content: '将保存完整回答和经服务端复核的来源快照。',
+                onOk: async () => {
+                  setSavingNote(true);
+                  try {
+                    const n = await saveKnowledgeNote(messageID);
+                    setSavedNote(n.id);
+                    void queryClient.invalidateQueries({ queryKey: ['notes'] });
+                    message.success('已保存为笔记');
+                  } catch (e) {
+                    message.error(e instanceof Error ? e.message : '保存失败');
+                  } finally {
+                    setSavingNote(false);
+                  }
+                },
+              })
+            }
+          >
+            保存回答为笔记
+          </Button>
+          {savedNote && <a href={`/notes/${savedNote}`}>查看笔记</a>}
+        </Space>
+      )}
+      <Modal
+        title={selectedSource?.title || '来源片段'}
+        open={Boolean(selectedSource)}
+        footer={null}
+        onCancel={() => setSelectedSource(undefined)}
+      >
+        <p>{selectedSource?.heading?.join(' / ')}</p>
+        <Typography.Paragraph style={{ whiteSpace: 'pre-wrap' }}>
+          {selectedSource?.snippet || '该历史引用没有可展示片段，请打开来源笔记。'}
+        </Typography.Paragraph>
+        {selectedSource?.note_id && <a href={`/notes/${selectedSource.note_id}`}>打开来源笔记</a>}
+        {selectedSource?.document_id && (
+          <p>
+            索引版本：{selectedSource.index_version || '历史版本'}
+            。片段保留文件章节中的页码；当前不提供 PDF 坐标高亮。
+          </p>
+        )}
+      </Modal>
       <Card title="上传资料">
         <Upload.Dragger
           accept=".md,.zip,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
@@ -331,7 +450,7 @@ export default function KnowledgePage() {
           <p className="ant-upload-drag-icon">
             <InboxOutlined />
           </p>
-          <p>拖放或点击选择 .md / .zip 文件</p>
+          <p>拖放或点击选择 Markdown、PDF、Word 或图片</p>
         </Upload.Dragger>
         {quota && (
           <div className="knowledge-quota">
@@ -403,11 +522,28 @@ export default function KnowledgePage() {
             {
               title: '操作',
               render: (_, row) => (
-                <Popconfirm title="删除此知识文档？" onConfirm={() => remove.mutate(row.id)}>
-                  <Button danger type="text" icon={<DeleteOutlined />}>
-                    删除
-                  </Button>
-                </Popconfirm>
+                <Space>
+                  {(row.Status === 'failed' || row.index_job_status === 'failed') && (
+                    <Button
+                      onClick={async () => {
+                        try {
+                          await retryKnowledge(row.id);
+                          await query.refetch();
+                          message.success('已加入重试队列');
+                        } catch {
+                          message.error('重试失败');
+                        }
+                      }}
+                    >
+                      重试索引
+                    </Button>
+                  )}
+                  <Popconfirm title="删除此知识文档？" onConfirm={() => remove.mutate(row.id)}>
+                    <Button danger type="text" icon={<DeleteOutlined />}>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                </Space>
               ),
             },
           ]}

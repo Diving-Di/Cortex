@@ -30,6 +30,8 @@ export type KnowledgeDocument = {
 
 export type KnowledgeSource = {
   citation: string;
+  snippet?: string;
+  index_version?: number;
   document_id?: string;
   note_id?: number;
   source_type: 'upload' | 'note';
@@ -177,4 +179,15 @@ export async function sendKnowledgeFeedback(requestID: string, category: string,
       comment,
     })
   ).data;
+}
+
+export async function retryKnowledge(id: string) {
+  await http.post(`/api/v1/knowledge/documents/${id}/retry`, {});
+}
+export async function saveKnowledgeNote(messageID: number) {
+  return (await http.post<{ id: number }>(`/api/v1/knowledge/messages/${messageID}/note`, {})).data;
+}
+export async function getKnowledgeSources(messageID: number) {
+  return (await http.get<KnowledgeSource[]>(`/api/v1/knowledge/messages/${messageID}/sources`))
+    .data;
 }

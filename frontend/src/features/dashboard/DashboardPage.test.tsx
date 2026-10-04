@@ -41,15 +41,11 @@ function renderDashboard() {
   );
 }
 
-test('uses server event configuration and remembers dismissal', async () => {
-  const first = renderDashboard();
-  expect(await screen.findByText('今晚 20:30 免费点数限量开放')).toBeInTheDocument();
-  expect(screen.getByText(/持续 12 分钟，共 7 个名额，成功领取可获得 80 点/)).toBeInTheDocument();
-  fireEvent.click(screen.getByText('今日不再提醒'));
-  expect(localStorage.getItem('ai-event-modal-dismissed:event-1')).toBe('1');
-  first.unmount();
+vi.mock('./PendingWork', () => ({ default: () => <div>待处理任务</div> }));
+
+test('shows an optional event card without interrupting the workbench', async () => {
   renderDashboard();
-  await waitFor(() =>
-    expect(screen.queryByText('今晚 20:30 免费点数限量开放')).not.toBeInTheDocument(),
-  );
+  expect(await screen.findByText('20:30 开放 · 12 分钟 · 7 个名额 · 80 点')).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: '查看活动' })).toHaveAttribute('href', '/ai-events');
 });

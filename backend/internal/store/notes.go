@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"cortex/backend/internal/apierror"
@@ -199,12 +200,18 @@ func (s *Store) ListRevisions(ctx context.Context, principal domain.Principal, n
 	return revisions, err
 }
 
-func (s *Store) RestoreRevision(ctx context.Context, principal domain.Principal, noteID, revisionID int32) (domain.Note, error) {
+func (s *Store) RestoreRevision(ctx context.Context, principal domain.Principal, noteID, revisionID int32, expected *time.Time) (domain.Note, error) {
 	var result domain.Note
 	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT id FROM notes WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE`, principal.TenantID, noteID); err != nil {
+			return err
+		}
 		note, err := getNoteTx(ctx, tx, principal, noteID)
 		if err != nil {
 			return err
+		}
+		if expected != nil && !note.UpdatedAt.Equal(*expected) {
+			return apierror.New("NOTE_VERSION_CONFLICT", "笔记已被修改，请先合并最新内容", 409)
 		}
 		var content string
 		err = tx.QueryRow(ctx, `SELECT content FROM note_revisions

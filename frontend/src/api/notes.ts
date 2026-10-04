@@ -41,3 +41,34 @@ export async function noteTags(id: number) {
 export async function setNoteTags(id: number, ids: number[]) {
   return (await http.put<Tag[]>(`${base}/notes/${id}/tags`, { tag_ids: ids })).data;
 }
+export type Revision = {
+  id: number;
+  note_id: number;
+  content: string;
+  reason: string;
+  created_at: string;
+};
+export async function listRevisions(id: number) {
+  return (await http.get<Revision[]>(`${base}/notes/${id}/revisions`)).data;
+}
+export async function restoreRevision(id: number, revisionID: number, expected_updated_at: string) {
+  return (
+    await http.post<Note>(`${base}/notes/${id}/revisions/${revisionID}/restore`, {
+      expected_updated_at,
+    })
+  ).data;
+}
+export async function searchNotes(params: Record<string, unknown>) {
+  return (
+    await http.get<{
+      items: {
+        id: number;
+        title: string;
+        snippet: string;
+        type: Note['type'];
+        note_date: string | null;
+      }[];
+      total: number;
+    }>(`${base}/search`, { params })
+  ).data;
+}

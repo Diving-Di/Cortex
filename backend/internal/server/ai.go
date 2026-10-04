@@ -88,6 +88,7 @@ func (s *Server) writeSSE(
 	prompt string,
 	events <-chan ai.StreamEvent,
 	after func(string) error,
+	sources ...any,
 ) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -99,6 +100,11 @@ func (s *Server) writeSSE(
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
+	if len(sources) > 0 {
+		payload, _ := json.Marshal(map[string]any{"items": sources[0]})
+		_, _ = fmt.Fprintf(w, "event: sources\ndata: %s\n\n", payload)
+		flusher.Flush()
+	}
 	started := time.Now()
 	var output strings.Builder
 	status := "success"

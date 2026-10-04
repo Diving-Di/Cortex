@@ -11,6 +11,16 @@ Cortex 是一个面向个人成长记录的 AI 工作台：用 Markdown 记录�
 生成模型、Embedding 或 Reranker 不可用时，账号、笔记、标签、附件、搜索、
 版本历史和 Markdown 导出仍保持可用；依赖模型的整理、报告、回忆、知识库索引或问答返回明确错误。
 
+## 部署与使用入口
+
+个人使用可选择 [轻量部署](docs/guides/PERSONAL_DEPLOYMENT.md)：默认只启动数据库、Go 后端和前端，AI 与知识模型按需启用。
+完整版仍使用下文 Compose；两种部署使用独立数据卷，切换不是数据迁移。
+
+笔记本默认显示列表，支持类型/关键词/标签/日期筛选；模板入口为 `/notes/templates`。
+编辑器提供当前标签页草稿恢复、冲突比较和历史正文恢复。报告绑定实际生成来源，失败保留上一份完整草稿。
+知识引用可查看片段，完整回答可确认保存为带来源快照的笔记。工作台集中展示草稿和失败任务，AI 活动只在卡片展示。
+页面操作与限制见 [使用流程](docs/page/README.md)，所有文档见 [导航](docs/README.md)。
+
 ## 能做什么
 
 ### 记录与整理
@@ -70,7 +80,7 @@ Markdown ZIP 只用于内容交换；生产灾备应覆盖 PostgreSQL 数据库�
 | 后端 | Go、Gin、pgx/v5 |
 | 数据 | PostgreSQL 16、pgvector、RLS、Redis 7（活动协调与公共缓存） |
 | AI 网关 | LiteLLM、OpenAI 兼容 Chat Completions / Embeddings、SSE |
-| RAG | 父子切块、PostgreSQL FTS、向量召回、BGE CrossEncoder Reranker |
+| RAG | 父子切块、PostgreSQL/pgvector 或 Elasticsearch BM25 + KNN、BGE CrossEncoder Reranker |
 | 部署 | Docker Compose |
 
 ```text
@@ -324,16 +334,16 @@ docker compose -f docker-compose.ci.yml config --quiet
 - [2026-09-07 本机验收](docs/operations/LOCAL_INTEGRATION_ACCEPTANCE_20260907.md)：迁移 42、GC/版本删除及功能回归结果
 
 - [API 概览](docs/api.md)：认证、笔记、AI、知识库、调度和导出接口
-- [工程基线](docs/BASELINE.md)：当前技术与安全基线
+- [工程基线](docs/SDD.md)：当前技术与安全基线
 - [软件设计说明书](docs/SDD.md)：当前已实现的系统架构、数据、知识库、RAG、AI 工作流和部署设计
 - [实现与生产验收待办](docs/IMPLEMENTATION_GAPS.md)：未实现、部分实现、待验证事项和发布阻断
 - [生产 SLO 与值班契约](docs/SLO.md)：SLI、错误预算、告警责任角色和送达门禁
 - [大模型网关规范](docs/LLM_GATEWAY.md)：LiteLLM 路由、密钥、隐私和用量治理
-- [个人知识库页](docs/page/KNOWLEDGE_PAGE_ARCHITECTURE.md)：上传、配额、文档管理与降级说明
-- [模板广场页](docs/page/TEMPLATES_PAGE_ARCHITECTURE.md)：私有模板、公开快照、榜单与使用流程
-- [AI 限量活动页](docs/page/AI_EVENTS_PAGE_ARCHITECTURE.md)：活动倒计时、资格、点数与领取
+- [个人知识库页](docs/page/README.md)：上传、配额、文档管理与降级说明
+- [模板广场页](docs/page/README.md)：私有模板、公开快照、榜单与使用流程
+- [AI 限量活动页](docs/page/README.md)：活动倒计时、资格、点数与领取
 - [2026-08-25 基础设施验收](docs/operations/INFRASTRUCTURE_ACCEPTANCE_20260825.md)：当前 Compose 主路径、故障注入、备份恢复和可观测性证据
 - [2026-08-31 上线整改验收](docs/operations/PRODUCTION_REMEDIATION_ACCEPTANCE_20260831.md)：本轮生产配置、五镜像发布、恢复、真实浏览器和完整栈证据与外部边界
 - [2026-08-25 RAG 与负载复验](docs/operations/RAG_AND_K6_RERUN_20260825.md)：当前 RAG 质量和 AI 活动负载结果
 - [基础设施当前实现](docs/INFRASTRUCTURE_EVOLUTION.md)：MinIO/Local、GC 租约、Kafka 知识摄取与 ES 检索边界
-- [候选规划](docs/plans/INFRASTRUCTURE_ROADMAP.md)：尚未实现的分片续传、自动检索降级和生产收敛
+- [候选规划](docs/IMPLEMENTATION_GAPS.md)：尚未实现的分片续传、自动检索降级和生产收敛

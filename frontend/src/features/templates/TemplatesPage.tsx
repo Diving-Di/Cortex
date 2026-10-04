@@ -135,7 +135,6 @@ export default function TemplatesPage() {
       <Space style={{ marginBottom: 16 }}>
         <Button
           onClick={() => {
-            localStorage.setItem('cortex:notes-section', 'list');
             nav('/notes/list');
           }}
         >

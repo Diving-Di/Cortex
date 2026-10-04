@@ -3,6 +3,7 @@ package notes
 import (
 	"context"
 	"strings"
+	"time"
 
 	"cortex/backend/internal/apierror"
 	"cortex/backend/internal/domain"
@@ -15,7 +16,7 @@ type Repository interface {
 	UpdateNote(context.Context, domain.Principal, int32, domain.NotePatch) (domain.Note, error)
 	DeleteNote(context.Context, domain.Principal, int32) error
 	ListRevisions(context.Context, domain.Principal, int32) ([]domain.Revision, error)
-	RestoreRevision(context.Context, domain.Principal, int32, int32) (domain.Note, error)
+	RestoreRevision(context.Context, domain.Principal, int32, int32, *time.Time) (domain.Note, error)
 }
 
 type Service struct{ repository Repository }
@@ -50,6 +51,6 @@ func (s *Service) Revisions(ctx context.Context, p domain.Principal, id int32) (
 	return s.repository.ListRevisions(ctx, p, id)
 }
 
-func (s *Service) Restore(ctx context.Context, p domain.Principal, noteID, revisionID int32) (domain.Note, error) {
-	return s.repository.RestoreRevision(ctx, p, noteID, revisionID)
+func (s *Service) Restore(ctx context.Context, p domain.Principal, noteID, revisionID int32, expected *time.Time) (domain.Note, error) {
+	return s.repository.RestoreRevision(ctx, p, noteID, revisionID, expected)
 }

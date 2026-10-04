@@ -141,7 +141,10 @@ func (s *Server) generateReport(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.writeSSE(w, r, "report", s.cfg.AIModel, prompt, events, nil)
+	for i := range sources {
+		sources[i].Snippet = truncateRunes(sources[i].Snippet, 160)
+	}
+	s.writeSSE(w, r, "report", s.cfg.AIModel, prompt, events, nil, sources)
 }
 
 func (s *Server) confirmReport(w http.ResponseWriter, r *http.Request) {

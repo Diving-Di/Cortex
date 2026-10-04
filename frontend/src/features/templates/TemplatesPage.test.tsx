@@ -107,7 +107,10 @@ test('reuses the creation idempotency key after failure and disables creation wh
   const firstKey = vi.mocked(useTemplate).mock.calls[0][1];
 
   rejectFirst(new Error('network error'));
-  await waitFor(() => expect(useButton).toBeEnabled());
+  await waitFor(() => {
+    expect(useButton).toBeEnabled();
+    expect(useButton).not.toHaveClass('ant-btn-loading');
+  });
   fireEvent.click(useButton);
 
   await waitFor(() => expect(useTemplate).toHaveBeenCalledTimes(2));

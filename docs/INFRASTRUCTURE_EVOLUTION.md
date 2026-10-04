@@ -1,13 +1,13 @@
 # Cortex 基础设施当前实现
 
-> 校对日期：2026-09-07。本文描述已实现行为；后续设计见 [规划](plans/INFRASTRUCTURE_ROADMAP.md)，旧长篇方案见 [历史快照](archive/INFRASTRUCTURE_DESIGN_20260824.md)。
+> 校对日期：2026-10-05。本文描述已实现行为；候选能力与验收边界见 [实现缺口](IMPLEMENTATION_GAPS.md)。
 
 ## 运行边界
 
 | 组件 | 当前职责 | 权威来源 |
 | --- | --- | --- |
 | PostgreSQL 16 / pgvector | 租户、笔记、引用、配额、任务、Outbox、向量与活动索引版本 | 业务事实与权限 |
-| MinIO / Local BlobStore | 私有附件和知识文件；按记录保存后端、key、version、etag | 文件内容 |
+| MinIO / Local BlobStore | 私有附件和知识文件；保存后端与 key，版本元数据的覆盖范围见下文 | 文件内容 |
 | Kafka / Redpanda | 知识解析、Embedding、搜索投影阶段事件 | 不保存业务完成事实 |
 | Elasticsearch | BM25 + KNN 可重建投影 | 候选仍须回 PostgreSQL 校验 |
 | Redis | 活动预扣、限流、缓存与模板排行 | PostgreSQL 保存最终事实 |
@@ -74,4 +74,4 @@ ES 不可用返回 `KNOWLEDGE_RETRIEVAL_UNAVAILABLE`；普通笔记搜索仍可�
 ```
 
 该入口覆盖 GC/RLS/租约/Redis/真实 MinIO 版本删除及全量 Go 测试。
-发布、故障注入和备份恢复另见 [发布检查清单](RELEASE_CHECKLIST.md) 与 [运维说明](EXTERNAL_INFRA_OPERATIONS.md)。
+发布、故障注入和备份恢复另见 [发布检查清单](RELEASE_CHECKLIST.md) 与 [运维说明](runbooks/OPERATIONS.md)。

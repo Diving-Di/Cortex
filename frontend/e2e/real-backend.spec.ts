@@ -27,13 +27,7 @@ test('registers, logs in, loads the dashboard, and logs out through the real sta
   await expect(page.getByText(username)).toBeVisible();
   await expect(page.getByRole('heading', { name: '工作台', exact: true })).toBeVisible();
 
-  const eventDialog = page.getByRole('dialog');
-  try {
-    await eventDialog.waitFor({ state: 'visible', timeout: 2000 });
-    await eventDialog.getByRole('button', { name: 'Close' }).click();
-  } catch {
-    // The event announcement is conditional; absence is a valid dashboard state.
-  }
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: '退出登录' }).click();
   await expect(page).toHaveURL(/\/login$/);
 });

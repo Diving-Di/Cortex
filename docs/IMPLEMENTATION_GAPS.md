@@ -1,8 +1,7 @@
 # 未完成事项与生产风险
 
-> 更新日期：2026-09-07
-> 本文只记录真实缺口和不能对外承诺的事项。已实现能力见 `README.md`、`docs/BASELINE.md`、
-> `docs/SDD.md` 和 `docs/RAG.md`；发布门禁统一见 `docs/RELEASE_CHECKLIST.md`。
+> 更新日期：2026-10-05
+> 本文只记录真实缺口和不能对外承诺的事项。已实现能力见[根 README](../README.md)、[系统设计](SDD.md)和[RAG](RAG.md)；发布门禁统一见[发布清单](RELEASE_CHECKLIST.md)。
 
 ## P0：发布前必须关闭
 
@@ -17,12 +16,13 @@
 
 ## P1：上线前需要真实容量或质量证据
 
-- AI 活动本地正确性已通过，但单实例冷 Token 认证和数据库热点仍是容量瓶颈；生产目标规格、多 backend、
-  真实入口与到达率模型尚未完成复测。详细证据见 `operations/RAG_AND_K6_RERUN_20260825.md`。
+- AI 活动本地并发正确性已通过；[冷 Token 复测](operations/AI_EVENT_COLD_TOKEN_RERUN_20260826.md)达到当时兼容门槛，
+  但[冷热混合复测](operations/AI_EVENT_MIXED_TOKEN_RERUN_20260826.md)的读接口 P95 未达体验门槛。
+  生产目标规格、多 backend、真实入口与到达率模型仍缺少容量证据，不能仅凭冷 Token 成绩宣称上线达标。
 - 知识检索已完成 PostgreSQL 路径的 100/1,000/10,000 合成文档测试，但当前 Elasticsearch 路径及
   HTTP、Embedding、Reranker、LiteLLM 的联合并发饱和点和 AI 成本尚未完整测量；历史的 10,000
-  文档候选扫描结论不能直接代表当前 ES 投影性能。最新本地基线见
-  `operations/INFRASTRUCTURE_ACCEPTANCE_20260825.md`。
+  文档候选扫描结论不能直接代表当前 ES 投影性能。历史容量证据见
+  [2026-08-25 基础设施验收](operations/INFRASTRUCTURE_ACCEPTANCE_20260825.md)。
 - `RAG_PLANNER_ENABLED` 必须保持默认关闭，直到真实冻结的 comparison/trend/cross_period 数据集完成
   单查询对照，并记录 Hit@K、MRR、Context Recall/Precision、引用通过率、拒答准确率、P95、调用次数和成本。
 - Compose 已提供 Prometheus/Alertmanager/Grafana 实际采集、基础设施 exporter、HTTP SLI 和默认阈值；
@@ -32,7 +32,7 @@
 
 ## P2：候选实验，不直接上线
 
-- 分片上传、Redis Bitmap 续传状态、ES 故障自动切换 pgvector 尚未实现；现有上传与检索行为见 [基础设施实现](INFRASTRUCTURE_EVOLUTION.md)，候选方案见 [规划](plans/INFRASTRUCTURE_ROADMAP.md)。
+- 分片上传、Redis Bitmap 续传状态、ES 故障自动切换 pgvector 尚未实现；现有上传与检索行为见 [基础设施实现](INFRASTRUCTURE_EVOLUTION.md)，验收条件见下文“候选能力的验收边界”。
 - GC 已使用任务对象版本删除，但知识上传常规入库尚未保存每个 Put 返回的版本；版本化桶中的知识文件需要补齐全链路元数据持久化与验收。
 
 - Step-back、HyDE、三级分块和 Auto-merging 只允许在冻结集进行离线消融；没有可解释增益时保持现有
@@ -49,32 +49,44 @@
 - AI、Embedding、Reranker、OCR 或 Redis 不可用时必须保持非 AI 主链路可用；不得用提高可用性为由
   绕过来源、RLS、幂等、配额或引用核验。
 
-## 本轮已关闭
 
-- 2026-09-07：配置本机隔离 PostgreSQL/Redis/MinIO 集成环境，170 项 Go 测试无跳过通过；真实 MinIO 旧版本删除及幂等重删、前端与浏览器、HTTP/AI、解析和隔离恢复验收通过。范围和限制见 [本机验收记录](operations/LOCAL_INTEGRATION_ACCEPTANCE_20260907.md)。
+## 候选能力的验收边界
 
-- 2026-08-31：生产配置改为 fail-closed，新增五镜像 digest-only overlay 与检查脚本；release 对五个应用镜像生成 SBOM、provenance、attestation、digest 和 Trivy 证据，并纳入自动/人工回滚。
-- 2026-08-31：完整 Compose 14 个必需服务健康验收、非 AI/AI/模板/Redis 故障降级、1000 路活动并发、真实生产镜像浏览器 E2E 和 Prometheus/Alertmanager 规则在本地目标栈通过；证据与不可外推边界见 `operations/PRODUCTION_REMEDIATION_ACCEPTANCE_20260831.md`。
-- 2026-08-31：迁移 42 为对象 GC 增加有限租约和旧 worker fencing；隔离 PostgreSQL 上 schema/RLS、租约接管、附件清理和软删除配额测试连续两轮通过。
+### 大文件与续传
 
-- 2026-08-29：第三阶段补齐 HTTP 请求量/5xx/延迟 SLI、Prometheus 记录与告警规则、Alertmanager、
-  Grafana provisioning 及 PostgreSQL/Redis/Kafka/Elasticsearch/MinIO/node 采集；备份和隔离恢复成功会
-  产生 textfile 指标，恢复演练实际恢复 MinIO 卷并核对数据库对象引用。
-- 2026-08-29：第四阶段新增 SLO/错误预算/值班角色契约，以及 tag 触发的不可变镜像发布、SBOM、
-  provenance、attestation、部署前联合备份、digest-only 部署、失败自动应用回退和人工回滚脚本。
+候选方案为服务端上传会话、MinIO Multipart、逐分片 checksum、Redis Bitmap 加速进度查询。
+PostgreSQL 应保存会话和分片事实，Redis 丢失后可重建；完成提交需要幂等、配额结算和安全孤儿清理。
+当前没有 `/api/v1/uploads/*` 分片接口，现有知识上传仍是单次 multipart/form-data 文件上传。
 
-- 2026-08-29：CI 新增隔离 PostgreSQL 16 + pgvector、Redis、MinIO、Redpanda 和 Elasticsearch
-  环境；空库基线执行全部迁移后强制运行 schema/RLS、跨租户、租约、Outbox 和 Redis 集成测试。
-- 2026-08-29：后端和前端建立覆盖率下限，新增 Chromium 登录/受保护工作台 E2E、文档解析验收、
-  govulncheck、npm/pip audit、Gitleaks、Trivy、运行镜像扫描、SBOM 和 Dependabot 门禁。
-- 2026-08-29：AI SSE 不再受 30 秒进程级写超时截断；认证增加 IP/账号双限流、12 字符密码策略、
-  统一错误契约，Nginx 增加 CSP、frame、MIME、referrer 和权限策略。
+验收需覆盖断网、刷新、服务重启、重复/乱序分片、并发 complete、会话过期和跨租户访问。
 
-- 2026-08-25：外部基础设施 worker 已迁入 `backend/internal/workers` 并由唯一的 `cmd/server` 托管；
-  镜像与 Compose 已停止构建和部署四个额外 worker 二进制。生产环境门禁仍按上方 P0/P1 独立验收。
-- 2026-08-27：迁移 `000041_kafka_knowledge_pipeline` 已把知识摄取拆为解析、Embedding、搜索投影
-  三个 Kafka 阶段；阶段进度、租约、重试和最终状态继续以 PostgreSQL 为准。
-- 2026-08-28：HTTP handler 到 `application` 用例服务的边界已覆盖认证、租户、笔记、附件、AI、
-  报告、知识库、模板、活动等现有领域，并由架构测试约束依赖方向。
-- 2026-08-30：小红书研究功能已从前端、API、application/store、后台 worker、初始化基线、迁移清单和
-  验收脚本中移除；历史迁移编号保留空缺，不复用已发布过的版本号。
+### 检索韧性与投影修复
+
+候选方案包括显式 ES 故障熔断、pgvector 降级、恢复探针与切回，以及活动文档与 ES 投影的定时对账。
+当前两个 backend 通过配置选择；不能把“可以配置 postgres”描述为自动故障转移。
+降级仍需 RLS、活动版本校验、精排、证据门控和引用验证；向量兜底阈值需独立校准。
+中文 2-gram 仍在当前 PostgreSQL 路径使用，删除它必须有明确迁移和质量对照。
+
+### 知识文件版本与引用
+
+补齐知识上传对 Put 返回的 version/etag 的持久化，使上传、迁移、GC 和恢复清单具有一致定位。
+PDF 页码、Word 段落、图片区域的结构化来源字段及 OCR 置信度门控，需要端到端验收后才能承诺。
+Excel 和演示文稿仍不在当前摄取范围，不能只放开扩展名。
+
+### 生产化
+
+按目标环境完成 Kafka/ES 多节点、TLS、权限、容量、监控送达和联合恢复，不将本机性能当作 SLA。
+质量评测区分 ES 与 PostgreSQL、线上与离线调用链；公开夹具与人工复核的私人 bad case 分别管理。
+Step-back、HyDE、Auto-merging 等实验先做冻结集消融，达成质量、延迟和成本目标后再决定是否上线。
+
+
+## 当前体验能力的边界
+
+当前已补齐笔记筛选、版本预览/恢复、浏览器草稿、冲突比较、报告来源绑定、报告正文历史、
+来源片段、问答保存、待处理入口、引导和轻量部署文件，详见页面说明与当期验收记录。
+浏览器 sessionStorage 草稿不跨标签页、设备同步，不是灾备；存储不可用时会提示。
+报告正文历史不含旧来源快照，未完成生成尝试未新增服务端持久化表。
+PDF 结构化页码/坐标高亮仍需解析模型与迁移支持；当前提供现有章节和有限片段。
+待处理卡片最多检查前 20 个定时任务，其余从报告页查看。
+轻量部署可选 CPU 模型 profile 的真实性能和完整 AI 链路需独立验收。
+模板保留现有点赞/排行/推荐，暂缓新增社交能力；未来删减须依据真实使用数据。

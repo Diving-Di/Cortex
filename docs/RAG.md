@@ -1,6 +1,6 @@
 # Cortex 个人知识库 RAG 当前链路
 
-> 校对日期：2026-09-07。API 契约见 [api.md](api.md)，历史参数消融和质量数字见 [冻结基线](rag-baselines/README.md) 与 [旧链路快照](archive/RAG_DESIGN_20260825.md)。
+> 校对日期：2026-10-05。API 契约见 [api.md](api.md)，历史参数消融和质量数字见 [冻结基线](rag-baselines/README.md) 与 [日期化验收](operations/README.md)。
 
 ## 范围与来源
 
@@ -30,8 +30,8 @@ PostgreSQL 模式由索引 runner 轮询任务。索引阶段和块进度受租�
 
 | 配置 | 当前行为 |
 | --- | --- |
-| `RAG_RETRIEVAL_BACKEND=elasticsearch` | Compose 默认；ES BM25 + 512 维 KNN，可重建投影 |
-| `RAG_RETRIEVAL_BACKEND=postgres` | 直启默认；全局向量、中文 2-gram、标题匹配文档内向量三路召回与 RRF |
+| `RAG_RETRIEVAL_BACKEND=elasticsearch` | 完整 Compose 默认；ES BM25 + 512 维 KNN，可重建投影 |
+| `RAG_RETRIEVAL_BACKEND=postgres` | 直启与轻量 Compose 默认；全局向量、中文 2-gram、标题匹配文档内向量三路召回与 RRF |
 | `RAG_VECTOR_TOP_K` / `RAG_TITLE_TOP_K` / `RAG_KEYWORD_TOP_K` | config 默认 15 / 10 / 5 |
 | `RAG_FUSION_TOP_K` / `RAG_CONTEXT_PARENT_TOP_K` | config 默认 20 / 4 |
 | `RAG_RERANK_MIN_SCORE` / `RAG_RERANK_MIN_MARGIN` | 可配置证据门槛，随模型和数据集校准 |
@@ -60,7 +60,7 @@ Reranker 故障不能跳过精排直接生成；无证据返回 `KNOWLEDGE_NO_EV
 ```powershell
 # 仓库根目录
 ./backend/scripts/local_integration_test.ps1
-# backend 目录
+Set-Location backend
 go run ./cmd/rag-regression-check
 ./scripts/rag_eval.ps1 -Workers 4
 ```
