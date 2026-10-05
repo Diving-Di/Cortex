@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cortex/backend/internal/apierror"
+	reportjobsapp "cortex/backend/internal/application/reportjobs"
 	reportsapp "cortex/backend/internal/application/reports"
 	scheduledapp "cortex/backend/internal/application/scheduled"
 	"cortex/backend/internal/config"
@@ -37,7 +38,7 @@ func RunScheduler(
 		return
 	}
 	worker := &Server{cfg: cfg, store: database, logger: logger, version: "scheduler",
-		scheduled: scheduledapp.NewService(database), reports: reportsapp.NewService(database)}
+		scheduled: scheduledapp.NewService(database), reports: reportsapp.NewService(database), reportJobs: reportjobsapp.NewService(database)}
 	owner := uuid.New()
 	ticker := time.NewTicker(cfg.ScheduledReportPoll)
 	defer ticker.Stop()
@@ -153,6 +154,15 @@ func (s *Server) retryScheduledReport(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, s.logger, apierror.New("SCHEDULED_REPORT_BUSY", "定时报告正在执行", 409))
 		return
 	}
+	if s.cfg.EventBus == "kafka" {
+		job, err := s.queueScheduledReport(r.Context(), principal, taskID, owner, "manual")
+		if err != nil {
+			httpx.WriteError(w, s.logger, err)
+			return
+		}
+		httpx.JSON(w, http.StatusAccepted, map[string]any{"status": "queued", "job_id": job.ID})
+		return
+	}
 	go s.executeScheduledReport(context.Background(), principal, taskID, "manual", owner)
 	httpx.JSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
@@ -175,6 +185,13 @@ func (s *Server) listScheduledReportRuns(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) executeScheduledReport(ctx context.Context, principal domain.Principal, taskID int32, trigger string, owner uuid.UUID) {
+	if s.cfg.EventBus == "kafka" {
+		if _, err := s.queueScheduledReport(ctx, principal, taskID, owner, trigger); err != nil {
+			s.logger.Error("queue scheduled report", "code", "REPORT_QUEUE_FAILED")
+			s.finishScheduledDispatchFailure(ctx, principal, taskID, owner, trigger, err)
+		}
+		return
+	}
 	task, err := s.scheduled.Get(ctx, principal, taskID)
 	if err != nil {
 		s.logger.Error("load scheduled report", "error", err)
@@ -263,6 +280,53 @@ func (s *Server) executeScheduledReport(ctx context.Context, principal domain.Pr
 			scheduledReportLeaseLost.Add(1)
 		}
 		s.logger.Error("finish scheduled report", "error", finishErr)
+	}
+}
+
+func (s *Server) queueScheduledReport(ctx context.Context, p domain.Principal, taskID int32, owner uuid.UUID, trigger string) (store.ReportJob, error) {
+	task, err := s.scheduled.Get(ctx, p, taskID)
+	var job store.ReportJob
+	if err == nil {
+		var zone *time.Location
+		zone, err = time.LoadLocation(task.Timezone)
+		if err == nil {
+			anchor := time.Now().In(zone)
+			var next time.Time
+			next, err = nextScheduledRun(task.ReportType, int(task.Hour), int(task.Minute), task.Timezone, anchor)
+			if err == nil {
+				job, err = s.reportJobs.QueueScheduled(ctx, p, task, owner, trigger, anchor, next)
+			}
+		}
+	}
+	if err != nil && trigger == "manual" {
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_ = s.reportJobs.ReleaseSchedule(releaseCtx, p, taskID, owner)
+	}
+	return job, err
+}
+
+func (s *Server) finishScheduledDispatchFailure(ctx context.Context, p domain.Principal, taskID int32, owner uuid.UUID, trigger string, cause error) {
+	task, err := s.scheduled.Get(ctx, p, taskID)
+	if err != nil {
+		return
+	}
+	next, err := nextScheduledRun(task.ReportType, int(task.Hour), int(task.Minute), task.Timezone, time.Now())
+	if err != nil {
+		return
+	}
+	runID, err := s.scheduled.Start(ctx, p, taskID, trigger, owner)
+	if err != nil {
+		return
+	}
+	code := "REPORT_QUEUE_FAILED"
+	var appErr *apierror.Error
+	if errors.As(cause, &appErr) {
+		code = appErr.Code
+	}
+	safeErr := apierror.New(code, "后台报告未能入队，请检查来源或稍后手动重试", 503)
+	if err = s.scheduled.Finish(ctx, p, task, runID, nil, safeErr, next, owner); err != nil {
+		s.logger.Error("finish report dispatch failure", "code", "REPORT_QUEUE_FAILED")
 	}
 }
 

@@ -48,8 +48,10 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        (rpk topic create cortex.knowledge.index.v1 cortex.document.parsed.v1 cortex.search.projection.v1 cortex.audit.export.v1
-        --brokers kafka:9092 --partitions 6 --replicas 1 || true) &&
+        for topic in cortex.knowledge.index.v1 cortex.document.parsed.v1 cortex.search.projection.v1 cortex.audit.export.v1 cortex.report.generate.v1; do
+        rpk topic describe "$$topic" --brokers kafka:9092 >/dev/null 2>&1 ||
+        rpk topic create "$$topic" --brokers kafka:9092 --partitions 6 --replicas 1 || exit 1;
+        done &&
         rpk cluster config set auto_create_topics_enabled false --api-urls kafka:9644
     depends_on:
       kafka: {condition: service_healthy}

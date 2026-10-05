@@ -27,6 +27,7 @@ import (
 	marketplaceapp "cortex/backend/internal/application/marketplace"
 	notesapp "cortex/backend/internal/application/notes"
 	preferencesapp "cortex/backend/internal/application/preferences"
+	reportjobsapp "cortex/backend/internal/application/reportjobs"
 	reportsapp "cortex/backend/internal/application/reports"
 	scheduledapp "cortex/backend/internal/application/scheduled"
 	tenantapp "cortex/backend/internal/application/tenant"
@@ -62,6 +63,7 @@ type Server struct {
 	attachments            *attachmentsapp.Service
 	aiService              *aiapp.Service
 	reports                *reportsapp.Service
+	reportJobs             *reportjobsapp.Service
 	conversations          *conversationsapp.Service
 	authService            *authapp.Service
 	aiEvents               *aieventsapp.Service
@@ -111,6 +113,7 @@ type Dependencies struct {
 	Attachments   *attachmentsapp.Service
 	AI            *aiapp.Service
 	Reports       *reportsapp.Service
+	ReportJobs    *reportjobsapp.Service
 	Conversations *conversationsapp.Service
 	Auth          *authapp.Service
 	AIEvents      *aieventsapp.Service
@@ -154,6 +157,10 @@ func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger
 		s.aiService = aiapp.NewService(db)
 	}
 	s.reports = deps.Reports
+	s.reportJobs = deps.ReportJobs
+	if s.reportJobs == nil && db != nil {
+		s.reportJobs = reportjobsapp.NewService(db)
+	}
 	if s.reports == nil && db != nil {
 		s.reports = reportsapp.NewService(db)
 	}
@@ -218,6 +225,11 @@ func NewWithDependencies(cfg config.Config, db *store.Store, logger *slog.Logger
 			active.POST("/api/v1/reports/preview", gin.WrapF(s.previewReport))
 			active.POST("/api/v1/reports/generate", gin.WrapF(s.generateReport))
 			active.POST("/api/v1/reports/confirm", gin.WrapF(s.confirmReport))
+			active.POST("/api/v1/report-jobs", gin.WrapF(s.createReportJob))
+			active.GET("/api/v1/report-jobs", gin.WrapF(s.listReportJobs))
+			active.GET("/api/v1/report-jobs/:jobID", gin.WrapF(s.getReportJob))
+			active.POST("/api/v1/report-jobs/:jobID/cancel", gin.WrapF(s.cancelReportJob))
+			active.POST("/api/v1/report-jobs/:jobID/confirm", gin.WrapF(s.confirmReportJob))
 			active.GET("/api/v1/reports/:noteID/sources", gin.WrapF(s.reportSourceList))
 			active.GET("/api/v1/conversations", gin.WrapF(s.listV1Conversations))
 			active.POST("/api/v1/conversations", gin.WrapF(s.createV1Conversation))

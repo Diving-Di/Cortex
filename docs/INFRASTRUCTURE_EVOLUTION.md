@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | PostgreSQL 16 / pgvector | 租户、笔记、引用、配额、任务、Outbox、向量与活动索引版本 | 业务事实与权限 |
 | MinIO / Local BlobStore | 私有附件和知识文件；保存后端与 key，版本元数据的覆盖范围见下文 | 文件内容 |
-| Kafka / Redpanda | 知识解析、Embedding、搜索投影阶段事件 | 不保存业务完成事实 |
+| Kafka / Redpanda | 知识解析、Embedding、搜索投影、后台报告事件 | 不保存业务完成事实 |
 | Elasticsearch | BM25 + KNN 可重建投影 | 候选仍须回 PostgreSQL 校验 |
 | Redis | 活动预扣、限流、缓存与模板排行 | PostgreSQL 保存最终事实 |
 | LiteLLM、Embedding、Reranker、document-parser | 模型访问与隔离解析 | 不决定租户权限 |
@@ -57,6 +57,24 @@ flowchart LR
 `EVENT_BUS=postgres` 使用轮询索引 runner；`kafka` 使用阶段消费者。
 模板 Outbox 有独立 worker，与知识 relay 的 claim 范围分离。
 
+## 后台报告任务
+
+迁移 43 新增 `report_generation_jobs`，任务、来源版本、目标版本、成功草稿与确认状态受 FORCE RLS 保护。
+提交与 `aggregate_type=report` 的 Outbox 在同一事务完成，独立 relay 发布到 `cortex.report.generate.v1`。
+消费者组 `cortex-report-generation-v1` 在加载正文前从数据库 claim 并解析可信租户；消息不携带租户选择信息或正文。
+每进程两个消费者；数据库限制全局四个、每租户一个执行中任务，每租户至多三个未完成任务。
+执行超时 15 分钟、租约 90 秒、每 20 秒续租；取消或续租失败会中断模型调用，过期 owner 不得写入。
+恢复循环每 15 秒运行：排队任务在一分钟后可补投 Outbox（已有未发布事件时不重复补投）；
+过期 running 标记失败，保留显式重试入口，不透明重放已经开始的模型生成。
+生成完成后，草稿和用量审计在同一事务写入；确认接口重新验证来源与目标版本，并原子写入笔记、revision、引用和确认记录。
+Kafka 模式定时报告及手动重试亦提交草稿任务，用户在报告页确认。当前没有独立批量报告 API，活动领取仍是既有点数奖励流程。
+实时问答、实时报告 SSE 和非 AI 主链路保持原有执行方式；轻量部署未配置 Kafka 时后台提交明确返回不可用。
+
+Kafka REST 发布必须收到有效的单条 offset 确认；HTTP 200 中的 broker error 不算成功。
+消费者沿用配置的 proxy 地址，避免代理返回的内部 advertised 地址不可达，订阅失败会清理消费者。
+实例名使用 UUID；同一消费者的 fetch 串行化且 long-poll 限制为 1 秒；退出时以正确的 Kafka media type 删除实例，避免残留实例占用分区。
+`cortex_report_jobs{status="queued|running|failed"}` 与 `cortex_report_oldest_queued_seconds` 用于观察任务积压；不添加用户或任务标识标签。
+
 ## 检索与故障
 
 `RAG_RETRIEVAL_BACKEND=elasticsearch` 使用 ES BM25 + KNN；候选回 PostgreSQL 做租户、状态和活动版本校验。
@@ -65,7 +83,7 @@ ES 不可用返回 `KNOWLEDGE_RETRIEVAL_UNAVAILABLE`；普通笔记搜索仍可�
 
 ## 数据库与验证
 
-初始化基线 materialize 到迁移 13，启动新库必须再执行全部待应用迁移；当前最终版本为 42、57 张 public 表。
+初始化基线 materialize 到迁移 13，启动新库必须再执行全部待应用迁移；当前最终版本为 43、58 张 public 表。
 已有迁移不改写，`cmd/migrate` 使用 advisory lock 管理版本化变更。
 
 ```powershell

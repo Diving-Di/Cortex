@@ -15,7 +15,7 @@ import (
 )
 
 func setTenant(ctx context.Context, tx pgx.Tx, principal domain.Principal) error {
-	_, err := tx.Exec(ctx, `SELECT set_config('app.current_tenant_id',$1,true)`, principal.TenantID.String())
+	_, err := tx.Exec(ctx, `SELECT set_config('app.current_tenant_id',$1,true),set_config('app.current_user_id',$2,true)`, principal.TenantID.String(), fmt.Sprint(principal.UserID))
 	return err
 }
 

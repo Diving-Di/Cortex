@@ -52,8 +52,9 @@ docker compose config --quiet
 
 ## 3. 数据库、租户与文件安全
 
-- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 42、56 张业务表（连同 `schema_migrations`
-  共 57 张 public 表），迁移记录和 schema 基线一致。
+- [ ] 新空库完成全部版本化迁移；当前预期迁移版本 43、57 张业务表（连同 `schema_migrations`
+  共 58 张 public 表），迁移记录和 schema 基线一致。迁移 43 新增后台报告任务表。
+- [ ] Kafka 部署预建 `cortex.report.generate.v1` 并授权 relay 发布及 `cortex-report-generation-v1` 消费；先迁移、再更新 API/worker。验收提交后重启 API、Kafka 中断后的 Outbox 补发、过期租约失败、显式重试及草稿确认。
 - [ ] 租户业务表启用并强制 RLS；`cortex_app` 使用低权限连接，跨租户资源访问表现为 404。
 - [ ] 注册、登录、Token 过期/撤销、软删除租户拒绝认证通过验收。
 - [ ] 乐观锁、revision、软删除和来源有效性检查没有被绕过。

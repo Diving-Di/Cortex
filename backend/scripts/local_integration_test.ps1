@@ -13,7 +13,7 @@ try {
     docker compose -f docker-compose.ci.yml run --rm minio-init
     Assert-NativeSuccess 'Initialize private bucket'
     $topics = Invoke-RestMethod http://127.0.0.1:58082/topics
-    if ($topics -notcontains 'cortex.integration.v1') {
+    if ($topics -notcontains 'cortex.integration.v1' -or $topics -notcontains 'cortex.report.generate.v1') {
         docker compose -f docker-compose.ci.yml run --rm kafka-init
         Assert-NativeSuccess 'Initialize Kafka topic'
     }

@@ -52,7 +52,9 @@ func (s *Store) ClaimDueScheduledTasks(ctx context.Context, owner uuid.UUID, lim
 	defer func() { _ = tx.Rollback(ctx) }()
 	rows, err := tx.Query(ctx, `WITH due AS (
 		SELECT id FROM scheduled_report_tasks WHERE status='enabled' AND next_run_at<=now()
-		AND (lease_until IS NULL OR lease_until<now()) ORDER BY next_run_at,id FOR UPDATE SKIP LOCKED LIMIT $1
+		AND (lease_until IS NULL OR lease_until<now())
+		AND NOT EXISTS(SELECT 1 FROM report_generation_jobs j WHERE j.scheduled_task_id=scheduled_report_tasks.id AND j.status IN ('queued','running'))
+		ORDER BY next_run_at,id FOR UPDATE SKIP LOCKED LIMIT $1
 	) UPDATE scheduled_report_tasks t SET lease_owner=$2,lease_until=now()+$3::interval,updated_at=now()
 	FROM due WHERE t.id=due.id RETURNING t.id,t.tenant_id,t.created_by,t.lease_owner`, limit, owner, lease.String())
 	if err != nil {
@@ -83,12 +85,19 @@ func (s *Store) ClaimDueScheduledTasks(ctx context.Context, owner uuid.UUID, lim
 	return claimed, nil
 }
 
+func (s *Store) ReleaseScheduledTaskLease(ctx context.Context, p domain.Principal, id int32, owner uuid.UUID) error {
+	return s.WithPrincipalTx(ctx, p, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE scheduled_report_tasks SET lease_owner=NULL,lease_until=NULL WHERE tenant_id=$1 AND id=$2 AND lease_owner=$3`, p.TenantID, id, owner)
+		return err
+	})
+}
+
 func (s *Store) AcquireScheduledTaskLease(ctx context.Context, principal domain.Principal, taskID int32, owner uuid.UUID, lease time.Duration) error {
 	return s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := setTenant(ctx, tx, principal); err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `UPDATE scheduled_report_tasks SET lease_owner=$3,lease_until=now()+$4::interval,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND (lease_until IS NULL OR lease_until<now())`, principal.TenantID, taskID, owner, lease.String())
+		tag, err := tx.Exec(ctx, `UPDATE scheduled_report_tasks SET lease_owner=$3,lease_until=now()+$4::interval,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND (lease_until IS NULL OR lease_until<now()) AND NOT EXISTS(SELECT 1 FROM report_generation_jobs j WHERE j.tenant_id=$1 AND j.scheduled_task_id=$2 AND j.status IN ('queued','running'))`, principal.TenantID, taskID, owner, lease.String())
 		if err != nil {
 			return err
 		}

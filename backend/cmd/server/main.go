@@ -66,7 +66,8 @@ func main() {
 		search = searchindex.New(cfg.ElasticsearchURLs, cfg.ElasticsearchUsername, cfg.ElasticsearchPassword, cfg.ElasticsearchIndexAlias)
 	}
 	if cfg.RuntimeRole != "api" {
-		workers.Run(ctx, cfg, db, blobs, localBlobs, minioBlobs, logger)
+		waitReports := workers.Run(ctx, cfg, db, blobs, localBlobs, minioBlobs, logger)
+		defer waitReports()
 		go server.RunScheduler(ctx, cfg, db, logger)
 		server.RunAIEventWorkers(ctx, cfg, db, logger)
 		server.RunMarketplaceWorker(ctx, db, redis, logger)

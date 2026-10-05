@@ -29,7 +29,8 @@
 
 脚本启动隔离依赖，初始化私有桶与 Kafka Topic，运行全部迁移、vet、无缓存全量 Go 测试和 server 构建。
 数据库应用连接使用 `cortex_app`，迁移与 claim 使用 `cortex_migrator`。
-新库期望版本 42、57 张 public 表；需要真实 PostgreSQL/Redis/MinIO 的测试不能因变量缺失而跳过。
+新库期望版本 43、58 张 public 表；需要真实 PostgreSQL/Redis/MinIO/Kafka 的测试不能因变量缺失而跳过。
+`local_test_env.ps1` 设置隔离的 `KAFKA_TEST_URL`；初始化 `cortex.report.generate.v1` 后，Go 集成测试覆盖真实 Kafka Outbox 到报告草稿的处理，模型网关使用测试 SSE 服务。
 测试服务和数据卷默认保留供复查，重复执行会复用它们。
 
 单独运行某组测试时：

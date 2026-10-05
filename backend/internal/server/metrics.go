@@ -129,6 +129,10 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.store.AdminPool != nil {
 		if m, err := s.store.GetOperationsMetrics(r.Context()); err == nil {
+			_, _ = fmt.Fprintf(w, "cortex_report_jobs{status=\"queued\"} %d\n", m.ReportQueued)
+			_, _ = fmt.Fprintf(w, "cortex_report_jobs{status=\"running\"} %d\n", m.ReportRunning)
+			_, _ = fmt.Fprintf(w, "cortex_report_jobs{status=\"failed\"} %d\n", m.ReportFailed)
+			_, _ = fmt.Fprintf(w, "cortex_report_oldest_queued_seconds %.3f\n", m.ReportOldestQueuedSeconds)
 			_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"queued\"} %d\n", m.KnowledgeQueued)
 			_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"running\"} %d\n", m.KnowledgeRunning)
 			_, _ = fmt.Fprintf(w, "cortex_knowledge_index_jobs{status=\"failed\"} %d\n", m.KnowledgeFailed)

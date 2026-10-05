@@ -228,6 +228,32 @@ trace 仅保存模型和检索参数、状态、token 数、来源资源 ID、�
 重命名；版本冲突返回 `CONVERSATION_VERSION_CONFLICT`。超过 20 条消息的会话会保存压缩摘要，
 回答上下文使用摘要与最近 10 条消息，但事实来源仍在每轮重新检索。
 
+### Kafka 后台报告任务
+
+后台生成需 `EVENT_BUS=kafka`、LiteLLM 配置及运行中的 worker；API 在 PostgreSQL 中提交任务和 Outbox 后即返回，Kafka 暂时不可用时任务保留为 queued。
+
+| 方法 | 路径 | 契约 |
+| --- | --- | --- |
+| POST | `/api/v1/report-jobs` | `{request_id: UUID, type: daily/weekly/monthly, anchor_date: YYYY-MM-DD}`；返回 202 和任务 |
+| GET | `/api/v1/report-jobs` | 最近 50 个当前租户任务，列表不含草稿正文和来源片段 |
+| GET | `/api/v1/report-jobs/{id}` | 任务状态、完整成功草稿、来源摘要和稳定失败码 |
+| POST | `/api/v1/report-jobs/{id}/cancel` | 取消 queued/running 任务；已终结返回 409 |
+| POST | `/api/v1/report-jobs/{id}/confirm` | `{title, content, overwrite}`；原子保存报告、revision、来源和确认记录，返回笔记 id |
+
+状态为 `queued/running/success/failed/cancelled`；`success` 表示草稿已持久化，`confirmed_note_id` 表示用户已确认。
+相同租户、request_id 和归一化周期重复提交返回同一任务，参数冲突返回 `IDEMPOTENCY_CONFLICT`。
+明确重新生成使用新的 request_id。单租户最多三个未完成任务，超限返回 `REPORT_QUEUE_FULL`（429）。
+生成前及确认时校验来源版本；来源修改/删除返回 `REPORT_SOURCES_CHANGED`，目标报告改变返回 `REPORT_VERSION_CONFLICT`。
+确认只接受该任务的服务器来源；至少存在一个有效 `[#笔记ID]` 引用，任何未知引用都会拒绝。
+已有目标报告须显式 overwrite；确认重放返回已保存笔记 ID，不重复写入或创建 revision。
+租约失效的执行被标为 `REPORT_WORKER_INTERRUPTED`，不得透明地从头生成；由用户显式重新提交。
+取消会立即阻止结果提交，模型请求最迟在下一次续租检查时取消（默认 20 秒）。
+跨租户任务统一返回 404。Kafka 消息仅包含事件及任务标识，报告正文和来源材料不会进入消息。
+
+Kafka 模式下，定时报告到期或手动重试均创建上述持久化草稿任务；手动重试响应包含 `status=queued` 和 `job_id`。
+运行记录的 running 包括排队阶段，success 表示草稿就绪，需在报告页确认写入笔记。
+`EVENT_BUS=postgres` 保留既有定时报告行为，新的后台提交返回 `REPORT_BACKGROUND_UNAVAILABLE`（503）。
+
 ### 知识问答 SSE 与澄清
 
 知识问答 SSE 成功流的主要事件如下；检索进度可能出现多次，失败流不会发送 done：

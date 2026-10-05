@@ -5,10 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Event struct {
@@ -34,6 +38,7 @@ type KafkaREST struct {
 type Consumer struct {
 	base, group, instance string
 	client                *http.Client
+	pollMu                sync.Mutex
 }
 type Record struct {
 	Topic     string `json:"topic"`
@@ -44,7 +49,7 @@ type Record struct {
 
 func NewConsumer(ctx context.Context, base, group string, topics []string) (*Consumer, error) {
 	c := &Consumer{base: strings.TrimRight(base, "/"), group: group, client: &http.Client{Timeout: 35 * time.Second}}
-	raw, _ := json.Marshal(map[string]any{"name": "cortex-" + fmt.Sprint(time.Now().UnixNano()), "format": "json", "auto.offset.reset": "earliest", "auto.commit.enable": "false"})
+	raw, _ := json.Marshal(map[string]any{"name": "cortex-" + uuid.NewString(), "format": "json", "auto.offset.reset": "earliest", "auto.commit.enable": "false"})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/consumers/"+url.PathEscape(group), bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/vnd.kafka.v2+json")
 	resp, err := c.client.Do(req)
@@ -62,7 +67,20 @@ func NewConsumer(ctx context.Context, base, group string, topics []string) (*Con
 	if err = json.NewDecoder(resp.Body).Decode(&created); err != nil {
 		return nil, err
 	}
-	c.instance = created.BaseURI
+	if created.InstanceID == "" {
+		return nil, fmt.Errorf("kafka consumer instance missing")
+	}
+	// The proxy's advertised base_uri may be internal to its container network.
+	// Resolve operations through the same configured, trusted endpoint instead.
+	c.instance = c.base + "/consumers/" + url.PathEscape(group) + "/instances/" + url.PathEscape(created.InstanceID)
+	subscribed := false
+	defer func() {
+		if !subscribed {
+			closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = c.Close(closeCtx)
+		}
+	}()
 	raw, _ = json.Marshal(map[string]any{"topics": topics})
 	req, _ = http.NewRequestWithContext(ctx, http.MethodPost, c.instance+"/subscription", bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/vnd.kafka.v2+json")
@@ -74,10 +92,15 @@ func NewConsumer(ctx context.Context, base, group string, topics []string) (*Con
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("subscribe kafka consumer: %d", resp.StatusCode)
 	}
+	subscribed = true
 	return c, nil
 }
 func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.instance+"/records", nil)
+	c.pollMu.Lock()
+	defer c.pollMu.Unlock()
+	// Keep the server long-poll well below the HTTP client timeout. Concurrent
+	// fetches on one proxy consumer can crash older Redpanda fetch sessions.
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.instance+"/records?timeout=1000&max_bytes=1048576", nil)
 	req.Header.Set("Accept", "application/vnd.kafka.json.v2+json")
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -110,6 +133,7 @@ func (c *Consumer) Commit(ctx context.Context) error {
 
 func (c *Consumer) Close(ctx context.Context) error {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodDelete, c.instance, nil)
+	req.Header.Set("Content-Type", "application/vnd.kafka.v2+json")
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
@@ -139,6 +163,21 @@ func (p *KafkaREST) Publish(ctx context.Context, topic, key string, event Event)
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("kafka publish failed with status %d", resp.StatusCode)
+	}
+	// HTTP 200 can still contain a per-record broker error. Never mark the
+	// transactional outbox published without an acknowledged record offset.
+	var result struct {
+		Offsets []struct {
+			Offset    *int64 `json:"offset"`
+			ErrorCode *int   `json:"error_code"`
+		} `json:"offsets"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 65536)).Decode(&result); err != nil {
+		return fmt.Errorf("kafka publish acknowledgement invalid")
+	}
+	if len(result.Offsets) != 1 || result.Offsets[0].Offset == nil || *result.Offsets[0].Offset < 0 ||
+		(result.Offsets[0].ErrorCode != nil && *result.Offsets[0].ErrorCode != 0) {
+		return fmt.Errorf("kafka record was not acknowledged")
 	}
 	return nil
 }

@@ -1,6 +1,8 @@
 --
 -- PostgreSQL database dump
 --
+-- Initialization baseline through migration 13. Apply versioned migrations
+-- after loading this file; migration 43 adds report_generation_jobs (58 public tables).
 
 \restrict N7Z6ph1r3cllyLc3xgdXNxvhOwaIOGBkXuRB5gh68CnibCoULewsoUfhEuQpbkn
 

@@ -20,6 +20,7 @@ vi.mock('../../api/scheduledReports', () => ({
   setScheduledReportEnabled: vi.fn(),
 }));
 vi.mock('../../components/UsageGuide', () => ({ default: () => null }));
+vi.mock('./BackgroundReports', () => ({ default: () => null }));
 const source = { id: 1, title: '原来源', note_date: '2026-10-05', snippet: '原文' };
 function page() {
   return render(

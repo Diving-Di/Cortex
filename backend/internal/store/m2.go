@@ -99,7 +99,7 @@ func reportSourcesTx(
 ) ([]SourceNote, error) {
 	rows, err := tx.Query(ctx, `SELECT id,title,note_date,content FROM notes
         WHERE tenant_id=$1 AND deleted_at IS NULL AND note_date >= $2 AND note_date <= $3 AND type<>$4
-        ORDER BY note_date,id LIMIT 100`, principal.TenantID, start, end, kind,
+        ORDER BY note_date,id LIMIT 100 FOR SHARE`, principal.TenantID, start, end, kind,
 	)
 	if err != nil {
 		return nil, err
@@ -135,96 +135,98 @@ func (s *Store) ConfirmReport(
 	leaseOwner *uuid.UUID,
 	taskID int32,
 ) (map[string]any, error) {
-	result := make(map[string]any)
-	start, end := periodRange(kind, anchor)
-	err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := setTenant(ctx, tx, principal); err != nil {
-			return err
-		}
-		if leaseOwner != nil {
-			var valid bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM scheduled_report_tasks WHERE tenant_id=$1 AND id=$2 AND lease_owner=$3 AND lease_until>now())`, principal.TenantID, taskID, *leaseOwner).Scan(&valid); err != nil {
-				return err
-			}
-			if !valid {
-				return ErrScheduledLeaseLost
-			}
-		}
-		allowedSources, err := reportSourcesTx(ctx, tx, principal, kind, start, end)
-		if err != nil {
-			return err
-		}
-		allowed := make(map[int32]bool, len(allowedSources))
-		for _, item := range allowedSources {
-			allowed[item.ID] = true
-		}
-		if len(sourceIDs) == 0 {
-			return apierror.New("INVALID_REPORT_SOURCES", "报告来源为空或不属于所选周期", 422)
-		}
-		for _, id := range sourceIDs {
-			if !allowed[id] {
-				return apierror.New("INVALID_REPORT_SOURCES", "报告来源为空或不属于所选周期", 422)
-			}
-		}
-		var noteID int32
-		var previousContent string
-		var previousUpdatedAt time.Time
-		err = tx.QueryRow(ctx, `SELECT id,content,updated_at FROM notes WHERE tenant_id=$1 AND type=$2
-            AND note_date=$3 AND deleted_at IS NULL`, principal.TenantID, kind, start,
-		).Scan(&noteID, &previousContent, &previousUpdatedAt)
-		if err == nil && !overwrite {
-			return apierror.New("REPORT_EXISTS", "该周期报告已存在，请明确选择覆盖", 409)
-		}
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		if err == nil {
-			if _, err := tx.Exec(ctx, `INSERT INTO note_revisions
-                (tenant_id,note_id,created_by,content,reason)
-                VALUES ($1,$2,$3,$4,'report_before_overwrite')`,
-				principal.TenantID, noteID, principal.UserID, previousContent,
-			); err != nil {
-				return err
-			}
-			command, err := tx.Exec(ctx, `UPDATE notes SET title=$1,content=$2,word_count=$3,
-				updated_by=$4,updated_at=now() WHERE tenant_id=$5 AND id=$6 AND updated_at=$7`,
-				title, content, wordCount(content), principal.UserID, principal.TenantID, noteID, previousUpdatedAt,
-			)
-			if err != nil {
-				return err
-			}
-			if command.RowsAffected() != 1 {
-				return apierror.New("REPORT_VERSION_CONFLICT", "报告已被其他任务修改", 409)
-			}
-			if _, err := tx.Exec(ctx, `DELETE FROM report_sources WHERE tenant_id=$1 AND report_note_id=$2`, principal.TenantID, noteID); err != nil {
-				return err
-			}
-		} else {
-			err = tx.QueryRow(ctx, `INSERT INTO notes
-                (tenant_id,created_by,updated_by,type,title,content,note_date,word_count)
-                VALUES ($1,$2,$2,$3,$4,$5,$6,$7) RETURNING id`,
-				principal.TenantID, principal.UserID, kind, title, content, start, wordCount(content),
-			).Scan(&noteID)
-			if err != nil {
-				var pgErr *pgconn.PgError
-				if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-					return apierror.New("REPORT_EXISTS", "该周期报告已存在", 409)
-				}
-				return err
-			}
-		}
-		for index, sourceID := range sourceIDs {
-			if _, err := tx.Exec(ctx, `INSERT INTO report_sources
-                (tenant_id,report_note_id,source_note_id,rank) VALUES ($1,$2,$3,$4)`,
-				principal.TenantID, noteID, sourceID, index+1,
-			); err != nil {
-				return err
-			}
-		}
-		result = map[string]any{"id": noteID, "source_ids": sourceIDs}
-		return nil
+	var result map[string]any
+	err := s.WithPrincipalTx(ctx, principal, func(tx pgx.Tx) error {
+		var err error
+		result, err = confirmReportTx(ctx, tx, principal, kind, anchor, title, content, sourceIDs, overwrite, leaseOwner, taskID)
+		return err
 	})
 	return result, err
+}
+
+func confirmReportTx(ctx context.Context, tx pgx.Tx, principal domain.Principal, kind string, anchor time.Time, title, content string, sourceIDs []int32, overwrite bool, leaseOwner *uuid.UUID, taskID int32) (map[string]any, error) {
+	start, end := periodRange(kind, anchor)
+	if leaseOwner != nil {
+		var valid bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM scheduled_report_tasks WHERE tenant_id=$1 AND id=$2 AND lease_owner=$3 AND lease_until>now())`, principal.TenantID, taskID, *leaseOwner).Scan(&valid); err != nil {
+			return nil, err
+		}
+		if !valid {
+			return nil, ErrScheduledLeaseLost
+		}
+	}
+	allowedSources, err := reportSourcesTx(ctx, tx, principal, kind, start, end)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[int32]bool, len(allowedSources))
+	for _, item := range allowedSources {
+		allowed[item.ID] = true
+	}
+	if len(sourceIDs) == 0 {
+		return nil, apierror.New("INVALID_REPORT_SOURCES", "报告来源为空或不属于所选周期", 422)
+	}
+	for _, id := range sourceIDs {
+		if !allowed[id] {
+			return nil, apierror.New("INVALID_REPORT_SOURCES", "报告来源为空或不属于所选周期", 422)
+		}
+	}
+	var noteID int32
+	var previousContent string
+	var previousUpdatedAt time.Time
+	err = tx.QueryRow(ctx, `SELECT id,content,updated_at FROM notes WHERE tenant_id=$1 AND type=$2
+            AND note_date=$3 AND deleted_at IS NULL`, principal.TenantID, kind, start,
+	).Scan(&noteID, &previousContent, &previousUpdatedAt)
+	if err == nil && !overwrite {
+		return nil, apierror.New("REPORT_EXISTS", "该周期报告已存在，请明确选择覆盖", 409)
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO note_revisions
+                (tenant_id,note_id,created_by,content,reason)
+                VALUES ($1,$2,$3,$4,'report_before_overwrite')`,
+			principal.TenantID, noteID, principal.UserID, previousContent,
+		); err != nil {
+			return nil, err
+		}
+		command, err := tx.Exec(ctx, `UPDATE notes SET title=$1,content=$2,word_count=$3,
+				updated_by=$4,updated_at=now() WHERE tenant_id=$5 AND id=$6 AND updated_at=$7`,
+			title, content, wordCount(content), principal.UserID, principal.TenantID, noteID, previousUpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if command.RowsAffected() != 1 {
+			return nil, apierror.New("REPORT_VERSION_CONFLICT", "报告已被其他任务修改", 409)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM report_sources WHERE tenant_id=$1 AND report_note_id=$2`, principal.TenantID, noteID); err != nil {
+			return nil, err
+		}
+	} else {
+		err = tx.QueryRow(ctx, `INSERT INTO notes
+                (tenant_id,created_by,updated_by,type,title,content,note_date,word_count)
+                VALUES ($1,$2,$2,$3,$4,$5,$6,$7) RETURNING id`,
+			principal.TenantID, principal.UserID, kind, title, content, start, wordCount(content),
+		).Scan(&noteID)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return nil, apierror.New("REPORT_EXISTS", "该周期报告已存在", 409)
+			}
+			return nil, err
+		}
+	}
+	for index, sourceID := range sourceIDs {
+		if _, err := tx.Exec(ctx, `INSERT INTO report_sources
+                (tenant_id,report_note_id,source_note_id,rank) VALUES ($1,$2,$3,$4)`,
+			principal.TenantID, noteID, sourceID, index+1,
+		); err != nil {
+			return nil, err
+		}
+	}
+	return map[string]any{"id": noteID, "source_ids": sourceIDs}, nil
 }
 
 func (s *Store) GetReportSources(ctx context.Context, principal domain.Principal, noteID int32) ([]SourceNote, error) {

@@ -23,31 +23,34 @@ const projectionConsumerGroup = "cortex-search-projection-v1"
 // Run starts the infrastructure workers owned by the server process. Every
 // worker shares the server cancellation context so deployments have one Go
 // entrypoint and one graceful-shutdown boundary.
-func Run(ctx context.Context, cfg config.Config, db *store.Store, blobs, localBlobs, minioBlobs blobstore.BlobStore, logger *slog.Logger) {
+func Run(ctx context.Context, cfg config.Config, db *store.Store, blobs, localBlobs, minioBlobs blobstore.BlobStore, logger *slog.Logger) func() {
 	go runObjectGC(ctx, db, localBlobs, minioBlobs, logger)
 	if cfg.EventBus != "kafka" {
 		server.RunKnowledgeIndexer(ctx, cfg, db, blobs, localBlobs, logger)
-		return
+		return func() {}
 	}
 
-	go runOutboxRelay(ctx, cfg, db, logger)
+	go runOutboxRelay(ctx, cfg, db, logger, "knowledge")
+	go runOutboxRelay(ctx, cfg, db, logger, "report")
+	waitReports := runReportJobs(ctx, cfg, db, logger)
 	go runKnowledgeParsingConsumer(ctx, cfg, db, blobs, localBlobs, logger)
 	go runKnowledgeEmbeddingConsumer(ctx, cfg, db, logger)
 	if cfg.RAGRetrievalBackend == "elasticsearch" {
 		go runProjectionConsumer(ctx, cfg, db, logger)
 	}
+	return waitReports
 }
 
-func runOutboxRelay(ctx context.Context, cfg config.Config, db *store.Store, logger *slog.Logger) {
+func runOutboxRelay(ctx context.Context, cfg config.Config, db *store.Store, logger *slog.Logger, aggregateType string) {
 	publisher := eventbus.NewKafkaREST(cfg.KafkaRESTURL)
 	owner := "relay-" + uuid.NewString()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for ctx.Err() == nil {
 		// Template events are consumed directly by the marketplace projector.
-		// This relay owns only knowledge pipeline events, preventing competing
+		// Each relay owns a distinct aggregate type, preventing competing
 		// consumers from claiming the same PostgreSQL outbox row.
-		event, err := db.ClaimOutboxEvent(ctx, "knowledge", owner, 30*time.Second)
+		event, err := db.ClaimOutboxEvent(ctx, aggregateType, owner, 30*time.Second)
 		if err == nil && event != nil {
 			message := eventbus.Event{ID: event.ID, Type: event.EventType, AggregateID: event.AggregateID, SchemaVersion: 1, OccurredAt: event.OccurredAt}
 			err = publisher.Publish(ctx, topicFor(event.EventType), event.AggregateID, message)
@@ -67,6 +70,8 @@ func runOutboxRelay(ctx context.Context, cfg config.Config, db *store.Store, log
 
 func topicFor(eventType string) string {
 	switch {
+	case eventType == "report.generate.requested":
+		return "cortex.report.generate.v1"
 	case eventType == "knowledge.document.parsed":
 		return "cortex.document.parsed.v1"
 	case strings.HasPrefix(eventType, "knowledge."):

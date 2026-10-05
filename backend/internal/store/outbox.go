@@ -27,6 +27,8 @@ type MarketplaceMetrics struct {
 }
 
 type OperationsMetrics struct {
+	ReportQueued, ReportRunning, ReportFailed          int64
+	ReportOldestQueuedSeconds                          float64
 	KnowledgeQueued, KnowledgeRunning, KnowledgeFailed int64
 	KnowledgeOldestQueuedSeconds                       float64
 	ScheduledDue, ScheduledRunning, ScheduledFailed    int64
@@ -101,9 +103,14 @@ func (s *Store) GetOperationsMetrics(ctx context.Context) (OperationsMetrics, er
 		(SELECT count(*) FROM scheduled_report_tasks WHERE status='enabled' AND next_run_at<=now()),
 		(SELECT count(*) FROM scheduled_report_runs WHERE status='running'),
 		(SELECT count(*) FROM scheduled_report_runs WHERE status='failed'),
-		(SELECT COALESCE(extract(epoch FROM now()-min(next_run_at)),0) FROM scheduled_report_tasks WHERE status='enabled' AND next_run_at<=now())`).Scan(
+		(SELECT COALESCE(extract(epoch FROM now()-min(next_run_at)),0) FROM scheduled_report_tasks WHERE status='enabled' AND next_run_at<=now()),
+		(SELECT count(*) FROM report_generation_jobs WHERE status='queued'),
+		(SELECT count(*) FROM report_generation_jobs WHERE status='running'),
+		(SELECT count(*) FROM report_generation_jobs WHERE status='failed'),
+		(SELECT COALESCE(extract(epoch FROM now()-min(created_at)),0) FROM report_generation_jobs WHERE status='queued')`).Scan(
 		&m.KnowledgeQueued, &m.KnowledgeRunning, &m.KnowledgeFailed, &m.KnowledgeOldestQueuedSeconds,
 		&m.ScheduledDue, &m.ScheduledRunning, &m.ScheduledFailed, &m.ScheduledOldestDueSeconds,
+		&m.ReportQueued, &m.ReportRunning, &m.ReportFailed, &m.ReportOldestQueuedSeconds,
 	)
 	return m, err
 }

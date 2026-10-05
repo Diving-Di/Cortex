@@ -20,6 +20,7 @@ import { useDraftScope, readDraft, writeDraft, removeDraft } from '../../app/dra
 import { listNotes } from '../../api/notes';
 import ContentDiff from '../../components/ContentDiff';
 import UsageGuide from '../../components/UsageGuide';
+import BackgroundReports from './BackgroundReports';
 import LeaveGuard from '../../components/LeaveGuard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { confirmReport, previewReport, Source, streamPost } from '../../api/m2';
@@ -276,7 +277,6 @@ export default function ReportsPage() {
             选择来源
           </Button>
           <Button
-            type="primary"
             disabled={
               !(previewLoaded ? previewSources.length : sources.length) || sourceLoading || saving
             }
@@ -288,6 +288,7 @@ export default function ReportsPage() {
           {loading && <Button onClick={() => controller.current?.abort()}>停止生成</Button>}
         </Space>
       </Card>
+      <BackgroundReports type={type} anchorDate={start.format('YYYY-MM-DD')} />
       {!(previewLoaded ? previewSources.length : sources.length) && (
         <Alert
           style={{ marginTop: 16 }}
@@ -506,6 +507,8 @@ export default function ReportsPage() {
                     `${run.error_code || 'ERROR'}：${run.error_message || '执行失败'}`
                   ) : run.report_note_id ? (
                     <a href={`/notes/${run.report_note_id}`}>查看生成的报告</a>
+                  ) : run.status === 'success' ? (
+                    '草稿已生成，请在后台报告中核对并确认保存'
                   ) : (
                     '执行中'
                   )

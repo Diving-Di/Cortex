@@ -31,16 +31,16 @@ func TestProductionSchemaAndRLSContract(t *testing.T) {
 	if err := admin.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 42 {
-		t.Fatalf("migration version = %d, want 42", version)
+	if version != 43 {
+		t.Fatalf("migration version = %d, want 43", version)
 	}
 	if err := admin.QueryRow(ctx, `
 		SELECT count(*), count(*) FILTER (WHERE tablename <> 'schema_migrations')
 		FROM pg_tables WHERE schemaname='public'`).Scan(&tableCount, &businessTableCount); err != nil {
 		t.Fatal(err)
 	}
-	if tableCount != 57 || businessTableCount != 56 {
-		t.Fatalf("public table count = %d (%d business), want 57 (56 business)", tableCount, businessTableCount)
+	if tableCount != 58 || businessTableCount != 57 {
+		t.Fatalf("public table count = %d (%d business), want 58 (57 business)", tableCount, businessTableCount)
 	}
 	var unsafeTables []string
 	rows, err := admin.Query(ctx, `
