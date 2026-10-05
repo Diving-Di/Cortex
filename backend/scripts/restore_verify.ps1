@@ -90,10 +90,10 @@ try {
         docker run -d --name $minioContainer --network $network --network-alias minio `
             -e "MINIO_ROOT_USER=$minioUser" -e "MINIO_ROOT_PASSWORD=$minioPassword" `
             --mount "type=volume,source=$minioVolume,target=/data" `
-            quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z server /data | Out-Null
+            docker.io/minio/minio:RELEASE.2025-07-23T15-54-02Z server /data | Out-Null
         $minioReady = $false
         foreach ($attempt in 1..60) {
-            docker run --rm --network $network quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z `
+            docker run --rm --network $network docker.io/minio/mc:RELEASE.2025-07-21T05-28-08Z `
                 alias set restored http://minio:9000 $minioUser $minioPassword 2>$null | Out-Null
             if ($LASTEXITCODE -eq 0) { $minioReady = $true; break }
             Start-Sleep -Seconds 1
@@ -134,7 +134,7 @@ try {
             docker run --rm --network $network --entrypoint /bin/sh `
                 --mount "type=bind,source=$objectKeysFile,target=/object-keys.txt,readonly" `
                 --env "MINIO_USER=$minioUser" --env "MINIO_PASSWORD=$minioPassword" `
-                quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z -c `
+                docker.io/minio/mc:RELEASE.2025-07-21T05-28-08Z -c `
                 'mc alias set restored http://minio:9000 "$MINIO_USER" "$MINIO_PASSWORD" >/dev/null || exit 41; cr=$(printf "\r"); while IFS= read -r key; do key=${key%"$cr"}; [ -z "$key" ] || mc stat "restored/cortex-private/$key" >/dev/null || exit 42; done < /object-keys.txt'
             if ($LASTEXITCODE -eq 42) { throw "database references missing MinIO objects" }
             if ($LASTEXITCODE -ne 0) { throw "MinIO object consistency verification failed" }

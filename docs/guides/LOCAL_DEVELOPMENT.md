@@ -31,6 +31,7 @@
 数据库应用连接使用 `cortex_app`，迁移与 claim 使用 `cortex_migrator`。
 新库期望版本 43、58 张 public 表；需要真实 PostgreSQL/Redis/MinIO/Kafka 的测试不能因变量缺失而跳过。
 `local_test_env.ps1` 设置隔离的 `KAFKA_TEST_URL`；初始化 `cortex.report.generate.v1` 后，Go 集成测试覆盖真实 Kafka Outbox 到报告草稿的处理，模型网关使用测试 SSE 服务。
+MinIO 与 mc 使用 Docker Hub 官方 `minio/minio`、`minio/mc` 的固定发布标签；Compose 与恢复验收脚本保持一致，避免 Quay 镜像鉴权失败阻断新环境初始化。
 测试服务和数据卷默认保留供复查，重复执行会复用它们。
 
 单独运行某组测试时：
