@@ -33,7 +33,11 @@ services:
       retries: 30
 
   minio:
-    image: docker.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    image: cortex-minio:RELEASE.2025-07-23T15-54-02Z
+    build:
+      context: ./object-storage
+      target: server
+    pull_policy: build
     command: ["server", "/data"]
     environment:
       MINIO_ROOT_USER: ci-minio-root
@@ -50,7 +54,11 @@ services:
       retries: 30
 
   minio-init:
-    image: docker.io/minio/mc:RELEASE.2025-07-21T05-28-08Z
+    image: cortex-mc:RELEASE.2025-07-21T05-28-08Z
+    build:
+      context: ./object-storage
+      target: client
+    pull_policy: build
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-

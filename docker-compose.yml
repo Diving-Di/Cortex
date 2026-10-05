@@ -1,6 +1,10 @@
 services:
   minio:
-    image: docker.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    image: cortex-minio:RELEASE.2025-07-23T15-54-02Z
+    build:
+      context: ./object-storage
+      target: server
+    pull_policy: build
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
@@ -15,7 +19,11 @@ services:
       retries: 20
 
   minio-init:
-    image: docker.io/minio/mc:RELEASE.2025-07-21T05-28-08Z
+    image: cortex-mc:RELEASE.2025-07-21T05-28-08Z
+    build:
+      context: ./object-storage
+      target: client
+    pull_policy: build
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
